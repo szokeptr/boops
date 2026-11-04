@@ -3,13 +3,15 @@ import type {
   PullRequestMergeability,
   PullRequestState,
 } from "@t3tools/contracts";
+
 import type { ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
+
 import { RelativeTime } from "~/components/RelativeTime";
 
-import { MiddleTruncate } from "../ui/middle-truncate";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+
 import {
   PullRequestActorAvatar,
   PullRequestConflictGlyph,
@@ -125,15 +127,5 @@ export function PullRequestRowAuthor({
         {actor?.name && actor.name !== login ? `${actor.name} (@${login})` : login}
       </TooltipPopup>
     </Tooltip>
-  );
-}
-
-export function PullRequestRowBranches({ head, base }: { head: string; base: string }) {
-  return (
-    <span className="flex min-w-0 items-center gap-1 font-mono">
-      <MiddleTruncate value={head} />
-      <span className="shrink-0">→</span>
-      <MiddleTruncate value={base} className="max-w-[45%] shrink-0" />
-    </span>
   );
 }

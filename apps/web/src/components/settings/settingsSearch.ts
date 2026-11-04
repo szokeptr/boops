@@ -12,7 +12,7 @@ import { DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import * as Schema from "effect/Schema";
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { writeLocalStorageValue } from "../../hooks/useLocalStorage";
-import { commandLabel } from "./KeybindingsSettings.logic";
+import { commandLabel, isCodingKeybindingCommand } from "./KeybindingsSettings.logic";
 import type { ResolvedSettingsScope } from "./settingsScope";
 
 export type SettingsPath =
@@ -121,7 +121,6 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
       "/settings/general",
       "/settings/appearance",
       "/settings/chat",
-      "/settings/diffs",
       "/settings/keybindings",
       "/settings/snap-shot",
     ],
@@ -137,8 +136,8 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     ],
   },
   {
-    heading: "Code",
-    paths: ["/settings/projects", "/settings/source-control", "/settings/worktrees"],
+    heading: null,
+    paths: ["/settings/projects"],
   },
   {
     heading: "Connections",
@@ -158,21 +157,23 @@ export function keybindingSearchAnchorId<Command extends KeybindingCommand>(comm
   return `keybinding-${command}` as const;
 }
 
-const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right) =>
-  commandLabel(left).localeCompare(commandLabel(right)),
-).map((command) => {
-  const defaultKeys = DEFAULT_KEYBINDINGS.filter((binding) => binding.command === command).map(
-    (binding) => binding.key,
-  );
-  return {
-    id: keybindingSearchAnchorId(command),
-    title: commandLabel(command),
-    to: "/settings/keybindings" as const,
-    searchTerms: [command, ...defaultKeys],
-    secondary: true,
-    ...(defaultKeys.length === 0 ? { targetId: "keybindings" } : {}),
-  };
-});
+const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.filter(
+  (command) => !isCodingKeybindingCommand(command),
+)
+  .toSorted((left, right) => commandLabel(left).localeCompare(commandLabel(right)))
+  .map((command) => {
+    const defaultKeys = DEFAULT_KEYBINDINGS.filter((binding) => binding.command === command).map(
+      (binding) => binding.key,
+    );
+    return {
+      id: keybindingSearchAnchorId(command),
+      title: commandLabel(command),
+      to: "/settings/keybindings" as const,
+      searchTerms: [command, ...defaultKeys],
+      secondary: true,
+      ...(defaultKeys.length === 0 ? { targetId: "keybindings" } : {}),
+    };
+  });
 
 export function sourceControlHostSettingsSearchId(kind: string) {
   return `source-control-host-${kind}` as const;
@@ -411,11 +412,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["long lines code blocks diffs file previews"],
   },
   {
-    id: "composer-context",
-    title: "Composer context",
-    to: "/settings/appearance",
-  },
-  {
     id: "project-grouping",
     title: "Project grouping",
     to: "/settings/general",
@@ -631,8 +627,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "new-threads",
     title: "New threads",
     to: "/settings/threads",
+    targetId: "project-defaults",
     scope: "project-defaults",
-    searchTerms: ["default workspace mode draft local worktree"],
+    searchTerms: ["default model permissions draft"],
   },
   {
     id: "worktree-submodules",
@@ -1049,12 +1046,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "project-defaults",
   },
   {
-    id: "project-actions",
-    title: "Actions",
-    to: "/settings/projects",
-    searchTerms: ["commands scripts setup run dev server checkout worktree t3.json import"],
-  },
-  {
     id: "environment-icon",
     title: "Environment icon",
     to: "/settings/access",
@@ -1154,14 +1145,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/connections",
     searchTerms: [
       "automatic machine environment resources cpu memory capacity preference weight shared projects",
-    ],
-  },
-  {
-    id: "pull-request-routing",
-    title: "Pull request sharing",
-    to: "/settings/connections",
-    searchTerms: [
-      `pull request routing trusted environments shared credentials permissions read actions source control ${SOURCE_CONTROL_HOST_LABELS}`,
     ],
   },
   {
@@ -1323,12 +1306,17 @@ export function searchableSetting(id: SettingsSearchItemId): {
   return { id: anchorId, title };
 }
 
+const NAV_SETTINGS_PATHS: ReadonlySet<SettingsPath> = new Set(
+  SETTINGS_NAV_GROUPS.flatMap((group) => group.paths),
+);
+
 export function filterAvailableSettingsSearchItems(
   availability: SettingsSearchAvailability,
 ): ReadonlyArray<SettingsSearchItem> {
   const items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS;
   return items.filter(
     (item) =>
+      NAV_SETTINGS_PATHS.has(item.to) &&
       (!item.cloudOnly || availability.hasCloudPublicConfig) &&
       (!item.environmentOnly || availability.hasEnvironment) &&
       (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&

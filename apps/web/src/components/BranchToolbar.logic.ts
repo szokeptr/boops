@@ -5,10 +5,12 @@ import type {
   ProjectId,
   WorktreeSubmodules,
 } from "@t3tools/contracts";
+
 import * as Schema from "effect/Schema";
 import { sanitizeNewRefName } from "@t3tools/shared/git";
+
 import { workspaceRelativeFilePath } from "@t3tools/shared/path";
-import { toSortableTimestamp } from "@t3tools/client-runtime/state/thread-sort";
+
 export { deriveLocalBranchNameFromRemoteRef, sanitizeNewRefName } from "@t3tools/shared/git";
 
 export interface EnvironmentOption {
@@ -18,10 +20,6 @@ export interface EnvironmentOption {
   isPrimary: boolean;
   machine: EnvironmentMachineKind;
 }
-
-/** "Add to another machine" stays muted until hovered: easy to find, quieter than the machines. */
-export const ADD_TO_MACHINE_LABEL_CLASS =
-  "flex min-w-0 items-center gap-1.5 opacity-55 in-data-highlighted:opacity-100 in-data-popup-open:opacity-100";
 
 export const EnvMode = Schema.Literals(["local", "worktree"]);
 export type EnvMode = typeof EnvMode.Type;
@@ -53,29 +51,6 @@ export function resolveEnvironmentOptionLabel(input: {
   return runtimeLabel ?? savedLabel ?? input.environmentId;
 }
 
-export function shouldShowEnvironmentIndicator(input: {
-  activeEnvironment: Pick<EnvironmentOption, "isPrimary"> | null;
-  canPickEnvironment: boolean;
-}): boolean {
-  if (input.canPickEnvironment) return true;
-  return input.activeEnvironment !== null && !input.activeEnvironment.isPrimary;
-}
-
-export function shouldShowComposerContextStrip(input: {
-  isDraftHeroState: boolean;
-  persistInActiveThreads: boolean;
-  hasActiveProject: boolean;
-  isGitRepo: boolean;
-  showEnvironmentIndicator: boolean;
-}): boolean {
-  // A new thread always shows the strip, since it names the permissions the first send uses.
-  return (
-    input.hasActiveProject &&
-    (input.isDraftHeroState ||
-      (input.persistInActiveThreads && (input.isGitRepo || input.showEnvironmentIndicator)))
-  );
-}
-
 // Hysteresis prevents labels and icons from flapping at the width boundary.
 const CONTEXT_STRIP_COMPACT_EXPAND_HYSTERESIS_PX = 16;
 
@@ -99,58 +74,9 @@ export const WORKTREE_SUBMODULES_LABELS: Record<WorktreeSubmodules, string> = {
   none: "Skip",
 };
 
-export function resolveCurrentWorkspaceLabel(activeWorktreePath: string | null): string {
-  return activeWorktreePath ? "Current worktree" : resolveEnvModeLabel("local");
-}
-
-export function resolveLockedWorkspaceLabel(
-  activeWorktreePath: string | null,
-  effectiveEnvMode: EnvMode,
-): string {
-  if (activeWorktreePath) return "Worktree";
-  return effectiveEnvMode === "worktree" ? resolveEnvModeLabel("worktree") : "Local checkout";
-}
-
 export interface PreviousWorktreeSeed {
   branch: string | null;
   worktreePath: string;
-}
-
-export function resolvePreviousWorktreeSeed(input: {
-  threads: ReadonlyArray<{
-    branch: string | null;
-    worktreePath: string | null;
-    updatedAt: string;
-    archivedAt?: string | null;
-  }>;
-  currentWorktreePath: string | null;
-}): PreviousWorktreeSeed | null {
-  let latest: { branch: string | null; worktreePath: string; updatedAt: number } | null = null;
-  for (const thread of input.threads) {
-    if (
-      !thread.worktreePath ||
-      thread.worktreePath === input.currentWorktreePath ||
-      (thread.archivedAt ?? null) !== null
-    ) {
-      continue;
-    }
-    const updatedAt = toSortableTimestamp(thread.updatedAt);
-    if (updatedAt === null) {
-      continue;
-    }
-    if (latest === null || updatedAt > latest.updatedAt) {
-      latest = {
-        branch: thread.branch,
-        worktreePath: thread.worktreePath,
-        updatedAt,
-      };
-    }
-  }
-  return latest === null ? null : { branch: latest.branch, worktreePath: latest.worktreePath };
-}
-
-export function resolvePreviousWorktreeLabel(seed: PreviousWorktreeSeed): string {
-  return seed.branch ? `Previous worktree (${seed.branch})` : "Previous worktree";
 }
 
 export function resolveEffectiveEnvMode(input: {
@@ -182,19 +108,6 @@ export function resolveDraftEnvModeAfterBranchChange(input: {
     return "worktree";
   }
   return "local";
-}
-
-export function resolveBranchToolbarValue(input: {
-  envMode: EnvMode;
-  activeWorktreePath: string | null;
-  activeThreadBranch: string | null;
-  currentGitBranch: string | null;
-}): string | null {
-  const { envMode, activeWorktreePath, activeThreadBranch, currentGitBranch } = input;
-  if (envMode === "worktree" && !activeWorktreePath) {
-    return activeThreadBranch ?? currentGitBranch;
-  }
-  return currentGitBranch ?? activeThreadBranch;
 }
 
 export function resolveBranchTriggerLabel(input: {

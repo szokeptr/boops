@@ -126,7 +126,7 @@ function changeRequestTerminologyForUrl(url: string | undefined) {
   return (host ?? sourceControlClients.get(undefined)).changeRequest;
 }
 
-export function linkedPullRequestSnapshotStatus(
+function linkedPullRequestSnapshotStatus(
   link: ThreadPullRequestLink,
 ): LinkedThreadPullRequestStatus | null {
   const snapshot = link.snapshot;

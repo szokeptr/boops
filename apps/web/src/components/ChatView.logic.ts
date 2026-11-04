@@ -1,24 +1,32 @@
 import { type OrchestrationV2ProviderTurn, type RunAttemptId } from "@t3tools/contracts";
+
 import {
   deriveLatestThreadRun,
   deriveThreadRuntime,
 } from "@t3tools/client-runtime/state/thread-execution";
-import { checkpointFileTotals } from "@t3tools/client-runtime/state/thread-checkpoints";
+
 import { derivePendingBackgroundWork } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
+
 import {
   latestUnheldRun,
   usageLimitRunPresentedAsLatest,
 } from "@t3tools/shared/orchestrationV2ThreadError";
+
 import * as Option from "effect/Option";
 import type { SetStateAction } from "react";
+
 import { applyClaudePromptEffortPrefix, resolvePromptInjectedEffort } from "@t3tools/shared/model";
+
 import { getProviderModelCapabilities } from "../providerModels";
+
 import { sanitizeThreadErrorMessage } from "@t3tools/client-runtime/errors";
+
 import type {
   EnvironmentThread,
   ThreadStructure,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
+
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -42,63 +50,77 @@ import {
   type ThreadContextRecord,
   type EnvironmentContextRecord,
   type ThreadId,
-  type ThreadLinkedPullRequest,
   type RunId,
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
+
 import * as DateTime from "effect/DateTime";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
+
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+
 import { videoMimeType } from "@t3tools/shared/video";
+
 import {
   appendCodexArtifactTemplateUsePrompt,
   codexArtifactTemplateUsePrompt,
   type CodexArtifactTemplate,
 } from "@t3tools/shared/codexArtifactTemplates";
+
 import { presentThreadShell } from "@t3tools/client-runtime/state/shell";
-import {
-  type ChatMessage,
-  isImageAttachment,
-  type SessionPhase,
-  type Thread,
-  type TurnDiffSummary,
-} from "../types";
+
+import { type ChatMessage, isImageAttachment, type SessionPhase, type Thread } from "../types";
 import {
   type ComposerFileAttachment,
   type ComposerImageAttachment,
   type DraftId,
   type DraftThreadState,
 } from "../composerDraftStore";
+
 import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+
 import { environmentThreadShells, environmentThreadDetails } from "../state/threads";
+
 import { waitForAtomValue } from "../state/waitForAtomValue";
+
 import {
   filterTerminalContextsWithText,
   formatTerminalContextLabel,
   type TerminalContextDraft,
 } from "../lib/terminalContext";
+
 import {
   removeInlineContextReference,
   stripInlineContextReferences,
 } from "~/lib/composerContextReferences";
+
 import {
   previewAnnotationContextLabel,
   reviewCommentContextLabel,
   terminalContextReference,
 } from "../lib/composerContextRecords";
+
 import type { ComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
+
 import type { DraftThreadEnvMode } from "../composerDraftStore";
+
 import { collapseExpandedComposerCursor, type ComposerSubmissionIntent } from "../composer-logic";
+
 import type { ReviewCommentContext } from "../reviewCommentContext";
+
 import { derivePhase, type TimelineEntry } from "../session-logic";
+
 import type { PreviewMiniPlayerSource } from "../previewMiniPlayerStore";
+
 import type { DesktopPreviewOverlay } from "../previewStateStore";
+
 import type { RightPanelSurface } from "../rightPanelStore";
+
 import {
   NO_PROVIDER_MODEL_SELECTION,
   resolveSelectableProviderInstanceEntry,
@@ -152,97 +174,6 @@ export function shouldRenderPreviewMiniPlayer(
     renderedRightPanelSurface.target?.hostId === source.hostId &&
     renderedRightPanelSurface.target.deviceId === source.deviceId
   );
-}
-
-export function shouldOpenProactivePullRequest(
-  previousTargetKey: string | null | undefined,
-  targetKey: string | null,
-): boolean {
-  return targetKey !== null && targetKey !== previousTargetKey;
-}
-
-interface ProactivePanelObservation {
-  threadKey: string;
-  runningTurnId: RunId | null | undefined;
-  targetKey: string | null | undefined;
-  userActionTurnId: RunId | null;
-  userActionRevision: number;
-}
-
-export function observeProactivePanelUserChoice(
-  previous: ProactivePanelObservation | null,
-  input: { threadKey: string; runningTurnId: RunId | null; userActionRevision: number },
-): ProactivePanelObservation {
-  const sameThread = previous?.threadKey === input.threadKey;
-  const newTurn =
-    sameThread && input.runningTurnId !== null && input.runningTurnId !== previous.userActionTurnId;
-  return {
-    threadKey: input.threadKey,
-    runningTurnId: sameThread ? previous.runningTurnId : undefined,
-    targetKey: sameThread ? previous.targetKey : undefined,
-    userActionTurnId: input.runningTurnId ?? (sameThread ? previous.userActionTurnId : null),
-    userActionRevision:
-      !sameThread || newTurn ? input.userActionRevision : previous.userActionRevision,
-  };
-}
-
-export function shouldRetargetThreadPullRequestPanel(
-  previous: ThreadLinkedPullRequest | null,
-  current: ThreadLinkedPullRequest | null,
-  surface: RightPanelSurface | null,
-): boolean {
-  if (previous === null || current === null || surface?.kind !== "pull-request") return false;
-  const previousRepository = previous.repository.toLowerCase();
-  return (
-    (previous.projectId !== current.projectId ||
-      previousRepository !== current.repository.toLowerCase() ||
-      previous.number !== current.number) &&
-    surface.projectId === previous.projectId &&
-    surface.repository.toLowerCase() === previousRepository &&
-    surface.number === previous.number
-  );
-}
-
-export function shouldOpenProactiveTurnDiff(input: {
-  previousRunningTurnId: RunId | null | undefined;
-  runningTurnId: RunId | null;
-  settledTurnId: RunId | null;
-  turnCompleted: boolean;
-}): boolean {
-  return (
-    input.runningTurnId === null &&
-    input.turnCompleted &&
-    input.settledTurnId !== null &&
-    (input.previousRunningTurnId === undefined ||
-      input.settledTurnId === input.previousRunningTurnId)
-  );
-}
-
-export function resolveProactiveTurnDiffAction(input: {
-  checkpoint: Pick<TurnDiffSummary, "status" | "files" | "filesTotal"> | undefined;
-  isGitRepo: boolean | undefined;
-}): "defer" | "ignore" | "open" {
-  if (input.checkpoint === undefined || input.checkpoint.status === "missing") return "defer";
-  if (input.isGitRepo === undefined) return "defer";
-  if (
-    !input.isGitRepo ||
-    input.checkpoint.status !== "ready" ||
-    input.checkpoint.files.length === 0
-  ) {
-    return "ignore";
-  }
-  const totals = checkpointFileTotals(input.checkpoint);
-  return totals.count >= 3 || totals.additions + totals.deletions >= 50 ? "open" : "ignore";
-}
-
-/** Mark reactivated Diff tabs to preserve review scope. Already-active tabs must not leave a marker for
- * the next open. */
-export function resolveExplicitDiffOpenOnActivate(input: {
-  readonly surfaceKind: RightPanelSurface["kind"];
-  readonly diffOpen: boolean;
-  readonly activeThreadRef: ScopedThreadRef;
-}): ScopedThreadRef | null {
-  return input.surfaceKind === "diff" && !input.diffOpen ? input.activeThreadRef : null;
 }
 
 export function codexArtifactTemplatePromptToAppend(
@@ -839,10 +770,6 @@ export function shouldShowPlanFollowUpPrompt(input: {
 const COMPACT_COMMAND_PATTERN = /^\/compact(?:\s|$)/i;
 
 const sessionDismissedBranchMismatchKeys = new Set<string>();
-
-export function dismissBranchMismatchForSession(key: string): void {
-  sessionDismissedBranchMismatchKeys.add(key);
-}
 
 export function isBranchMismatchDismissedForSession(key: string | null): boolean {
   return key !== null && sessionDismissedBranchMismatchKeys.has(key);

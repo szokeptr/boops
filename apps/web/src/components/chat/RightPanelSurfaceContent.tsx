@@ -2,13 +2,9 @@ import type {
   EditorId,
   EnvironmentId,
   PreviewAnnotationPayload,
-  ProjectId,
   ResolvedKeybindingsConfig,
   ScopedThreadRef,
-  ThreadLinkedPullRequest,
-  ThreadPullRequestLink,
 } from "@t3tools/contracts";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { lazy, Suspense } from "react";
 import SideChatPane from "./SideChatPane";
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
@@ -19,16 +15,10 @@ import {
   PersistentThreadTerminalPanel,
   type PersistentThreadTerminalPanelProps,
 } from "../PersistentThreadTerminals";
-import { pullRequestPanelContext } from "../pullRequest/pullRequestDetail.logic";
-import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
-import { PullRequestDetailGhost } from "../pullRequest/PullRequestGhosts";
-import { PullRequestsUnavailableState } from "../pullRequest/PullRequestsUnavailableState";
-import { ThreadPullRequestsPanel } from "../pullRequest/ThreadPullRequestsPanel";
 
 const PreviewPanel = lazy(() =>
   import("../preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
 );
-const DiffPanel = lazy(() => import("../DiffPanel"));
 const DevicePanel = lazy(() =>
   import("../device/DevicePanel").then((module) => ({ default: module.DevicePanel })),
 );
@@ -38,16 +28,6 @@ type RightPanelTerminalProps = Omit<
   PersistentThreadTerminalPanelProps,
   "visible" | "threadRef" | "surface"
 >;
-
-interface RightPanelPullRequestProps {
-  readonly capabilityKnown: boolean;
-  readonly supported: boolean;
-  readonly projectId: ProjectId | null;
-  readonly pullRequests: ReadonlyArray<ThreadPullRequestLink>;
-  readonly linkedPullRequest: ThreadLinkedPullRequest | null;
-  readonly branchPullRequest: ThreadLinkedPullRequest | null | undefined;
-  readonly onBack: (() => void) | undefined;
-}
 
 interface RightPanelFileProps {
   readonly projectName: string | null;
@@ -75,7 +55,6 @@ export function RightPanelSurfaceContent(props: {
   ) => void;
   readonly onCloseSurface: (surface: RightPanelSurface) => void;
   readonly terminal: RightPanelTerminalProps;
-  readonly pullRequest: RightPanelPullRequestProps;
   readonly files: RightPanelFileProps;
   readonly sideChatParentPanel: SideChatParentPanel;
 }) {
@@ -104,70 +83,11 @@ export function RightPanelSurfaceContent(props: {
           surface={surface}
         />
       );
+    // Pocks has no code review; a tab restored from older state shows nothing.
     case "diff":
-      return (
-        <Suspense fallback={null}>
-          <DiffPanel
-            key={scopedThreadKey(threadRef)}
-            mode="embedded"
-            composerDraftTarget={props.composerDraftTarget}
-            workspaceMutationId={props.workspaceMutationId}
-            visible={visible}
-          />
-        </Suspense>
-      );
-    case "pull-request": {
-      const pullRequest = props.pullRequest;
-      if (!pullRequest.capabilityKnown) return <PullRequestDetailGhost />;
-      if (!pullRequest.supported) {
-        return (
-          <PullRequestsUnavailableState
-            title="Pull requests unavailable"
-            error="Update this environment's T3 Code server to browse pull requests."
-          />
-        );
-      }
-      return (
-        <PullRequestDetailPanel
-          getShortcutContext={props.getShortcutContext}
-          shortcutsEnabled={visible && props.activeSurfaceId === surface.id}
-          key={`${scopedThreadKey(threadRef)}:${surface.id}`}
-          environmentId={props.environmentId}
-          onSelectPullRequest={(reference) => {
-            useRightPanelStore.getState().openPullRequest(threadRef, {
-              projectId: reference.projectId,
-              repository: reference.repository,
-              number: reference.number,
-              ...(reference.host ? { host: reference.host } : {}),
-            });
-          }}
-          threadRef={threadRef}
-          reference={{
-            projectId: surface.projectId as ProjectId,
-            ...(surface.host ? { host: surface.host } : {}),
-            repository: surface.repository,
-            number: surface.number,
-          }}
-          initialTab={surface.detailTab ?? "summary"}
-          onTabChange={(tab) => {
-            useRightPanelStore.getState().setPullRequestDetailTab(threadRef, surface.id, tab);
-          }}
-          context={pullRequestPanelContext(
-            {
-              projectId: pullRequest.projectId,
-              pullRequests: pullRequest.pullRequests,
-              linkedPullRequest: pullRequest.linkedPullRequest,
-              branchPullRequest: pullRequest.branchPullRequest,
-            },
-            surface,
-          )}
-          composerDraftTarget={props.composerDraftTarget}
-          onBack={pullRequest.onBack}
-        />
-      );
-    }
+    case "pull-request":
     case "pull-requests":
-      return <ThreadPullRequestsPanel threadRef={threadRef} />;
+      return null;
     case "side-chat":
       // Not lazy: revealing a suspended tiptap editor tears down its view and crashes the composer.
       return (

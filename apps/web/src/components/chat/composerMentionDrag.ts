@@ -4,12 +4,10 @@ import { Option, Schema } from "effect";
 
 export const COMPOSER_MENTION_DRAG_TYPE = "application/x-t3code-composer-mention";
 
-export const COMPOSER_PULL_REQUEST_DRAG_TYPE = "application/x-t3code-pull-request";
+const COMPOSER_PULL_REQUEST_DRAG_TYPE = "application/x-t3code-pull-request";
 
 const PullRequestDragPayload = Schema.fromJsonString(PullRequestContextMetadata);
 const decodePullRequestPayload = Schema.decodeUnknownOption(PullRequestDragPayload);
-
-export const encodePullRequestDragPayload = Schema.encodeSync(PullRequestDragPayload);
 
 export function composerMentionFromTreePath(treePath: string): string | null {
   const relativePath = treePath.replace(/\/+$/, "");
