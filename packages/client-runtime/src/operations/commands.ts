@@ -62,6 +62,8 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly scripts?: ReadonlyArray<ProjectScript>;
   readonly pinned?: boolean;
   readonly archived?: boolean;
+  readonly avatar?: string | null;
+  readonly mainThreadId?: ThreadId | null;
 }
 
 export interface DeleteProjectInput extends CommandMetadata {
@@ -379,6 +381,8 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
     ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
     ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
     ...(input.archived === undefined ? {} : { archived: input.archived }),
+    ...(input.avatar === undefined ? {} : { avatar: input.avatar }),
+    ...(input.mainThreadId === undefined ? {} : { mainThreadId: input.mainThreadId }),
   });
 });
 

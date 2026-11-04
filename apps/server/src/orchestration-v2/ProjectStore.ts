@@ -4,9 +4,11 @@ import {
   ModelSelection,
   type OrchestrationProjectShell,
   StoredProjectIcon,
+  ProjectAvatar,
   ProjectId,
   ProjectScript,
   ThreadEnvMode,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -41,6 +43,8 @@ export const ProjectRow = Schema.Struct({
   scripts: Schema.Array(ProjectScript),
   pinnedAt: Schema.NullOr(IsoDateTime),
   archivedAt: Schema.NullOr(IsoDateTime),
+  avatar: Schema.NullOr(ProjectAvatar),
+  mainThreadId: Schema.NullOr(ThreadId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -69,6 +73,8 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
     scripts: row.scripts,
     pinnedAt: row.pinnedAt,
     archivedAt: row.archivedAt,
+    avatar: row.avatar,
+    mainThreadId: row.mainThreadId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -126,6 +132,8 @@ export const make = Effect.gen(function* () {
         scripts_json AS "scripts",
         pinned_at AS "pinnedAt",
         archived_at AS "archivedAt",
+        avatar,
+        main_thread_id AS "mainThreadId",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
         deleted_at AS "deletedAt"
@@ -158,6 +166,8 @@ export const make = Effect.gen(function* () {
             scripts_json,
             pinned_at,
             archived_at,
+            avatar,
+            main_thread_id,
             created_at,
             updated_at,
             deleted_at
@@ -174,6 +184,8 @@ export const make = Effect.gen(function* () {
             ${encoded.scripts},
             ${encoded.pinnedAt},
             ${encoded.archivedAt},
+            ${encoded.avatar},
+            ${encoded.mainThreadId},
             ${encoded.createdAt},
             ${encoded.updatedAt},
             ${encoded.deletedAt}
@@ -190,6 +202,8 @@ export const make = Effect.gen(function* () {
             scripts_json = excluded.scripts_json,
             pinned_at = excluded.pinned_at,
             archived_at = excluded.archived_at,
+            avatar = excluded.avatar,
+            main_thread_id = excluded.main_thread_id,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at,
             deleted_at = excluded.deleted_at
@@ -240,6 +254,8 @@ export const make = Effect.gen(function* () {
           scripts: payload.scripts,
           pinnedAt: null,
           archivedAt: null,
+          avatar: null,
+          mainThreadId: null,
           createdAt: payload.createdAt,
           updatedAt: payload.updatedAt,
           deletedAt: null,
@@ -272,6 +288,8 @@ export const make = Effect.gen(function* () {
         ...(payload.scripts === undefined ? {} : { scripts: payload.scripts }),
         ...(payload.pinnedAt === undefined ? {} : { pinnedAt: payload.pinnedAt }),
         ...(payload.archivedAt === undefined ? {} : { archivedAt: payload.archivedAt }),
+        ...(payload.avatar === undefined ? {} : { avatar: payload.avatar }),
+        ...(payload.mainThreadId === undefined ? {} : { mainThreadId: payload.mainThreadId }),
         updatedAt: payload.updatedAt,
       }).pipe(mapError("apply"));
     },

@@ -86,13 +86,19 @@ const ProjectCreateTool = Tool.make("t3_project_create", {
   success: Schema.Struct({ ...Project.fields, commitError: Schema.optional(Schema.String) }),
   dependencies: [...shared.dependencies, ManagedProjectFolders.ManagedProjectFolders],
 }).annotate(Tool.Destructive, true);
+// Bot identity is set from the clients until agents get an approval gate for it.
+const {
+  avatar: _avatar,
+  mainThreadId: _mainThreadId,
+  ...projectUpdateFields
+} = ProjectUpdatePayload.fields;
 const ProjectUpdateTool = Tool.make("t3_project_update", {
   ...shared,
   description: "Update one project's settings. Omitted fields are unchanged.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     projectId: ProjectId,
-    ...ProjectUpdatePayload.fields,
+    ...projectUpdateFields,
   }),
 }).annotate(Tool.Destructive, true);
 const ProjectDeleteTool = Tool.make("t3_project_delete", {

@@ -181,6 +181,8 @@ export const make = Effect.gen(function* () {
     scripts: row.scripts,
     pinnedAt: row.pinnedAt,
     archivedAt: row.archivedAt,
+    avatar: row.avatar,
+    mainThreadId: row.mainThreadId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -351,6 +353,9 @@ export const make = Effect.gen(function* () {
         projectId: input.projectId,
         title: input.title,
         workspaceRoot,
+        ...(input.defaultModelSelection === undefined
+          ? {}
+          : { defaultModelSelection: input.defaultModelSelection }),
         ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
       });
       yield* projectEnrichment.invalidate([workspaceRoot]);
@@ -390,6 +395,8 @@ export const make = Effect.gen(function* () {
         ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
         ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
         ...(input.archived === undefined ? {} : { archived: input.archived }),
+        ...(input.avatar === undefined ? {} : { avatar: input.avatar }),
+        ...(input.mainThreadId === undefined ? {} : { mainThreadId: input.mainThreadId }),
       });
       if (workspaceRoot !== previousRoot) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);

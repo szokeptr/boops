@@ -149,6 +149,10 @@ export const ReceivedProjectIcon = ForwardCompatibleUnion(projectIconMembers, "k
   ),
 );
 
+/** A bot's avatar id; the avatar catalog lives in the clients. */
+export const ProjectAvatar = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
+export type ProjectAvatar = typeof ProjectAvatar.Type;
+
 export const Project = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -163,6 +167,8 @@ export const Project = Schema.Struct({
   scripts: Schema.Array(ProjectScript),
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  avatar: Schema.optional(Schema.NullOr(ProjectAvatar)),
+  mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -199,6 +205,9 @@ export const ProjectUpdatePayload = Schema.Struct({
       description: "Threads and files are kept.",
     }),
   ),
+  avatar: Schema.optional(Schema.NullOr(ProjectAvatar)),
+  /** The bot's conversation. Null falls back to the project's oldest unarchived thread. */
+  mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
 });
 export type ProjectUpdatePayload = typeof ProjectUpdatePayload.Type;
 

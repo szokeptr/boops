@@ -82,6 +82,9 @@ import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "../project/ScratchThreadPromotion.ts";
+import * as Bots from "../bots/Bots.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as FileSystem from "effect/FileSystem";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
@@ -8676,3 +8679,47 @@ it.layer(layerQueueResumeDisabledInstanceTest)(
     );
   },
 );
+
+const layerBotsTest = Bots.layer.pipe(
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  Layer.provideMerge(layerProjectDeletionTest),
+);
+
+it.layer(layerBotsTest)("creating a bot", (it) => {
+  it.effect("claims a home folder with memory, a project rooted there, and its main thread", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const bots = yield* Bots.Bots;
+      const projects = yield* ProjectService.ProjectService;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
+      const create = (name: string) =>
+        bots
+          .create({ name, modelSelection })
+          .pipe(Effect.provideService(HostProcess.HomeDirectory, home));
+
+      const first = yield* create("Ada Lovelace");
+      const second = yield* create("ada  lovelace!");
+
+      const roots = [
+        path.join(home, "pocks", "ada-lovelace"),
+        path.join(home, "pocks", "ada-lovelace-2"),
+      ];
+      for (const [bot, root] of [
+        [first, roots[0]!],
+        [second, roots[1]!],
+      ] as const) {
+        assert.isTrue(yield* fileSystem.exists(path.join(root, "memory")));
+        const project = Option.getOrUndefined(yield* projects.getById(bot.projectId));
+        assert.equal(project?.workspaceRoot, root);
+        assert.deepEqual(project?.defaultModelSelection, modelSelection);
+        assert.equal(project?.mainThreadId, bot.mainThreadId);
+        assert.isNull(project?.avatar);
+        const thread = yield* orchestrator.getThreadShell(bot.mainThreadId);
+        assert.equal(thread?.projectId, bot.projectId);
+        assert.deepEqual(thread?.modelSelection, modelSelection);
+      }
+    }).pipe(Effect.scoped),
+  );
+});

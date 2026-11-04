@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { EventId, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import { EventId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -52,7 +52,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
       }),
     );
 
-    it.effect("keeps pin and archive times across later updates", () =>
+    it.effect("keeps pin, archive, and bot identity across later updates", () =>
       Effect.gen(function* () {
         const projects = yield* ProjectStore.ProjectStoreV2;
         const projectId = ProjectId.make("project-organized");
@@ -81,7 +81,14 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
           sequence: 2,
           eventId: EventId.make("event-organized-pinned"),
           type: "project.meta-updated",
-          payload: { projectId, pinnedAt: at, archivedAt: at, updatedAt: at },
+          payload: {
+            projectId,
+            pinnedAt: at,
+            archivedAt: at,
+            avatar: "pixel-fox",
+            mainThreadId: ThreadId.make("thread-main"),
+            updatedAt: at,
+          },
         });
         yield* projects.apply({
           ...event,
@@ -94,6 +101,10 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
         const project = Option.getOrNull(yield* projects.get(projectId));
         assert.strictEqual(project?.pinnedAt, at);
         assert.strictEqual(project?.archivedAt, at);
+        assert.strictEqual(project?.avatar, "pixel-fox");
+        assert.strictEqual(project?.mainThreadId, "thread-main");
+        const shell = Option.getOrNull(yield* projects.getShell(projectId));
+        assert.strictEqual(shell?.mainThreadId, "thread-main");
       }),
     );
   },

@@ -1,5 +1,12 @@
 import { assert, describe, it } from "@effect/vitest";
-import { CommandId, EventId, ProjectId, type ProjectScript } from "@t3tools/contracts";
+import {
+  CommandId,
+  EventId,
+  ProjectId,
+  type ProjectScript,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Result from "effect/Result";
 
@@ -25,6 +32,8 @@ const row = (overrides: Partial<ProjectRow> = {}): ProjectRow => ({
   scripts: [],
   pinnedAt: null,
   archivedAt: null,
+  avatar: null,
+  mainThreadId: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
   deletedAt: null,
@@ -109,6 +118,44 @@ describe("planProjectCommand", () => {
     const untouched = update(organized, {});
     assert.notProperty(untouched, "pinnedAt");
     assert.notProperty(untouched, "archivedAt");
+  });
+
+  it("creates with a default model and sets, keeps, or clears bot identity", () => {
+    const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" };
+    const created = payloadOf(
+      plan({
+        type: "project.create",
+        commandId: CommandId.make("cmd-create-bot"),
+        projectId,
+        title: "Bot",
+        workspaceRoot: "/tmp/bot",
+        defaultModelSelection: modelSelection,
+      }),
+    );
+    assert.deepEqual(created.defaultModelSelection, modelSelection);
+    const update = (change: { avatar?: string | null; mainThreadId?: ThreadId | null }) =>
+      payloadOf(
+        plan(
+          {
+            type: "project.meta.update",
+            commandId: CommandId.make("cmd-bot-identity"),
+            projectId,
+            ...change,
+          },
+          { project: row({ avatar: "pixel-fox", mainThreadId: ThreadId.make("thread-main") }) },
+        ),
+      );
+    assert.deepInclude(update({ avatar: "pixel-owl", mainThreadId: ThreadId.make("thread-new") }), {
+      avatar: "pixel-owl",
+      mainThreadId: "thread-new",
+    });
+    assert.deepInclude(update({ avatar: null, mainThreadId: null }), {
+      avatar: null,
+      mainThreadId: null,
+    });
+    const untouched = update({});
+    assert.notProperty(untouched, "avatar");
+    assert.notProperty(untouched, "mainThreadId");
   });
 
   it("rejects a workspace root held by another active project", () => {

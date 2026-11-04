@@ -257,6 +257,8 @@ function makeHarness(options: HarnessOptions = {}) {
               scripts: project.scripts,
               pinnedAt: null,
               archivedAt: null,
+              avatar: null,
+              mainThreadId: null,
               createdAt: project.createdAt,
               updatedAt: project.updatedAt,
               deletedAt: project.deletedAt,

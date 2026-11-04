@@ -8,6 +8,7 @@ import {
   type ProjectScript,
   SCRIPT_RUN_COMMAND_PATTERN,
   type ThreadEnvMode,
+  type ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Result from "effect/Result";
@@ -22,6 +23,7 @@ export interface ProjectCreateCommand {
   readonly projectId: ProjectId;
   readonly title: string;
   readonly workspaceRoot: string;
+  readonly defaultModelSelection?: ModelSelection | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
 }
 
@@ -39,6 +41,8 @@ export interface ProjectMetaUpdateCommand {
   readonly scripts?: ReadonlyArray<ProjectScript>;
   readonly pinned?: boolean;
   readonly archived?: boolean;
+  readonly avatar?: string | null;
+  readonly mainThreadId?: ThreadId | null;
 }
 
 export interface ProjectDeleteCommand {
@@ -159,7 +163,7 @@ export function planProjectCommand(input: {
           projectId: command.projectId,
           title: command.title,
           workspaceRoot: command.workspaceRoot,
-          defaultModelSelection: null,
+          defaultModelSelection: command.defaultModelSelection ?? null,
           faviconPath: null,
           projectIcon: null,
           scripts: command.scripts ?? [],
@@ -217,6 +221,8 @@ export function planProjectCommand(input: {
           ...(command.archived === undefined
             ? {}
             : { archivedAt: command.archived ? (project.archivedAt ?? occurredAt) : null }),
+          ...(command.avatar === undefined ? {} : { avatar: command.avatar }),
+          ...(command.mainThreadId === undefined ? {} : { mainThreadId: command.mainThreadId }),
           updatedAt: occurredAt,
         },
       });
