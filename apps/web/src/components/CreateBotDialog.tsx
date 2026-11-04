@@ -12,6 +12,8 @@ import {
   type ProviderInstanceId,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
+import type { ProjectAvatar } from "@t3tools/contracts";
+import { specFor } from "@t3tools/shared/botAvatar";
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { create } from "zustand";
@@ -19,13 +21,14 @@ import { create } from "zustand";
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
 import { providerInstanceEntriesFor } from "../providerInstances";
-import { waitForThreadShell } from "../state/entities";
+import { useProjects, waitForThreadShell } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { projectEnvironment } from "../state/projects";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../state/server";
 import { useEnvironmentsWithScope } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
 import { buildThreadRouteParams } from "../threadRoutes";
+import { BotAvatarPicker } from "./bots/BotAvatarPicker";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProviderModelPicker } from "./chat/ProviderModelPicker";
 import { scheduledTaskDefaultModel } from "./settings/scheduledTasksSettings.logic";
@@ -168,6 +171,11 @@ function CreateBotForm({
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Null until the user rerolls or overrides; the server then picks a look siblings don't use.
+  const [avatar, setAvatar] = useState<ProjectAvatar | null>(null);
+  const siblings = useProjects()
+    .filter((project) => project.environmentId === environmentId && !project.isScratch)
+    .map((project) => project.avatar ?? specFor(project.title));
 
   const submit = async () => {
     const trimmed = name.trim();
@@ -176,7 +184,7 @@ function CreateBotForm({
     setError(null);
     const result = await createBot({
       environmentId,
-      input: { name: trimmed, modelSelection },
+      input: { name: trimmed, modelSelection, ...(avatar === null ? {} : { avatar }) },
     });
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
@@ -208,7 +216,12 @@ function CreateBotForm({
         </DialogDescription>
       </DialogHeader>
       <DialogPanel>
-        {/* BotAvatarPicker slot: avatar preview and reroll go here once avatars land. */}
+        <BotAvatarPicker
+          name={name.trim() || "New bot"}
+          value={avatar}
+          siblings={siblings}
+          onChange={setAvatar}
+        />
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={`${id}-name`}>Name</Label>
           <Input

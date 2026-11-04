@@ -6,7 +6,8 @@ import { PlusIcon } from "lucide-react";
 import { useEffect, type ComponentProps, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
-import { isCommandPaletteOpen, openCommandPalette } from "../../commandPaletteBus";
+import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { openCreateBotDialog } from "../CreateBotDialog";
 import { isElectron } from "../../env";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useBotRows } from "../../hooks/useBotRows";
@@ -33,11 +34,6 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChro
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { BotList } from "./BotList";
-
-/** Opens the add-project flow until bots get their own creation form. */
-export function openAddBot() {
-  openCommandPalette({ open: "add-project" });
-}
 
 /** The bot whose main thread, background thread, or activity page the route shows. */
 function useActiveBotKey(): string | null {
@@ -166,7 +162,7 @@ export function BotListPanel({ onNavigate }: { readonly onNavigate?: () => void 
 
 function AddBotButton() {
   return (
-    <Button size="sm" variant="outline" onClick={openAddBot}>
+    <Button size="sm" variant="outline" onClick={openCreateBotDialog}>
       <PlusIcon className="size-4" />
       Add bot
     </Button>
@@ -186,7 +182,7 @@ export default function BotSidebar() {
               <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-muted-foreground">
                 Bots
               </h2>
-              <SidebarHeaderIconButton label="Add bot" onClick={openAddBot}>
+              <SidebarHeaderIconButton label="Add bot" onClick={openCreateBotDialog}>
                 <PlusIcon />
               </SidebarHeaderIconButton>
             </div>

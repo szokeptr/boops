@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PlusIcon } from "lucide-react";
 
-import { BotListPanel, openAddBot } from "../components/bots/BotSidebar";
+import { BotListPanel } from "../components/bots/BotSidebar";
+import { openCreateBotDialog } from "../components/CreateBotDialog";
 import { HostedEmptyState } from "../components/HostedEmptyState";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
@@ -56,7 +57,7 @@ function BotHome() {
             </EmptyDescription>
             {hasBots ? null : (
               <div className="mt-5 flex justify-center">
-                <Button size="sm" onClick={openAddBot}>
+                <Button size="sm" onClick={openCreateBotDialog}>
                   <PlusIcon className="size-4" />
                   Add bot
                 </Button>
