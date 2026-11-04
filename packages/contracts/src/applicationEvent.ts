@@ -15,6 +15,7 @@ import {
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import type { OrchestrationV2StoredEvent } from "./orchestrationV2.ts";
+import { BotAutonomy } from "./bot.ts";
 import { ProjectAvatar, ProjectScript, StoredProjectIcon } from "./project.ts";
 
 export const OrchestrationClientOrigin = Schema.Struct({
@@ -65,6 +66,7 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   avatar: Schema.optional(Schema.NullOr(ProjectAvatar)),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  autonomy: Schema.optional(BotAutonomy),
   updatedAt: IsoDateTime,
 });
 export type ApplicationProjectMetaUpdatedPayload = typeof ApplicationProjectMetaUpdatedPayload.Type;

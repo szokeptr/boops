@@ -1,11 +1,12 @@
 import { assert, it } from "@effect/vitest";
 import {
+  type BotAutonomy,
   type ManagedPolicySummary,
   type ModelSelection,
   type OrchestrationV2AppThread,
   ProjectId,
   ProviderInstanceId,
-  type RuntimeMode,
+  RuntimeMode,
   type ServerProvider,
   ThreadId,
 } from "@t3tools/contracts";
@@ -78,7 +79,7 @@ const providerInstanceFor = (instanceId: ProviderInstanceId) =>
     },
   }) as ProviderInstance;
 
-const layerWithPolicy = (policy?: ManagedPolicySummary) =>
+const layerWithPolicy = (policy?: ManagedPolicySummary, autonomy: BotAutonomy = "full") =>
   RuntimePolicy.layerFromProjectStore.pipe(
     Layer.provide(ServerSettings.layerTest({}, policy)),
     Layer.provide(
@@ -107,6 +108,7 @@ const layerWithPolicy = (policy?: ManagedPolicySummary) =>
             archivedAt: null,
             avatar: null,
             mainThreadId: null,
+            autonomy,
             createdAt: "2026-06-21T00:00:00.000Z",
             updatedAt: "2026-06-21T00:00:00.000Z",
             deletedAt: null,
@@ -189,3 +191,66 @@ it.layer(
     }),
   );
 });
+
+it.layer(layerWithPolicy(undefined, "home-folder"))(
+  "RuntimePolicyV2 for a home-folder bot",
+  (it) => {
+    it.effect("confines autonomous modes and leaves supervised ones asking", () =>
+      Effect.gen(function* () {
+        const policy = yield* RuntimePolicy.RuntimePolicyV2;
+        const now = yield* DateTime.now;
+        const resolve = (runtimeMode: RuntimeMode) =>
+          policy.resolve({
+            thread: makeThread({ now, worktreePath: null, runtimeMode }),
+            modelSelection,
+          });
+        const confined = {
+          approvalPolicy: "never",
+          sandboxPolicy: RuntimePolicy.HOME_FOLDER_SANDBOX_POLICY,
+        };
+        assert.deepInclude(yield* resolve("full-access"), {
+          runtimeMode: "full-access",
+          cwd: "/project-root",
+          ...confined,
+        });
+        assert.deepInclude(yield* resolve("auto"), { runtimeMode: "auto", ...confined });
+        const editing = yield* resolve("auto-accept-edits");
+        assert.deepEqual(editing.sandboxPolicy, RuntimePolicy.HOME_FOLDER_SANDBOX_POLICY);
+        assert.isUndefined(editing.approvalPolicy);
+        const supervised = yield* resolve("approval-required");
+        assert.isUndefined(supervised.sandboxPolicy);
+        assert.isUndefined(supervised.approvalPolicy);
+      }),
+    );
+
+    it.effect("never lets a thread's mode exceed the bot's setting", () =>
+      Effect.gen(function* () {
+        const policy = yield* RuntimePolicy.RuntimePolicyV2;
+        const now = yield* DateTime.now;
+        const command = {
+          sessionId: "session-1",
+          toolCall: { toolCallId: "command-1", title: "Run command", kind: "execute" as const },
+          options: [{ optionId: "allow", name: "Allow", kind: "allow_once" as const }],
+        };
+        const outside = {
+          ...command,
+          toolCall: {
+            toolCallId: "edit-1",
+            title: "Edit",
+            kind: "edit" as const,
+            locations: [{ path: "/etc/hosts" }],
+          },
+        };
+        for (const runtimeMode of RuntimeMode.literals) {
+          const resolved = yield* policy.resolve({
+            thread: makeThread({ now, worktreePath: null, runtimeMode }),
+            modelSelection,
+          });
+          // An agent without its own sandbox never runs an unchecked command or writes outside.
+          assert.notEqual(acpPermissionDisposition(resolved, command), "allow", runtimeMode);
+          assert.notEqual(acpPermissionDisposition(resolved, outside), "allow", runtimeMode);
+        }
+      }),
+    );
+  },
+);

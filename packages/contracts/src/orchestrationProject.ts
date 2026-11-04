@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import { IsoDateTime, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
+import { BotAutonomy } from "./bot.ts";
 import { ProjectAvatar, ProjectScript, ReceivedProjectIcon } from "./project.ts";
 
 export const OrchestrationProjectShell = Schema.Struct({
@@ -23,6 +24,7 @@ export const OrchestrationProjectShell = Schema.Struct({
   // Bot identity; see botMainThreadId for the main-thread fallback.
   avatar: Schema.optional(Schema.NullOr(ProjectAvatar)),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  autonomy: Schema.optional(BotAutonomy),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

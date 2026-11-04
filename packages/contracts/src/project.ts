@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
+import { BotAutonomy } from "./bot.ts";
 import {
   CommandId,
   ForwardCompatibleUnion,
@@ -169,6 +170,7 @@ export const Project = Schema.Struct({
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   avatar: Schema.optional(Schema.NullOr(ProjectAvatar)),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  autonomy: Schema.optional(BotAutonomy),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -208,6 +210,12 @@ export const ProjectUpdatePayload = Schema.Struct({
   avatar: Schema.optional(Schema.NullOr(ProjectAvatar)),
   /** The bot's conversation. Null falls back to the project's oldest unarchived thread. */
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  autonomy: Schema.optional(
+    Schema.NullOr(BotAutonomy).annotate({
+      description:
+        "full: the bot acts as you anywhere on this machine. home-folder: writes and commands stay in its home folder. Null resets to full. Takes effect at the bot's next session start.",
+    }),
+  ),
 });
 export type ProjectUpdatePayload = typeof ProjectUpdatePayload.Type;
 

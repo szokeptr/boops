@@ -87,6 +87,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
             archivedAt: at,
             avatar: "pixel-fox",
             mainThreadId: ThreadId.make("thread-main"),
+            autonomy: "home-folder",
             updatedAt: at,
           },
         });
@@ -105,6 +106,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
         assert.strictEqual(project?.mainThreadId, "thread-main");
         const shell = Option.getOrNull(yield* projects.getShell(projectId));
         assert.strictEqual(shell?.mainThreadId, "thread-main");
+        assert.strictEqual(shell?.autonomy, "home-folder");
       }),
     );
   },

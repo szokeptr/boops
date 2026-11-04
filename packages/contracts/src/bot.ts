@@ -16,6 +16,14 @@ export const BotCreateResult = Schema.Struct({
 });
 export type BotCreateResult = typeof BotCreateResult.Type;
 
+/**
+ * How far a bot reaches on its machine. `full` acts as the user anywhere; `home-folder` keeps
+ * writes and commands inside the bot's home folder. Applies from the bot's next session.
+ */
+export const BotAutonomy = Schema.Literals(["full", "home-folder"]);
+export type BotAutonomy = typeof BotAutonomy.Type;
+export const DEFAULT_BOT_AUTONOMY: BotAutonomy = "full";
+
 type Timestamp = string | DateTime.DateTime;
 
 const epochMillis = (at: Timestamp) =>

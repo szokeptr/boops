@@ -475,7 +475,11 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         environment: options.environment,
         mcpSession,
         extensionPath,
-        runtimeMode: input.runtimePolicy.runtimeMode,
+        // Pi has no workspace sandbox, so a confined policy asks before every write or command.
+        runtimeMode:
+          input.runtimePolicy.sandboxPolicy === undefined
+            ? input.runtimePolicy.runtimeMode
+            : "approval-required",
       });
       const scopedLaunch = yield* agentScope.wrap({
         command: options.settings.binaryPath || "pi",

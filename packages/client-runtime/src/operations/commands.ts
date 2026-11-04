@@ -383,6 +383,7 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
     ...(input.archived === undefined ? {} : { archived: input.archived }),
     ...(input.avatar === undefined ? {} : { avatar: input.avatar }),
     ...(input.mainThreadId === undefined ? {} : { mainThreadId: input.mainThreadId }),
+    ...(input.autonomy === undefined ? {} : { autonomy: input.autonomy }),
   });
 });
 

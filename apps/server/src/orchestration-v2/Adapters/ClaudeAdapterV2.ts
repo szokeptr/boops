@@ -1767,6 +1767,7 @@ export function makeClaudeQueryOptions(input: {
   readonly onElicitation?: ClaudeQueryOptions["onElicitation"];
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
   readonly allowDangerouslySkipPermissions?: boolean;
+  readonly confineToCwd?: boolean;
   readonly appendSystemPromptFileText?: string;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
@@ -1825,6 +1826,17 @@ export function makeClaudeQueryOptions(input: {
           ...compactQuerySettings,
           env: { ...compactQuerySettings?.env, ENABLE_TOOL_SEARCH: input.toolSearchOverride },
         } as ClaudeSdkSettings);
+  // A settings file path cannot take the key; the SDK then refuses `sandbox`, so it fails closed.
+  const confinedQuerySettings =
+    input.confineToCwd !== true || typeof effectiveQuerySettings === "string"
+      ? effectiveQuerySettings
+      : ({
+          ...effectiveQuerySettings,
+          permissions: {
+            ...effectiveQuerySettings?.permissions,
+            blockWritesOutsideWorkingDirectories: true,
+          },
+        } as ClaudeSdkSettings);
   const deviceInstructions = input.mcpServers !== undefined && input.deviceToolsAvailable === true;
   const options: ClaudeAgentSdkQueryOptions = {
     model: compiledSelection.apiModelId,
@@ -1854,16 +1866,26 @@ export function makeClaudeQueryOptions(input: {
       ? {
           thinking: { type: "adaptive" as const, display: "summarized" as const },
           settings:
-            typeof effectiveQuerySettings === "string"
-              ? effectiveQuerySettings
+            typeof confinedQuerySettings === "string"
+              ? confinedQuerySettings
               : {
-                  ...effectiveQuerySettings,
+                  ...confinedQuerySettings,
                   showThinkingSummaries: true,
                 },
         }
-      : effectiveQuerySettings === undefined
+      : confinedQuerySettings === undefined
         ? {}
-        : { settings: effectiveQuerySettings }),
+        : { settings: confinedQuerySettings }),
+    // File tools are held by blockWritesOutsideWorkingDirectories, shell commands by the OS sandbox.
+    ...(input.confineToCwd === true
+      ? {
+          sandbox: {
+            enabled: true,
+            autoAllowBashIfSandboxed: true,
+            allowUnsandboxedCommands: false,
+          },
+        }
+      : {}),
     ...(input.onUserDialog === undefined ? {} : { onUserDialog: input.onUserDialog }),
     ...(input.onElicitation === undefined ? {} : { onElicitation: input.onElicitation }),
     ...(input.supportedDialogKinds === undefined
@@ -2847,6 +2869,8 @@ export interface ClaudeRuntimeQueryPolicy {
   readonly allowedTools?: ReadonlyArray<string>;
   readonly allowDangerouslySkipPermissions?: true;
   readonly installPermissionCallback: boolean;
+  /** Keep writes and commands inside the working directories (a home-folder bot). */
+  readonly confineToCwd?: true;
 }
 
 interface ClaudeBypassAvailability {
@@ -2870,10 +2894,9 @@ export function claudeRuntimeQueryPolicyForRuntimePolicy(
       ? "default"
       : "auto"
     : requestedMode;
-  const readOnlyTools =
-    sandboxPolicyKindForClaudeRuntimePolicy(runtimePolicy) === "readOnly"
-      ? CLAUDE_READ_ONLY_ALLOWED_TOOLS
-      : undefined;
+  const sandboxKind = sandboxPolicyKindForClaudeRuntimePolicy(runtimePolicy);
+  const readOnlyTools = sandboxKind === "readOnly" ? CLAUDE_READ_ONLY_ALLOWED_TOOLS : undefined;
+  const confine = sandboxKind === "workspaceWrite" ? ({ confineToCwd: true } as const) : {};
   const allowedTools =
     readOnlyTools !== undefined && readOnlyPolicyAllowsGlobalReads(runtimePolicy)
       ? readOnlyTools
@@ -2893,6 +2916,7 @@ export function claudeRuntimeQueryPolicyForRuntimePolicy(
       ...(allowedTools === undefined ? {} : { allowedTools }),
       // Claude routes Plan-mode writes to the callback even in Auto or Full access.
       installPermissionCallback: true,
+      ...confine,
     };
   }
 
@@ -2902,6 +2926,7 @@ export function claudeRuntimeQueryPolicyForRuntimePolicy(
     ...(allowedTools === undefined ? {} : { allowedTools }),
     ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
     installPermissionCallback,
+    ...confine,
   };
 }
 
@@ -3001,6 +3026,7 @@ function claudeRuntimeQueryPolicyKey(policy: ClaudeRuntimeQueryPolicy): string {
     allowedTools: policy.allowedTools,
     allowDangerouslySkipPermissions: policy.allowDangerouslySkipPermissions,
     installPermissionCallback: policy.installPermissionCallback,
+    confineToCwd: policy.confineToCwd,
   });
 }
 
@@ -10875,6 +10901,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : {
                   allowDangerouslySkipPermissions: queryPolicy.allowDangerouslySkipPermissions,
                 }),
+            ...(queryPolicy.confineToCwd === undefined ? {} : { confineToCwd: true }),
             canUseTool,
             onUserDialog,
             onElicitation,
