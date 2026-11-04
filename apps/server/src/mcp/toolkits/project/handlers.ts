@@ -17,8 +17,7 @@ import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageInt
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
 import { assertBotsMayTalk } from "../../../bots/botFamily.ts";
 import * as Project from "../../../project/ProjectService.ts";
-import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
-import { mutateProjectWithClone } from "../../../project/ProjectMutation.ts";
+import * as Bots from "../../../bots/Bots.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
@@ -30,6 +29,7 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
+import { approveBotArchive } from "../../userActionRequest.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
 
@@ -45,6 +45,33 @@ function projectFailure(error: Project.ProjectServiceError) {
         : "The project is not empty; force=true is required to delete it.";
   return new OrchestratorMcpFailure({ code: "invalid_request", message });
 }
+
+function botFailure(
+  error:
+    | Bots.BotNotFoundError
+    | Bots.BotLifecycleError
+    | Bots.BotFolderNotRemovableError
+    | Bots.BotHomeFolderError,
+) {
+  return error._tag === "BotLifecycleError"
+    ? unavailable()
+    : new OrchestratorMcpFailure({ code: "invalid_request", message: error.message });
+}
+
+// Hidden from threads too; this refuses a bot that calls the tool by name anyway.
+const refuseThreadCaller = (operation: string) =>
+  McpInvocationContext.McpInvocationContext.pipe(
+    Effect.flatMap((scope) =>
+      scope.thread === undefined
+        ? Effect.void
+        : Effect.fail(
+            new OrchestratorMcpFailure({
+              code: "capability_denied",
+              message: `${operation} is the user's call, in Pocks Settings. Suggest archiving with t3_bot_archive instead.`,
+            }),
+          ),
+    ),
+  );
 
 /** Require project worktrees so launches cannot target arbitrary host directories. */
 const assertProjectWorktree = Effect.fn("mcp.assertProjectWorktree")(function* (
@@ -368,15 +395,67 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         .pipe(Effect.mapError(projectFailure));
     }),
   ),
-  t3_project_delete: McpToolAccess.writesEnvironment((input) =>
+  t3_bot_archive: McpToolAccess.writesEnvironment((input, check) =>
     Effect.gen(function* () {
-      const projects = yield* Project.ProjectService;
-      const clones = yield* ProjectCloneTracker.ProjectCloneTracker;
-      return yield* mutateProjectWithClone(projects, clones, {
-        ...input,
-        type: "project.delete",
-        commandId: yield* newCommandId(),
-      }).pipe(Effect.mapError(projectFailure));
+      const bots = yield* Bots.Bots;
+      const { caller } = yield* check;
+      const projectId = input.projectId ?? caller?.projectId;
+      if (projectId === undefined)
+        return yield* new OrchestratorMcpFailure({
+          code: "target_required",
+          message: "Pass projectId: this MCP client is not running inside a T3 thread.",
+        });
+      const bot = yield* Project.ProjectService.pipe(
+        Effect.flatMap((projects) => projects.getById(projectId)),
+        Effect.mapError(unavailable),
+        Effect.map(Option.getOrUndefined),
+      );
+      if (bot === undefined)
+        return yield* new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message: "The bot was not found.",
+        });
+      // A bot asks, through a card the user answers; an outside client acts as the user.
+      if (caller !== undefined) {
+        const own =
+          projectId === caller.projectId ||
+          (yield* bots.childrenOf(caller.projectId).pipe(Effect.mapError(unavailable))).some(
+            (child) => child.id === projectId,
+          );
+        if (!own)
+          return yield* new OrchestratorMcpFailure({
+            code: "capability_denied",
+            message: "You can suggest archiving only yourself or a bot you created.",
+          });
+        const approved = yield* approveBotArchive({
+          name: bot.title,
+          reason: input.reason,
+          includeChildren: input.includeChildren === true,
+        });
+        if (!approved) return { status: "declined" as const, projectIds: [] };
+        // The card can wait a long time; recheck the caller before writing.
+        yield* check;
+      }
+      const archived = yield* bots
+        .archive({ projectId, ...(input.includeChildren ? { includeChildren: true } : {}) })
+        .pipe(Effect.mapError(botFailure));
+      return { status: "archived" as const, ...archived };
+    }),
+  ),
+  t3_bot_unarchive: McpToolAccess.writesEnvironment((input) =>
+    Effect.gen(function* () {
+      yield* refuseThreadCaller("Unarchiving a bot");
+      const bots = yield* Bots.Bots;
+      yield* bots.unarchive(input).pipe(Effect.mapError(botFailure));
+      return { projectId: input.projectId };
+    }),
+  ),
+  t3_bot_delete: McpToolAccess.writesEnvironment((input) =>
+    Effect.gen(function* () {
+      yield* refuseThreadCaller("Deleting a bot");
+      const bots = yield* Bots.Bots;
+      yield* bots.delete(input).pipe(Effect.mapError(botFailure));
+      return { projectId: input.projectId };
     }),
   ),
   t3_project_clone: McpToolAccess.writesEnvironment(
