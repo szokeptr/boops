@@ -21,6 +21,7 @@ import {
   ThreadId,
   TurnItemId,
   ProviderDriverKind,
+  SESSION_ROLLOVER_SAVE_NOTES_TEXT,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -3495,5 +3496,304 @@ describe("orchestration v2 provider switching", () => {
   it.live(
     "reissues imported v1 context when a queued provider starts after the first provider fails",
     () => importedFailureScenario(true),
+  );
+});
+
+const waitForThread = Effect.fn("SessionRolloverTest.waitForThread")(function* (
+  targetThreadId: ThreadId,
+  done: (projection: OrchestrationV2ThreadProjection) => boolean,
+) {
+  const orchestrator = yield* Orchestrator.OrchestratorV2;
+  const eventSink = yield* EventSink.EventSinkV2;
+  const afterSequence = yield* eventSink.latestSequence();
+  const current = yield* orchestrator.getThreadProjection(targetThreadId);
+  if (done(current)) return current;
+  const [match] = yield* eventSink.stream({ afterSequence }).pipe(
+    Stream.mapEffect(() => orchestrator.getThreadProjection(targetThreadId)),
+    Stream.filter(done),
+    Stream.take(1),
+    Stream.runCollect,
+  );
+  if (match === undefined) return yield* Effect.die(new Error("Event stream ended early"));
+  return match;
+});
+
+const rolledOver = (count: number) => (projection: OrchestrationV2ThreadProjection) =>
+  projection.turnItems.filter((item) => item.type === "session_rollover").length >= count &&
+  projection.runs.every(
+    (run) => !["queued", "starting", "running", "waiting"].includes(run.status),
+  );
+
+describe("orchestration v2 session rollover", () => {
+  const rolloverHarness = Effect.fn("SessionRolloverTest.harness")(function* (key: string) {
+    const cwd = yield* checkpointWorkspace(`session-rollover-${key}`);
+    const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+    const injectedHistory = yield* Ref.make<ReadonlyArray<unknown>>([]);
+    const generation = yield* Ref.make(0);
+    const holdFirstTurn = yield* Deferred.make<void>();
+    const releaseFirstTurn = yield* Deferred.make<void>();
+    const scenarioThreadId = ThreadId.make(`thread:session-rollover:${key}`);
+    const registry = ProviderAdapterRegistry.layerFromAdapters([
+      makeTestAdapter({
+        instanceId: CODEX_MODEL_SELECTION.instanceId,
+        driver: CODEX_DRIVER,
+        capabilities: CodexProviderCapabilitiesV2,
+        modelSelection: CODEX_MODEL_SELECTION,
+        responseByRunOrdinal: {},
+        capturedTurns,
+        injectedHistory,
+        nativeThreadGeneration: generation,
+        holdFirstTurn,
+        releaseFirstTurn,
+      }),
+      makeTestAdapter({
+        instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+        driver: CLAUDE_DRIVER,
+        capabilities: ClaudeProviderCapabilitiesV2,
+        modelSelection: CLAUDE_MODEL_SELECTION,
+        responseByRunOrdinal: {},
+        capturedTurns,
+        injectedHistory,
+      }),
+    ]);
+    const layer = ProviderReplayHarness.layerWithRegistry(
+      {
+        name: `session-rollover-${key}`,
+        runtimePolicyOverride: {
+          cwd,
+          approvalPolicy: "never",
+          sandboxPolicy: {
+            type: "readOnly",
+            access: { type: "fullAccess" },
+            networkAccess: false,
+          },
+        },
+      },
+      registry,
+    );
+    const send = (text: string, mode: "start_immediately" | "queue_after_active") =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`command:session-rollover:${key}:${text}`),
+          threadId: scenarioThreadId,
+          messageId: MessageId.make(`message:session-rollover:${key}:${text}`),
+          text,
+          attachments: [],
+          dispatchMode: { type: mode },
+        });
+      });
+    const create = Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make(`command:session-rollover:${key}:create`),
+        threadId: scenarioThreadId,
+        projectId: ProjectId.make(`project:session-rollover:${key}`),
+        title: "Bot",
+        modelSelection: CODEX_MODEL_SELECTION,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: cwd,
+      });
+    });
+    const rollover = (
+      reason: "user" | "agent" | "model_switch",
+      suffix: string,
+      modelSelection?: ModelSelection,
+    ) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        yield* orchestrator.dispatch({
+          type: "thread.session.rollover",
+          commandId: CommandId.make(`command:session-rollover:${key}:rollover:${suffix}`),
+          threadId: scenarioThreadId,
+          reason,
+          ...(modelSelection === undefined ? {} : { modelSelection }),
+        });
+      });
+    return {
+      threadId: scenarioThreadId,
+      capturedTurns,
+      injectedHistory,
+      holdFirstTurn,
+      releaseFirstTurn,
+      layer,
+      send,
+      create,
+      rollover,
+    };
+  });
+
+  it.live("saves notes in the old session, then starts a fresh one and keeps the history", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* rolloverHarness("fresh");
+        const projection = yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          yield* harness.create;
+          yield* Deferred.succeed(harness.releaseFirstTurn, undefined);
+          yield* harness.send("first", "start_immediately");
+          yield* waitForIdle(harness.threadId);
+          yield* harness.rollover("user", "1");
+          const afterSave = yield* waitForThread(harness.threadId, rolledOver(1));
+          assert.isNull(afterSave.thread.activeProviderThreadId);
+          // A repeated request after the rollover landed starts nothing: there is no session.
+          yield* harness.rollover("user", "again");
+          assert.lengthOf((yield* orchestrator.getThreadProjection(harness.threadId)).runs, 2);
+          yield* harness.send("second", "start_immediately");
+          return yield* waitForIdle(harness.threadId);
+        }).pipe(Effect.provide(harness.layer));
+
+        const turns = yield* Ref.get(harness.capturedTurns);
+        assert.deepEqual(
+          turns.map((turn) => turn.text),
+          ["first", SESSION_ROLLOVER_SAVE_NOTES_TEXT, "second"],
+        );
+        assert.equal(turns[1]?.providerThreadId, turns[0]?.providerThreadId);
+        assert.notEqual(turns[2]?.providerThreadId, turns[0]?.providerThreadId);
+        assert.notEqual(turns[2]?.nativeThreadId, turns[0]?.nativeThreadId);
+        assert.deepEqual(yield* Ref.get(harness.injectedHistory), []);
+        assert.deepEqual(projection.thread.retiredProviderThreadIds, [turns[0]!.providerThreadId]);
+        assert.equal(projection.thread.activeProviderThreadId, turns[2]?.providerThreadId);
+        assert.deepEqual(
+          projection.messages.filter((message) => message.role === "user").map((m) => m.text),
+          ["first", SESSION_ROLLOVER_SAVE_NOTES_TEXT, "second"],
+        );
+        const saveMessage = projection.messages.find(
+          (message) => message.text === SESSION_ROLLOVER_SAVE_NOTES_TEXT,
+        );
+        assert.deepEqual(saveMessage?.sessionRollover, { reason: "user" });
+        assert.equal(saveMessage?.createdBy, "system");
+        const marker = projection.turnItems.find((item) => item.type === "session_rollover");
+        assert.equal(marker?.runId, projection.runs[1]?.id);
+        assert.equal(marker?.type === "session_rollover" ? marker.reason : null, "user");
+        assert.isNull(projection.runs[2]?.contextHandoffId);
+      }),
+    ),
+  );
+
+  it.live("switches provider through a rollover without a transcript handoff", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* rolloverHarness("switch");
+        const projection = yield* Effect.gen(function* () {
+          yield* harness.create;
+          yield* Deferred.succeed(harness.releaseFirstTurn, undefined);
+          yield* harness.send("first", "start_immediately");
+          yield* waitForIdle(harness.threadId);
+          yield* harness.rollover("model_switch", "1", CLAUDE_MODEL_SELECTION);
+          const switched = yield* waitForThread(harness.threadId, rolledOver(1));
+          assert.deepEqual(switched.thread.modelSelection, CLAUDE_MODEL_SELECTION);
+          yield* harness.send("second", "start_immediately");
+          return yield* waitForIdle(harness.threadId);
+        }).pipe(Effect.provide(harness.layer));
+
+        const turns = yield* Ref.get(harness.capturedTurns);
+        assert.deepEqual(
+          turns.map((turn) => [turn.driver, turn.text]),
+          [
+            [CODEX_DRIVER, "first"],
+            [CODEX_DRIVER, SESSION_ROLLOVER_SAVE_NOTES_TEXT],
+            [CLAUDE_DRIVER, "second"],
+          ],
+        );
+        assert.deepEqual(yield* Ref.get(harness.injectedHistory), []);
+        assert.deepEqual(projection.contextHandoffs, []);
+        assert.equal(projection.runs[2]?.providerInstanceId, CLAUDE_MODEL_SELECTION.instanceId);
+        const marker = projection.turnItems.find((item) => item.type === "session_rollover");
+        assert.deepEqual(
+          marker?.type === "session_rollover" ? marker.modelSelection : null,
+          CLAUDE_MODEL_SELECTION,
+        );
+      }),
+    ),
+  );
+
+  it.live("queues one save turn behind active work and starts queued messages fresh", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* rolloverHarness("queued");
+        const projection = yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          yield* harness.create;
+          yield* harness.send("first", "start_immediately");
+          yield* Deferred.await(harness.holdFirstTurn);
+          yield* harness.rollover("user", "1");
+          // The second request finds the first one waiting and adds nothing.
+          yield* harness.rollover("user", "2");
+          yield* harness.send("queued", "queue_after_active");
+          const queued = yield* orchestrator.getThreadProjection(harness.threadId);
+          assert.deepEqual(
+            queued.runs.map((run) => run.status),
+            ["running", "queued", "queued"],
+          );
+          yield* Deferred.succeed(harness.releaseFirstTurn, undefined);
+          return yield* waitForThread(harness.threadId, rolledOver(1));
+        }).pipe(Effect.provide(harness.layer));
+
+        const turns = yield* Ref.get(harness.capturedTurns);
+        assert.deepEqual(
+          turns.map((turn) => turn.text),
+          ["first", SESSION_ROLLOVER_SAVE_NOTES_TEXT, "queued"],
+        );
+        assert.equal(turns[1]?.providerThreadId, turns[0]?.providerThreadId);
+        assert.notEqual(turns[2]?.providerThreadId, turns[0]?.providerThreadId);
+        assert.lengthOf(
+          projection.turnItems.filter((item) => item.type === "session_rollover"),
+          1,
+        );
+      }),
+    ),
+  );
+
+  it.live("ends the agent's own turn as the last of the session when it asks", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* rolloverHarness("agent");
+        const projection = yield* Effect.gen(function* () {
+          yield* harness.create;
+          yield* harness.send("first", "start_immediately");
+          yield* Deferred.await(harness.holdFirstTurn);
+          yield* harness.rollover("agent", "1");
+          yield* Deferred.succeed(harness.releaseFirstTurn, undefined);
+          yield* waitForThread(harness.threadId, rolledOver(1));
+          yield* harness.send("second", "start_immediately");
+          return yield* waitForIdle(harness.threadId);
+        }).pipe(Effect.provide(harness.layer));
+
+        const turns = yield* Ref.get(harness.capturedTurns);
+        assert.deepEqual(
+          turns.map((turn) => turn.text),
+          ["first", "second"],
+        );
+        assert.notEqual(turns[1]?.providerThreadId, turns[0]?.providerThreadId);
+        const marker = projection.turnItems.find((item) => item.type === "session_rollover");
+        assert.equal(marker?.runId, projection.runs[0]?.id);
+      }),
+    ),
+  );
+
+  it.live("applies a switch at once when no session holds anything", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* rolloverHarness("no-session");
+        const projection = yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          yield* harness.create;
+          yield* harness.rollover("model_switch", "1", CLAUDE_MODEL_SELECTION);
+          return yield* orchestrator.getThreadProjection(harness.threadId);
+        }).pipe(Effect.provide(harness.layer));
+        assert.deepEqual(projection.thread.modelSelection, CLAUDE_MODEL_SELECTION);
+        assert.deepEqual(projection.runs, []);
+        assert.deepEqual(yield* Ref.get(harness.capturedTurns), []);
+      }),
+    ),
   );
 });

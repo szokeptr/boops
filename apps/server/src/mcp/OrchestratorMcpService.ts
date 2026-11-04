@@ -940,6 +940,8 @@ function turnItemText(item: OrchestrationV2TurnItem): string | null {
       return item.message;
     case "error":
       return item.failure.message;
+    case "session_rollover":
+      return "Started a fresh provider session.";
     case "compaction":
       return item.summary ?? null;
     case "handoff":

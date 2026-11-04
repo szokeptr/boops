@@ -456,6 +456,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
+  /** Ended by a session rollover: never resumed, handed off, or made active again. */
+  retiredProviderThreadIds: Schema.optional(Schema.Array(ProviderThreadId)),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
   linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
   delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
@@ -1303,12 +1305,37 @@ export const OrchestrationV2RoutineLabel = Schema.Struct({
 });
 export type OrchestrationV2RoutineLabel = typeof OrchestrationV2RoutineLabel.Type;
 
+/** What asked for a fresh provider session behind the same conversation. */
+export const OrchestrationV2SessionRolloverReason = Schema.Literals([
+  "context_full",
+  "idle",
+  "user",
+  "model_switch",
+  "agent",
+]);
+export type OrchestrationV2SessionRolloverReason = typeof OrchestrationV2SessionRolloverReason.Type;
+
+/**
+ * On a message: the provider session ends when its run ends, and the next turn starts a fresh one,
+ * on `modelSelection` when given.
+ */
+export const OrchestrationV2SessionRollover = Schema.Struct({
+  reason: OrchestrationV2SessionRolloverReason,
+  modelSelection: Schema.optional(ModelSelection),
+});
+export type OrchestrationV2SessionRollover = typeof OrchestrationV2SessionRollover.Type;
+
+/** The bot instructions answer this by writing down what its notes are missing. */
+export const SESSION_ROLLOVER_SAVE_NOTES_TEXT =
+  "This session will be rolled over after this turn. Write down what your notes are missing.";
+
 export const OrchestrationV2ConversationMessage = Schema.Struct({
   notification: Schema.optional(OrchestrationV2Notification),
   ...OrchestrationV2CreationFields,
   routine: Schema.optional(OrchestrationV2RoutineLabel),
   senderThreadId: Schema.optional(ThreadId),
   idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+  sessionRollover: Schema.optional(OrchestrationV2SessionRollover),
   /**
    * The message is the script a provider-native workflow run executes, not prose. Clients show
    * the workflow's opening instead and keep the script behind a disclosure.
@@ -1748,6 +1775,13 @@ export const OrchestrationV2TurnItem = Schema.Union([
     type: Schema.Literal("error"),
     failure: OrchestrationV2ProviderFailure,
     retry: Schema.optional(OrchestrationV2ProviderRetry),
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemBaseFields,
+    type: Schema.Literal("session_rollover"),
+    reason: OrchestrationV2SessionRolloverReason,
+    /** The selection the next session starts on, when the rollover switched it. */
+    modelSelection: Schema.optional(ModelSelection),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2580,6 +2614,12 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
+    type: Schema.Literal("session_rollover"),
+    reason: OrchestrationV2SessionRolloverReason,
+    modelSelection: Schema.optional(ModelSelection),
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemJsonBaseFields,
     type: Schema.Literal("compaction"),
     driver: Schema.NullOr(ProviderDriverKind),
     summary: Schema.optional(Schema.String),
@@ -3153,6 +3193,14 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     modelSelection: ModelSelection,
+  }),
+  /** Saves the bot's notes in the current session, then starts the next turn in a fresh one. */
+  Schema.Struct({
+    type: Schema.Literal("thread.session.rollover"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    reason: OrchestrationV2SessionRolloverReason,
+    modelSelection: Schema.optional(ModelSelection),
   }),
   Schema.Struct({
     type: Schema.Literal("provider-session.detach"),
