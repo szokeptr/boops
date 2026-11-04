@@ -784,7 +784,7 @@ describe("CursorAdapterV2", () => {
         );
         const sent = sentMessages.at(-1)!;
         return {
-          orchestration: sent.includes("## T3 Code orchestration"),
+          orchestration: sent.includes("## Pocks bot"),
           devices: sent.includes("## T3 Code devices"),
         };
       });

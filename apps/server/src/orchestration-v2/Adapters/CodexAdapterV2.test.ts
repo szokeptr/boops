@@ -2202,10 +2202,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           modelSelection: CODEX_TEST_MODEL_SELECTION,
           hasT3Mcp: true,
         });
-        assert.include(
-          params.additionalContext?.t3_code_orchestration_01?.value ?? "",
-          "delegate_task",
-        );
+        assert.include(params.additionalContext?.pocks_bot_01?.value ?? "", "## Pocks bot");
         const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" });
         const transcript = makeCodexReplayTranscript({
           scenario: "restore-context",

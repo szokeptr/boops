@@ -1,13 +1,28 @@
 import { assert, describe, it } from "@effect/vitest";
 
 import {
+  POCKS_BOT_INSTRUCTIONS,
   T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
   T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
-  T3_CODE_ORCHESTRATION_INSTRUCTIONS,
   t3AcpPromptWithInstructions,
   t3OrchestrationPrompt,
   t3OrchestrationSystemPrompt,
 } from "./orchestrationInstructions.ts";
+
+describe("Pocks bot instructions", () => {
+  it("name the home-folder files and routine tools the rest of Pocks relies on", () => {
+    for (const name of [
+      "`PERSONA.md`",
+      "`memory/INDEX.md`",
+      "`schedule_task`",
+      "`delete_scheduled_task`",
+      "`bindToCurrentThread`",
+      "`request_secret`",
+    ]) {
+      assert.include(POCKS_BOT_INSTRUCTIONS, name);
+    }
+  });
+});
 
 describe("T3 device instructions", () => {
   it("route device work through device_open and give Claude the line that loads the tools", () => {
@@ -64,7 +79,7 @@ describe("T3 device instructions", () => {
         deviceInstructionsDelivered,
       });
     assert.include(laterRun(false), T3_CODE_DEVICE_TOOL_INSTRUCTIONS);
-    assert.notInclude(laterRun(false), T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim());
+    assert.notInclude(laterRun(false), POCKS_BOT_INSTRUCTIONS.trim());
     assert.equal(laterRun(true), "Check the login screen.");
   });
 

@@ -643,7 +643,7 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     };
     assert.equal(systemPrompt.type, "preset");
     assert.equal(systemPrompt.preset, "claude_code");
-    assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
+    assert.include(systemPrompt.append ?? "", "## Pocks bot");
     assert.include(systemPrompt.append ?? "", "call `t3_background_wait`");
     assert.notInclude(systemPrompt.append ?? "", "## T3 Code devices");
     const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
@@ -687,7 +687,7 @@ describe("ClaudeAdapterV2 device instructions", () => {
   it("gives a session with device access the device block and the ToolSearch line to load it", () => {
     const text = append({ mcp: true, deviceToolsAvailable: true });
     assert.include(text, T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH);
-    assert.include(text, "Use `delegate_task`");
+    assert.include(text, "## Pocks bot");
   });
 
   it("leaves the device block out without device access or without T3 tools", () => {
