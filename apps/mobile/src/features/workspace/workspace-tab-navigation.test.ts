@@ -13,27 +13,18 @@ const thread = {
   name: "Thread",
   params: { environmentId: "env", threadId: "thread-a" },
 };
-const pullRequest = {
-  key: "pr",
-  name: "PullRequest",
-  params: { environmentId: "env", projectId: "project", repository: "o/r", number: 7 },
-};
 const settings = { key: "settings", name: "Settings" };
-const available = { thread: () => true, pullRequest: () => true };
+const available = { thread: () => true };
 const names = (state: { routes: readonly { name: string }[] }) =>
   state.routes.map((route) => route.name);
 
 describe("workspace tab selections", () => {
-  it("remembers the chat, pull request and Settings page each tab showed", () => {
+  it("remembers the chat and Settings page each tab showed", () => {
     const afterThread = workspaceSelectionsIn([home, thread], {});
-    const afterPullRequest = workspaceSelectionsIn([home, pullRequest], afterThread);
-    expect(afterPullRequest).toMatchObject({
-      threads: thread.params,
-      pullRequests: pullRequest.params,
-    });
+    expect(afterThread).toMatchObject({ threads: thread.params });
     const afterSettings = workspaceSelectionsIn(
       [home, settings, { key: "appearance", name: "SettingsAppearance" }],
-      afterPullRequest,
+      afterThread,
     );
     expect(afterSettings.settings).toBe("SettingsAppearance");
     expect(workspaceSelectionsIn([home, thread], afterSettings)).toBe(afterSettings);
@@ -82,15 +73,15 @@ describe("opening a workspace tab", () => {
   });
 
   it("opens the remembered page beside the list with columns, and the list without", () => {
-    const state = { routes: [home, thread] };
-    const selections = { threads: thread.params, pullRequests: pullRequest.params };
-    expect(names(workspaceTabNavigationState(state, "pullRequests", selections, columns))).toEqual([
+    const state = { routes: [home] };
+    const selections = { threads: thread.params };
+    expect(names(workspaceTabNavigationState(state, "threads", selections, columns))).toEqual([
       "Home",
-      "PullRequest",
+      "Thread",
     ]);
     expect(
       names(
-        workspaceTabNavigationState(state, "pullRequests", selections, {
+        workspaceTabNavigationState(state, "threads", selections, {
           columns: false,
           check: available,
         }),
@@ -116,15 +107,10 @@ describe("opening a workspace tab", () => {
   it("reopens a tab's page under the key it had, so its kept screen is reused", () => {
     const columnsAvailable = { columns: true, check: available };
     let selections = workspaceSelectionsIn([home, thread], {});
-    const away = workspaceTabNavigationState(
-      { routes: [home, thread] },
-      "pullRequests",
-      selections,
-      {
-        columns: false,
-        check: available,
-      },
-    );
+    const away = workspaceTabNavigationState({ routes: [home, thread] }, "usage", selections, {
+      columns: false,
+      check: available,
+    });
     selections = workspaceSelectionsIn(away.routes, selections);
     const back = workspaceTabNavigationState(away, "threads", selections, columnsAvailable);
     expect(back.routes.at(-1)).toMatchObject({ key: "thread", params: thread.params });
@@ -155,7 +141,7 @@ describe("opening a workspace tab", () => {
   });
 
   it("falls back to the list for a chat that no longer exists, or an unknown Settings page", () => {
-    const missing = { thread: () => false, pullRequest: () => true };
+    const missing = { thread: () => false };
     expect(
       names(
         workspaceTabNavigationState(

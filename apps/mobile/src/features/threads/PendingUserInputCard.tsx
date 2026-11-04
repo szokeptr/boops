@@ -21,7 +21,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { cn } from "../../lib/cn";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
-import { useOpenPullRequest } from "../../native/useOpenPullRequest";
+import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
 import { useLiveThreadLinkLabels } from "../../state/entities";
 import {
@@ -73,7 +73,6 @@ function QuestionText(props: {
 }) {
   const styles = useMarkdownPreviewStyles();
   const markdown = useLiveThreadLinkLabels(props.markdown, props.environmentId);
-  const openLink = useOpenPullRequest();
   return (
     <SelectableMarkdownText
       markdown={markdown}
@@ -83,7 +82,7 @@ function QuestionText(props: {
       textAlign={
         Platform.OS === "android" ? undefined : props.setDirection === "rtl" ? "right" : "left"
       }
-      onLinkPress={(href) => void openLink(href)}
+      onLinkPress={(href) => void tryOpenExternalUrl(href, "markdown-link")}
     />
   );
 }

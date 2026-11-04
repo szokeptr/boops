@@ -256,7 +256,6 @@ function useSettingsIndexSections(): SettingsListSection[] {
       ],
     },
     {
-      title: "Code",
       rows: [
         page(
           "SettingsProjectOverview",
@@ -264,8 +263,6 @@ function useSettingsIndexSections(): SettingsListSection[] {
           "Projects",
           selectedProjectKey !== null ? { value: projectLabel } : undefined,
         ),
-        serverPage("SettingsEnvironmentSourceControl", "arrow.triangle.branch", "Source control"),
-        serverPage("SettingsWorktrees", "square.on.square", "Worktrees"),
       ],
     },
     {

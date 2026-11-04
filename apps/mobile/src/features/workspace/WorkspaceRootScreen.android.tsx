@@ -7,13 +7,8 @@ import type { ReactNode } from "react";
 import { View } from "react-native";
 import { SafeAreaInsetsContext, useSafeAreaInsets } from "react-native-safe-area-context";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
-import { AppBar } from "../../components/ui/AppBar";
-import { WorkspaceEmptyDetail } from "../layout/WorkspaceEmptyDetail";
-import { ScreenContent } from "../../components/ui/ScreenContent";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { HomeRouteScreen } from "../home/HomeRouteScreen";
-import { PullRequestsScreen } from "../pull-requests/PullRequestsScreen";
-import { PullRequestToolbar } from "../pull-requests/PullRequestToolbar.android";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { WorkspaceSettledContentWidthContext } from "../layout/workspace-content-width";
 import { AndroidWorkspaceNavigation, FloatingWorkspaceTabs } from "./AndroidWorkspaceNavigation";
@@ -81,25 +76,10 @@ function WorkspaceRoot() {
                 renderTab={(tab) =>
                   tab === "threads" ? (
                     <HomeRouteScreen />
-                  ) : tab !== "pullRequests" ? (
+                  ) : (
                     <WorkspacePageFrame width={workspacePageWidth ?? null}>
                       <WorkspaceExtraTab tab={tab} />
                     </WorkspacePageFrame>
-                  ) : layout.usesSplitView ? (
-                    <>
-                      <NativeStackScreenOptions options={{ headerShown: false }} />
-                      <AppBar embedded title="Pull requests" />
-                      <WorkspaceEmptyDetail tab="pullRequests" />
-                    </>
-                  ) : (
-                    <PullRequestsScreen
-                      renderFrame={(filters, list) => (
-                        <>
-                          <PullRequestToolbar filters={filters} />
-                          <ScreenContent>{list}</ScreenContent>
-                        </>
-                      )}
-                    />
                   )
                 }
               />

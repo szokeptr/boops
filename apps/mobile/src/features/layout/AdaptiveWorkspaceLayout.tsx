@@ -78,7 +78,6 @@ import {
 import {
   selectWorkspaceDetail,
   type WorkspaceDetail,
-  type WorkspaceDetailSheet,
 } from "../workspace/workspace-detail-selection";
 import { startOpeningDetail } from "../workspace/useSelectWorkspaceDetail";
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
@@ -596,18 +595,15 @@ function AdaptiveWorkspaceLayoutContent(
   const handleOpenSettings = () => openWorkspaceTab("settings");
 
   /** The one way to show a page in the detail column; see `selectWorkspaceDetail`. */
-  function handleSelectDetail(detail: WorkspaceDetail, sheet?: WorkspaceDetailSheet) {
+  function handleSelectDetail(detail: WorkspaceDetail) {
     threadSelectionDeferral.run(() => {
       if (Platform.OS === "android") Keyboard.dismiss();
       setFileInspectorPreferredVisible(false);
       setInspectorSheetRoute(null);
       if (layout.variant === "medium") setPrimarySidebarVisible(false);
-      workspace?.dispatch({
-        type: "select",
-        tab: detail.name === "Thread" ? "threads" : "pullRequests",
-      });
+      workspace?.dispatch({ type: "select", tab: "threads" });
       startOpeningDetail(detail);
-      navigation.dispatch(selectWorkspaceDetail(detail, sheet));
+      navigation.dispatch(selectWorkspaceDetail(detail));
     });
   }
   const handleSelectThreadRoute = (params: ReactNavigation.RootParamList["Thread"]) =>

@@ -12,7 +12,6 @@ export type HardwareKeyboardCommand =
   | "back"
   | "files"
   | "terminal"
-  | "review"
   | "copyThreadReference"
   | "toggleSidebar"
   | "cycleHost";

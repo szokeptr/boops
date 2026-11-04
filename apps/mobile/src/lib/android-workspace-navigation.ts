@@ -77,7 +77,7 @@ export function androidWorkspaceDestinationAnimation(
   usesSplitView: boolean,
 ) {
   if (!usesSplitView) return undefined;
-  if (route.name === "Thread" || route.name === "PullRequest") return "none" as const;
+  if (route.name === "Thread") return "none" as const;
   if (route.name === "Settings" || !isSettingsRoute(route.name)) return undefined;
   const below = routes[routes.findIndex((candidate) => candidate.key === route.key) - 1];
   return below?.name === "Settings" ? ("none" as const) : ("fade" as const);

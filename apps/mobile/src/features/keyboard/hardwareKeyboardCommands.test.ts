@@ -4,7 +4,7 @@ import { parseActiveThreadPath } from "./hardwareKeyboardCommands";
 
 describe("parseActiveThreadPath", () => {
   it("decodes route components", () => {
-    expect(parseActiveThreadPath("/threads/local%20machine/thread%2Fone/review")).toEqual({
+    expect(parseActiveThreadPath("/threads/local%20machine/thread%2Fone/files")).toEqual({
       environmentId: "local machine",
       threadId: "thread/one",
     });
