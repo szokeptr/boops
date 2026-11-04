@@ -200,7 +200,7 @@ describe("resolveUserMessagePresentation", () => {
     ).toEqual({ text: "Why?", attribution: "guest", scheduledTaskId: undefined, guestName: "Sam" });
   });
 
-  it("attributes older server-sent restart continuations to T3 Code, not another agent", () => {
+  it("attributes server-sent messages to T3 Code or the system, not another agent", () => {
     const text = "Note: the T3 server restarted.";
     expect(
       resolveUserMessagePresentation({
@@ -215,6 +215,14 @@ describe("resolveUserMessagePresentation", () => {
         resolveUserMessagePresentation({ role: "user", createdBy: "agent", creationSource, text }),
       ).toMatchObject({ attribution: "agent" });
     }
+    expect(
+      resolveUserMessagePresentation({
+        role: "user",
+        createdBy: "system",
+        creationSource: "server",
+        text: "You were just created. Start hatching.",
+      }),
+    ).toMatchObject({ attribution: "system" });
   });
 
   it("recovers the triggering automation from older scheduler message ids", () => {

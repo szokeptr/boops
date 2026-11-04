@@ -8722,4 +8722,40 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
       }
     }).pipe(Effect.scoped),
   );
+
+  it.effect(
+    "hatching starts exactly one system-sent turn on the main thread, and only when on",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const bots = yield* Bots.Bots;
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
+        const create = (name: string, hatch?: boolean) =>
+          bots
+            .create({ name, modelSelection, ...(hatch === undefined ? {} : { hatch }) })
+            .pipe(Effect.provideService(HostProcess.HomeDirectory, home));
+
+        const hatched = yield* create("Hatched");
+        const quiet = yield* create("Quiet", false);
+        yield* worker.drain();
+
+        const started = yield* orchestrator.getThreadProjection(hatched.mainThreadId);
+        assert.lengthOf(started.runs, 1);
+        assert.lengthOf(started.messages, 1);
+        const [kickoff] = started.messages;
+        assert.deepInclude(kickoff, {
+          role: "user",
+          text: Bots.HATCH_KICKOFF_TEXT,
+          createdBy: "system",
+          creationSource: "server",
+        });
+        assert.deepInclude(started.runs[0], { userMessageId: kickoff!.id, status: "starting" });
+
+        const idle = yield* orchestrator.getThreadProjection(quiet.mainThreadId);
+        assert.lengthOf(idle.runs, 0);
+        assert.lengthOf(idle.messages, 0);
+      }).pipe(Effect.scoped),
+  );
 });

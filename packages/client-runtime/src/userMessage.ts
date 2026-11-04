@@ -68,7 +68,8 @@ export function resolveUserMessagePresentation(message: {
   readonly context?: { readonly guest?: GuestMessageAttribution | undefined } | undefined;
 }): {
   readonly text: string;
-  readonly attribution: "automation" | "agent" | "t3code" | "guest" | null;
+  /** "system" is a server event such as a bot's hatching kickoff; it renders as a divider. */
+  readonly attribution: "automation" | "agent" | "t3code" | "guest" | "system" | null;
   readonly scheduledTaskId: ScheduledTaskId | undefined;
   /** Set when `attribution` is "guest". */
   readonly guestName?: string;
@@ -108,11 +109,13 @@ export function resolveUserMessagePresentation(message: {
     // The agent needs words to start a turn; people sent only the attachments.
     text: isAttachmentOnlyBootstrapPrompt(message.text) ? "" : message.text,
     attribution:
-      message.createdBy !== "agent"
-        ? null
-        : message.creationSource === "server"
-          ? "t3code"
-          : "agent",
+      message.createdBy === "system"
+        ? "system"
+        : message.createdBy !== "agent"
+          ? null
+          : message.creationSource === "server"
+            ? "t3code"
+            : "agent",
     scheduledTaskId: undefined,
   };
 }

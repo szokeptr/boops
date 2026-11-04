@@ -7,6 +7,8 @@ import { ModelSelection } from "./modelSelection.ts";
 export const BotCreateInput = Schema.Struct({
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
   modelSelection: ModelSelection,
+  /** Start the main thread's first turn so the bot opens its hatching interview. Defaults on. */
+  hatch: Schema.optional(Schema.Boolean),
 });
 export type BotCreateInput = typeof BotCreateInput.Type;
 
