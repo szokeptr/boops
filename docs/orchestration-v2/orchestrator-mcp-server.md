@@ -173,8 +173,8 @@ available; optional tools are discovered through Pi's builtin `tool_search`.
 On older Pi or without builtin search, all tools remain directly available.
 The bridge calls the original MCP tool name over HTTP. Follow-up requests send
 `mcp-protocol-version: 2025-06-18`; Effect's MCP transport returns 400
-without it. The first turn of a session also receives the shared T3
-orchestration instructions.
+without it. The first turn of a session also receives the shared Pocks bot
+instructions.
 
 Pi keeps ownership of native extension discovery. T3 does not replace Pi's
 `subagent` tool or reproduce Pi's package and project-trust loader. Durable

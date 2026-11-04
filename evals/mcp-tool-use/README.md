@@ -223,6 +223,16 @@ Passes per case, main's text → the request_secret guidance change stacked on t
 | ctrl-oauth (guard)           | 3/3 → 3/3                   | 6/6 → 6/6           | 6/6 → 6/6                             |
 | other guards and controls    | all pass → all pass         | all pass → all pass | all pass → all pass (prod-config 5/6) |
 
+## Bot cases
+
+`cases/bots.ndjson` checks the Pocks bot instructions: hatching when `PERSONA.md` is missing (interview first, then `PERSONA.md`, a memory note and a routine bound to the conversation), a memory note for a durable preference stated in passing, and a control where small talk changes no files. They run on the Claude harness only: Codex writes files through `apply_patch`, whose paths the `Write|Edit` checks do not read. The captured template is a git worktree, so each world says the working directory is a bot's home folder instead.
+
+From `evals/`:
+
+```sh
+pnpm mcp-tool-use --cases mcp-tool-use/cases/bots.ndjson --model claude-haiku-5-5 --samples 3 --out runs/bots
+```
+
 ## Where T3's text lives
 
 - `packages/provider-core/src/server/runtimeInstructions.ts`

@@ -671,7 +671,7 @@ function assertReinjectedInstructions(
   const text = blocks[0]?.text ?? "";
   assert.include(text, "T3 Code interaction mode: Default");
   assert.include(text, "## T3 Code browser");
-  assert.include(text, "T3 Code orchestration");
+  assert.include(text, "## Pocks bot");
   assert.include(text, `<user_request>\n${request}\n</user_request>`);
 }
 
@@ -2069,7 +2069,7 @@ describe("AcpAdapterV2", () => {
         assert.equal(firstDefault.textBlockCount, 2);
         assert.include(firstDefault.prompt, "T3 Code interaction mode: Default");
         assert.include(firstDefault.prompt, "## T3 Code browser");
-        assert.include(firstDefault.prompt, "T3 Code orchestration");
+        assert.include(firstDefault.prompt, "## Pocks bot");
         assert.notInclude(
           firstDefault.methods,
           "session/set_config_option",
