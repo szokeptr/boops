@@ -30,7 +30,10 @@ import {
   threadNotificationTag,
   unlockNotificationAudio,
 } from "../threadNotifications";
-import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";
+import {
+  resolveThreadStatus,
+  type ThreadStatus,
+} from "@t3tools/client-runtime/state/thread-status";
 import {
   createThreadNotificationGate,
   type ThreadNotificationKind,
@@ -42,7 +45,7 @@ interface NotificationState extends ThreadNotificationObservation {
   readonly raw: OrchestrationV2ThreadShell;
   readonly subagentRequest: PendingSubagentRequest | null;
   readonly thread: EnvironmentThreadShell;
-  readonly status: SidebarThreadStatus;
+  readonly status: ThreadStatus;
 }
 
 type ToastId = ReturnType<typeof toastManager.add>;
@@ -250,7 +253,7 @@ export function startThreadNotifications(
         continue;
       }
       const thread = presentThreadShell(environmentId, rawThread, subagentRequest);
-      let status = resolveSidebarThreadStatus(thread);
+      let status = resolveThreadStatus(thread);
       if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
       const attention =
         status === "input" ||

@@ -608,7 +608,7 @@ export function filterCommandPaletteGroups(input: {
     if (input.projectSearchItems.length > 0) {
       searchableGroups.push({
         value: "projects-search",
-        label: "Projects",
+        label: "Bots",
         items: input.projectSearchItems,
       });
     }

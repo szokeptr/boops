@@ -4406,12 +4406,6 @@ export function useComposerThreadDraft(threadRef: ComposerThreadTarget): Compose
   });
 }
 
-export function useThreadHasUnsentDraft(threadRef: ScopedThreadRef): boolean {
-  return useComposerDraftStore((state) =>
-    composerDraftHasUserContent(getComposerDraftState(state, threadRef)),
-  );
-}
-
 export function useComposerDraftModelState(
   threadRef: ComposerThreadTarget,
 ): ComposerDraftModelState {
