@@ -94,6 +94,7 @@ function useBotEnvironments(): readonly BotEnvironment[] {
 function CreateBotDialog() {
   const environments = useBotEnvironments();
   const [pickedEnvironmentId, setPickedEnvironmentId] = useState<EnvironmentId | null>(null);
+  const [name, setName] = useState("");
   const environment =
     environments.find((entry) => entry.environmentId === pickedEnvironmentId) ??
     environments[0] ??
@@ -113,6 +114,8 @@ function CreateBotDialog() {
             environment={environment}
             environments={environments}
             onEnvironmentChange={setPickedEnvironmentId}
+            name={name}
+            onNameChange={setName}
           />
         ) : (
           <>
@@ -138,10 +141,14 @@ function CreateBotForm({
   environment,
   environments,
   onEnvironmentChange,
+  name,
+  onNameChange: setName,
 }: {
   environment: BotEnvironment;
   environments: readonly BotEnvironment[];
   onEnvironmentChange: (environmentId: EnvironmentId) => void;
+  name: string;
+  onNameChange: (name: string) => void;
 }) {
   const id = useId();
   const navigate = useNavigate();
@@ -151,7 +158,6 @@ function CreateBotForm({
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const instanceEntries = providerInstanceEntriesFor(providers, settings, null);
-  const [name, setName] = useState("");
   const [pickedModel, setPickedModel] = useState<ModelSelection | null>(null);
   const modelSelection = pickedModel ?? scheduledTaskDefaultModel(settings, null, instanceEntries);
   const modelOptionsByInstance = getCustomModelOptionsByInstance(
