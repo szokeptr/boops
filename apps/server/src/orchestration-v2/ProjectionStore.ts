@@ -56,6 +56,7 @@ import {
   OrchestrationV2ContextTransferJson as OrchestrationV2ContextTransferJsonSchema,
   OrchestrationV2ConversationMessageJson as OrchestrationV2ConversationMessageJsonSchema,
   OrchestrationV2ExecutionNodeJson as OrchestrationV2ExecutionNodeJsonSchema,
+  OrchestrationV2LatestVisibleMessageSummaryJson,
   OrchestrationV2PlanArtifact as OrchestrationV2PlanArtifactSchema,
   OrchestrationV2ProviderSessionJson as OrchestrationV2ProviderSessionJsonSchema,
   OrchestrationV2ProviderThreadJson as OrchestrationV2ProviderThreadJsonSchema,
@@ -1032,6 +1033,7 @@ type ShellThreadRow = {
   readonly pending_link_request_payload_json: string | null;
   readonly latest_user_message_at: string | null;
   readonly latest_user_authored_message_at: string | null;
+  readonly latest_visible_message_json: string | null;
   readonly has_actionable_proposed_plan: number;
 };
 
@@ -1192,6 +1194,9 @@ const decodeRuntimeRequestPayload = Schema.decodeUnknownEffect(
 );
 const decodeMessagePayload = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2ConversationMessageJsonSchema),
+);
+const decodeLatestVisibleMessage = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(OrchestrationV2LatestVisibleMessageSummaryJson),
 );
 const decodePlanJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2PlanArtifactSchema),
@@ -1645,9 +1650,7 @@ export function threadShellFromProjection(
     ),
     pendingRuntimeRequest,
     pendingGuestMessageCount: pendingGuestMessageCount(projection.thread.guestShare),
-    // Thread detail owns message bodies. Keeping them out of shell rows makes
-    // initial hydration and streaming updates independent of transcript size.
-    latestVisibleMessage: null,
+    latestVisibleMessage: latestVisibleMessageForShell(projection),
     latestUserMessageAt: latestUserMessage?.updatedAt ?? null,
     latestUserAuthoredMessageAt,
     hasActionableProposedPlan: projection.plans.some(
@@ -1683,6 +1686,42 @@ export function threadShellFromProjection(
     limitRecovery: projection.thread.limitRecovery ?? null,
     deletedAt: projection.thread.deletedAt,
   };
+}
+
+// Thread detail owns message bodies; the shell carries a clipped preview so its
+// size stays independent of the transcript. SQL clips with the same length.
+const SHELL_MESSAGE_PREVIEW_LENGTH = 400;
+
+function latestVisibleMessageForShell(
+  projection: Pick<OrchestrationV2ThreadProjection, "messages" | "runs" | "turnItems">,
+): OrchestrationV2ThreadShell["latestVisibleMessage"] {
+  const hiddenRunIds = new Set(
+    projection.runs
+      .filter((run) => run.status === "rolled_back" || isSilentRunForShell(run, projection))
+      .map((run) => run.id),
+  );
+  const latest =
+    projection.messages
+      .filter(
+        (message) =>
+          message.role !== "system" &&
+          message.text !== "" &&
+          idleCompactionOf(message) === undefined &&
+          (message.runId === null || !hiddenRunIds.has(message.runId)),
+      )
+      .toSorted(
+        (left, right) =>
+          DateTime.toEpochMillis(right.createdAt) - DateTime.toEpochMillis(left.createdAt) ||
+          (right.id < left.id ? -1 : right.id > left.id ? 1 : 0),
+      )[0] ?? null;
+  return latest === null
+    ? null
+    : {
+        id: latest.id,
+        role: latest.role,
+        text: latest.text.slice(0, SHELL_MESSAGE_PREVIEW_LENGTH),
+        updatedAt: latest.updatedAt,
+      };
 }
 
 function providerInstanceHistoryForShell(input: {
@@ -1761,6 +1800,7 @@ type ShellThreadState = {
   readonly pendingRuntimeRequest: OrchestrationV2PendingRuntimeRequestSummary | null;
   readonly latestUserMessageAt: DateTime.Utc | null;
   readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
+  readonly latestVisibleMessage: OrchestrationV2ThreadShell["latestVisibleMessage"];
   readonly hasActionableProposedPlan: boolean;
   readonly pendingBackgroundTasks: OrchestrationV2ThreadShell["pendingBackgroundTasks"];
   readonly providerInstanceHistory: OrchestrationV2ThreadShell["providerInstanceHistory"];
@@ -1921,7 +1961,7 @@ function shellFromState(input: {
     usageLimitResetAt: input.state.usageLimitResetAt,
     pendingRuntimeRequest: input.state.pendingRuntimeRequest,
     pendingGuestMessageCount: pendingGuestMessageCount(input.state.thread.guestShare),
-    latestVisibleMessage: null,
+    latestVisibleMessage: input.state.latestVisibleMessage,
     latestUserMessageAt: input.state.latestUserMessageAt,
     latestUserAuthoredMessageAt: input.state.latestUserAuthoredMessageAt,
     hasActionableProposedPlan: input.state.hasActionableProposedPlan,
@@ -6258,6 +6298,26 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_user_authored_message_at,
+              (
+                SELECT json_object(
+                  'id', message.message_id,
+                  'role', message.role,
+                  'text', substr(json_extract(message.payload_json, '$.text'), 1, ${SHELL_MESSAGE_PREVIEW_LENGTH}),
+                  'updatedAt', message.updated_at
+                )
+                FROM orchestration_v2_projection_messages message
+                WHERE message.thread_id = t.thread_id
+                  AND message.role <> 'system'
+                  AND json_extract(message.payload_json, '$.text') <> ''
+                  AND NOT ${isIdleCompactionMessage("message")}
+                  AND NOT EXISTS (
+                    SELECT 1 FROM orchestration_v2_projection_runs hidden
+                    WHERE hidden.run_id = message.run_id
+                      AND (hidden.status = 'rolled_back' OR ${isSilentShellRun("hidden")})
+                  )
+                ORDER BY message.created_at DESC, message.message_id DESC
+                LIMIT 1
+              ) AS latest_visible_message_json,
               EXISTS (
                 SELECT 1
                 FROM orchestration_v2_projection_plans plan
@@ -6856,6 +6916,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               ? null
               : DateTime.makeUnsafe(row.latest_user_message_at),
           latestUserAuthoredMessageAt,
+          latestVisibleMessage:
+            row.latest_visible_message_json === null
+              ? null
+              : yield* decodeLatestVisibleMessage(row.latest_visible_message_json),
           hasActionableProposedPlan: row.has_actionable_proposed_plan === 1,
           pendingBackgroundTasks,
           providerInstanceHistory: providerInstanceHistoryForShell({
