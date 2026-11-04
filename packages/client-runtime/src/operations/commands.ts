@@ -1,6 +1,7 @@
 import { remapComposerContextAttachments } from "@t3tools/shared/composerContextReferences";
 import {
   type ThreadLinkedPullRequest,
+  type BotAutonomy,
   CommandId,
   CheckpointId,
   CheckpointScopeId,
@@ -64,6 +65,7 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly archived?: boolean;
   readonly avatar?: string | null;
   readonly mainThreadId?: ThreadId | null;
+  readonly autonomy?: BotAutonomy | null;
 }
 
 export interface DeleteProjectInput extends CommandMetadata {

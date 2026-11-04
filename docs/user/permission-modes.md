@@ -24,6 +24,26 @@ Approve or reject requests in the conversation to let the agent continue. Permis
 not prevent the agent from asking questions about the task. Subagent approval requests appear in
 the parent conversation with the subagent's name, so you can respond without switching threads.
 
+## What a bot can reach
+
+A bot runs as your OS user. With **Full access**, the default, it can change and run anything you
+can on that machine, and it asks you only for what needs a person: a login, a payment, a secret.
+
+To keep a bot to its home folder (`~/pocks/<name>/`), turn on **Stay in its home folder** in the
+bot's project settings (on mobile, **Settings → Projects**). In **Auto** and **Full access**, file
+changes and commands outside the folder then fail instead of asking; the other modes keep asking.
+The bot can still read files elsewhere and use the network. The change applies from the bot's next
+session.
+
+Codex, Claude and Cursor enforce this with their own sandbox; on Linux, Claude needs `bubblewrap`
+installed, and Cursor on Windows has no filesystem sandbox. OpenCode, Grok, Kiro and ACP Registry
+agents can change files in the folder but cannot run commands. Antigravity, Pi and Muse Code have
+no sandbox, so they ask you before every change and command.
+
+**Bots on one machine are not isolated from each other.** They all run as your user, so a bot can
+read another bot's folder, and one with full access can change it. Run a bot you don't trust under
+a separate OS user or on another machine.
+
 ## Provider differences
 
 Providers enforce permissions differently. Some read-only actions can proceed in **Supervised**.

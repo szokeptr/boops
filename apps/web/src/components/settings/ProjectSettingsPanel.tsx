@@ -606,6 +606,23 @@ function ProjectDetail({
               </div>
             }
           />
+          <SettingsRow
+            title="Stay in its home folder"
+            description="Limits the bot's file changes and commands to its home folder. Applies from its next session."
+            control={
+              <Switch
+                checked={group.memberProjects.every((member) => member.autonomy === "home-folder")}
+                disabled={!canEditGroup}
+                onCheckedChange={(checked) =>
+                  void updateAllMembers(
+                    { autonomy: checked ? "home-folder" : "full" },
+                    "Failed to change where the bot can work",
+                  )
+                }
+                aria-label="Stay in its home folder"
+              />
+            }
+          />
           {canOrganize ? (
             <>
               <SettingsRow
