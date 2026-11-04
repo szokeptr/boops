@@ -4,14 +4,13 @@ import { useResolveClassNames } from "uniwind";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { GlassSurface } from "../../components/ui/GlassSurface";
-import { WORKSPACE_TOOLBAR, type WorkspaceTab } from "./workspace-tabs-state";
+import { WORKSPACE_TOOLBAR } from "./workspace-tabs-state";
 
 export function WorkspaceSearchField({
   ref,
   ...props
 }: {
   readonly ref?: Ref<TextInputInstance>;
-  readonly tab: WorkspaceTab;
   readonly query: string;
   readonly onChangeQuery: (query: string) => void;
   readonly onFocus: () => void;
@@ -20,7 +19,7 @@ export function WorkspaceSearchField({
 }) {
   const inputStyle = useResolveClassNames("text-foreground font-sans text-base");
   const placeholderStyle = useResolveClassNames("text-foreground-muted");
-  const label = props.tab === "pullRequests" ? "Search pull requests" : "Search threads";
+  const label = "Search threads";
   return (
     <GlassSurface
       className="min-w-0 flex-1"
@@ -41,7 +40,6 @@ export function WorkspaceSearchField({
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
-          maxLength={props.tab === "pullRequests" ? 200 : undefined}
           style={[inputStyle, { flex: 1, minWidth: 0, paddingHorizontal: 8, paddingVertical: 0 }]}
         />
         {props.query ? (

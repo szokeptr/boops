@@ -279,7 +279,7 @@ describe("clone project permissions", () => {
 function mountProjectFlow(
   withDraft: boolean,
   withChooser = true,
-  withPullRequest = false,
+  withUnderlyingPages = false,
   screenName = "AddProjectLocal",
 ) {
   const { StackRouter, StackActions, CommonActions } = loadRouters();
@@ -289,8 +289,8 @@ function mountProjectFlow(
     routeNames: [
       "Home",
       "Thread",
-      "PullRequest",
-      "PullRequestFile",
+      "ThreadFiles",
+      "ThreadFile",
       "NewTaskProject",
       "AddProject",
       "AddProjectLocal",
@@ -308,9 +308,9 @@ function mountProjectFlow(
     current = next;
     state.navigationState = current;
   };
-  if (withPullRequest) {
-    apply(StackActions.push("PullRequest", { number: 123 }));
-    apply(StackActions.push("PullRequestFile", { path: "file.ts" }));
+  if (withUnderlyingPages) {
+    apply(StackActions.push("ThreadFiles", { threadId: "thread" }));
+    apply(StackActions.push("ThreadFile", { path: "file.ts" }));
   }
   const underlyingRoutes = current.routes;
   if (withDraft) {

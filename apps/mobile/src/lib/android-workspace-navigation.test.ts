@@ -31,10 +31,6 @@ const options = {
     "Thread",
     "ThreadFiles",
     "ThreadTerminal",
-    "GitOverview",
-    "PullRequest",
-    "PullRequestFile",
-    "PullRequestReviewers",
     "Settings",
     "SettingsEnvironments",
     "SettingsAppearance",
@@ -48,16 +44,6 @@ const options = {
 const thread = {
   name: "Thread",
   params: { environmentId: "environment-a", threadId: "thread-a" },
-} as const;
-const pullRequest = {
-  name: "PullRequest",
-  params: {
-    environmentId: "environment-a",
-    projectId: "project-a",
-    repository: "owner/repository",
-    number: 42,
-    host: "github.com",
-  },
 } as const;
 
 function apply(
@@ -76,7 +62,7 @@ function withThread() {
 function legacyHistory() {
   let state = router.getInitialState(options);
   state = apply(state, StackActions.push(thread.name, thread.params));
-  state = apply(state, StackActions.push(pullRequest.name, pullRequest.params));
+  state = apply(state, StackActions.push("ThreadFiles", thread.params));
   return state;
 }
 
@@ -127,7 +113,7 @@ describe("Android workspace navigation", () => {
     expect(state.index).toBe(parent.index);
     expect(listSelected).toBe(false);
 
-    // Confirming a Git action from the inline inspector can duplicate the current thread.
+    // A pushed copy of the current thread is not a distinct previous thread.
     state = apply(parent, StackActions.push("Thread", thread.params));
     back();
     expect({ routes: names(state), index: state.index, listSelected }).toEqual({
@@ -252,7 +238,7 @@ describe("Android Settings tab", () => {
   it("stays selected under a settings page until a list tab returns to Home", () => {
     const previous = legacyHistory();
     const usage = apply(openTab(previous, "settings"), StackActions.push("SettingsUsage"));
-    const list = openTab(usage, "pullRequests");
+    const list = openTab(usage, "threads");
     expect(names(list)).toEqual(["Home"]);
     expect(list.routes[0]?.key).toBe(previous.routes[0]?.key);
   });

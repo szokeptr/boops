@@ -114,7 +114,6 @@ export const workspaceSelectionCheck: WorkspaceSelectionCheck = {
       .get(environmentThreadShells.environmentThreadIndexAtom(environmentId))
       .has(selection.threadId as ThreadId);
   },
-  pullRequest: (selection) => !environmentRemoved(selection.environmentId),
 };
 
 /** Whether the window lays the workspace out in columns, by the rule the layout itself uses. */

@@ -1218,7 +1218,7 @@ async function captureIos(
       await waitForScene();
     }
     if (scene === "agent-activity") await presentIosLockScreen(simulator.udid);
-    await delay(scene === "review" ? Math.max(config.settleDelayMs, 8_000) : config.settleDelayMs);
+    await delay(config.settleDelayMs);
     const destination = NodePath.join(
       showcaseCaptureDirectory(outputDirectory, capture),
       `${scene}.png`,
@@ -1482,7 +1482,7 @@ async function captureAndroid(
       await snoozeAndroidSystemNotifications(serial);
       await runAdb(serial, ["shell", "cmd", "statusbar", "expand-notifications"]);
     }
-    await delay(Math.max(config.settleDelayMs, scene === "review" ? 8_000 : 5_000));
+    await delay(Math.max(config.settleDelayMs, 5_000));
     const destination = NodePath.join(
       showcaseCaptureDirectory(outputDirectory, capture),
       `${scene}.png`,

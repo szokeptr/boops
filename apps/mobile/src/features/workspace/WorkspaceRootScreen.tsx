@@ -25,7 +25,6 @@ import { HomeRouteScreen } from "../home/HomeRouteScreen";
 import { dispatchHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
 import { WorkspaceConnectionTitle } from "../home/WorkspaceConnectionTitle";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
-import { PullRequestsScreen } from "../pull-requests/PullRequestsScreen";
 import {
   WorkspaceTabsContext,
   WorkspaceTabsProvider,
@@ -167,11 +166,10 @@ function WorkspaceRootContent() {
             title="T3 Code"
             titleContent={renderHeaderTitle()}
             actions={[
-              ...(state.selectedTab === "threads" || state.selectedTab === "pullRequests"
+              ...(state.selectedTab === "threads"
                 ? [
                     {
-                      accessibilityLabel:
-                        state.selectedTab === "threads" ? "Search threads" : "Search pull requests",
+                      accessibilityLabel: "Search threads",
                       icon: "magnifyingglass" as const,
                       onPress: () => {
                         dispatchHardwareKeyboardCommand("focusSearch");
@@ -194,8 +192,6 @@ function WorkspaceRootContent() {
             <WorkspaceNoTabs />
           ) : state.selectedTab === "threads" ? (
             <HomeRouteScreen />
-          ) : state.selectedTab === "pullRequests" ? (
-            <PullRequestsScreen />
           ) : (
             <WorkspaceExtraTab tab={state.selectedTab} />
           )}
@@ -205,9 +201,7 @@ function WorkspaceRootContent() {
         ) : null}
         {/* Android's Settings list carries its own search in its app bar. */}
         {enabled.length === 0 && !settingsOpen ? null : (
-            settingsOpen
-              ? Platform.OS === "ios"
-              : state.selectedTab === "threads" || state.selectedTab === "pullRequests"
+            settingsOpen ? Platform.OS === "ios" : state.selectedTab === "threads"
           ) ? (
           <WorkspaceToolbar sidebar={sidebarNavigation} onNewTask={startNewTask} />
         ) : (

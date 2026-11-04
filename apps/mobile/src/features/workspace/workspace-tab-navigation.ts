@@ -12,7 +12,6 @@ type RouteLike = {
   readonly params?: object | undefined;
 };
 type ThreadSelection = NonNullable<WorkspaceSelections["threads"]>;
-type PullRequestSelection = NonNullable<WorkspaceSelections["pullRequests"]>;
 
 /** Opened when Settings has columns and none of its pages has been opened yet. */
 export const DEFAULT_SETTINGS_PAGE = "SettingsEnvironments" satisfies SettingsPageTarget;
@@ -37,10 +36,9 @@ export function rememberedSettingsPage(selections: WorkspaceSelections): Setting
     : DEFAULT_SETTINGS_PAGE;
 }
 
-/** Whether a remembered chat or pull request can still be opened. */
+/** Whether a remembered chat can still be opened. */
 export interface WorkspaceSelectionCheck {
   readonly thread: (selection: ThreadSelection) => boolean;
-  readonly pullRequest: (selection: PullRequestSelection) => boolean;
 }
 
 function stringParam(params: object | undefined, key: string) {
@@ -48,43 +46,9 @@ function stringParam(params: object | undefined, key: string) {
   return typeof value === "string" ? value : undefined;
 }
 
-function pullRequestSelection(
-  params: object | undefined,
-): Omit<PullRequestSelection, "key"> | undefined {
-  const value = params as Record<string, unknown> | undefined;
-  if (
-    typeof value?.environmentId !== "string" ||
-    typeof value.projectId !== "string" ||
-    typeof value.repository !== "string" ||
-    typeof value.number !== "number"
-  ) {
-    return undefined;
-  }
-  return {
-    environmentId: value.environmentId,
-    projectId: value.projectId,
-    repository: value.repository,
-    number: value.number,
-    ...(typeof value.host === "string" ? { host: value.host } : {}),
-  };
-}
-
-function samePullRequest(
-  left: PullRequestSelection | undefined,
-  right: Omit<PullRequestSelection, "key">,
-) {
-  return (
-    left?.environmentId === right.environmentId &&
-    left.projectId === right.projectId &&
-    left.repository === right.repository &&
-    left.number === right.number &&
-    left.host === right.host
-  );
-}
-
 /**
- * The page each tab shows in a root route chain: the newest chat, the newest pull request, and
- * the Settings page directly above the Settings route. Returns `previous` when nothing changed.
+ * The page each tab shows in a root route chain: the newest chat and the Settings page directly
+ * above the Settings route. Returns `previous` when nothing changed.
  */
 export function workspaceSelectionsIn(
   routes: readonly RouteLike[],
@@ -111,15 +75,6 @@ export function workspaceSelectionsIn(
   ) {
     next = { ...next, threadsDraft: { key: thread.key, params: thread.params } };
   }
-  const pullRequestRoute = routes.findLast((route) => route.name === "PullRequest");
-  const pullRequest = pullRequestSelection(pullRequestRoute?.params);
-  if (
-    pullRequest &&
-    (!samePullRequest(next.pullRequests, pullRequest) ||
-      next.pullRequests?.key !== pullRequestRoute?.key)
-  ) {
-    next = { ...next, pullRequests: { ...pullRequest, key: pullRequestRoute?.key } };
-  }
   const list = routes.findIndex((route) => route.name === "Settings");
   const page = list < 0 ? undefined : routes[list + 1];
   if (
@@ -130,10 +85,6 @@ export function workspaceSelectionsIn(
     next = { ...next, settings: page.name, settingsKey: page.key };
   }
   return next;
-}
-
-function identityOf({ key: _key, ...identity }: PullRequestSelection) {
-  return identity;
 }
 
 let routeKeys = 0;
@@ -147,44 +98,32 @@ function keyed<Route extends RouteLike>(route: Route): Route & { readonly key: s
 
 function detailRoute(
   state: { readonly routes: readonly RouteLike[] },
-  tab: "threads" | "pullRequests",
   selections: WorkspaceSelections,
   check: WorkspaceSelectionCheck,
 ): RouteLike | undefined {
-  if (tab === "threads") {
-    const draft = selections.threadsDraft;
-    if (draft) {
-      return (
-        state.routes.find((route) => route.key === draft.key) ?? {
-          key: draft.key,
-          name: "Thread",
-          params: draft.params as object | undefined,
-        }
-      );
-    }
-    const thread = selections.threads;
-    if (!thread || !check.thread(thread)) return undefined;
+  const draft = selections.threadsDraft;
+  if (draft) {
     return (
-      state.routes.find(
-        (route) =>
-          route.name === "Thread" &&
-          stringParam(route.params, "environmentId") === thread.environmentId &&
-          stringParam(route.params, "threadId") === thread.threadId,
-      ) ?? {
-        key: thread.key,
+      state.routes.find((route) => route.key === draft.key) ?? {
+        key: draft.key,
         name: "Thread",
-        params: { environmentId: thread.environmentId, threadId: thread.threadId },
+        params: draft.params as object | undefined,
       }
     );
   }
-  const pullRequest = selections.pullRequests;
-  if (!pullRequest || !check.pullRequest(pullRequest)) return undefined;
+  const thread = selections.threads;
+  if (!thread || !check.thread(thread)) return undefined;
   return (
     state.routes.find(
       (route) =>
-        route.name === "PullRequest" &&
-        samePullRequest(pullRequestSelection(route.params), pullRequest),
-    ) ?? { key: pullRequest.key, name: "PullRequest", params: identityOf(pullRequest) }
+        route.name === "Thread" &&
+        stringParam(route.params, "environmentId") === thread.environmentId &&
+        stringParam(route.params, "threadId") === thread.threadId,
+    ) ?? {
+      key: thread.key,
+      name: "Thread",
+      params: { environmentId: thread.environmentId, threadId: thread.threadId },
+    }
   );
 }
 
@@ -220,9 +159,7 @@ export function workspaceTabNavigationState<
   }
   const home = state.routes.find((route) => route.name === "Home") ?? { name: "Home" };
   const detail =
-    options.columns && tab !== "usage"
-      ? detailRoute(state, tab, selections, options.check)
-      : undefined;
+    options.columns && tab !== "usage" ? detailRoute(state, selections, options.check) : undefined;
   const routes = [...[home, ...(detail ? [detail] : [])].map(keyed), ...overlays];
   return { ...state, index: routes.length - 1, routes };
 }

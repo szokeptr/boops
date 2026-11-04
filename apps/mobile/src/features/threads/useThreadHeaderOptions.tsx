@@ -8,10 +8,11 @@ import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspace
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import {
-  ThreadGitControls,
-  useThreadGitCenterHeaderItems,
-  useThreadGitRightHeaderItems,
-} from "./ThreadGitControls";
+  ThreadHeaderControls,
+  useThreadCenterHeaderItems,
+  useThreadRightHeaderItems,
+  type ThreadHeaderControlsProps,
+} from "./ThreadHeaderControls";
 
 type NativeHeaderItems = ReadonlyArray<Record<string, unknown>>;
 
@@ -20,7 +21,7 @@ export function useThreadHeaderOptions(props: {
   readonly subtitle: string;
   readonly headerColor: string;
   readonly usesNativeHeaderGlass: boolean;
-  readonly gitControls: Parameters<typeof ThreadGitControls>[0];
+  readonly controls: ThreadHeaderControlsProps;
   readonly onReturnToThread?: () => void;
   readonly draft?: boolean;
 }) {
@@ -30,8 +31,8 @@ export function useThreadHeaderOptions(props: {
   const navigation = useNavigation();
   const { layout, startNewTask } = useAdaptiveWorkspaceLayout();
   const sidebarHeaderItem = useWorkspaceSidebarHeaderItem();
-  const threadCenterHeaderItems = useThreadGitCenterHeaderItems(props.gitControls);
-  const compactRightHeaderItems = useThreadGitRightHeaderItems(props.gitControls);
+  const threadCenterHeaderItems = useThreadCenterHeaderItems(props.controls);
+  const compactRightHeaderItems = useThreadRightHeaderItems(props.controls);
   const splitLeftHeaderItems: NativeHeaderItems = [
     ...(!usesDuoHeader
       ? [
@@ -94,10 +95,10 @@ export function useThreadHeaderOptions(props: {
     unstable_headerSubtitle: props.usesNativeHeaderGlass ? props.subtitle : undefined,
     contentStyle: undefined,
   };
-  const { environmentId, threadId, gitStatus } = props.gitControls;
+  const { environmentId, threadId } = props.controls;
   return {
     options,
-    // Factories re-read only on version changes; include displayed items and hidden callback state such as default refs.
+    // Factories re-read only on version changes; include displayed items and hidden callback state.
     optionsVersion: [
       splitLeftHeaderItems,
       threadCenterHeaderItems,
@@ -105,13 +106,10 @@ export function useThreadHeaderOptions(props: {
       usesDuoHeader,
       environmentId,
       threadId,
-      gitStatus?.isDefaultRef,
-      gitStatus?.refName,
-      gitStatus?.pr?.url,
     ],
     fallback:
       !layout.usesSplitView && !props.usesNativeHeaderGlass ? (
-        <ThreadGitControls {...props.gitControls} showActionControls />
+        <ThreadHeaderControls {...props.controls} showActionControls />
       ) : null,
   };
 }

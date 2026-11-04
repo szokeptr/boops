@@ -74,7 +74,6 @@ describe("draft deep links", () => {
 
   it.each([
     ["environment", "NewTaskEnvironment"],
-    ["branch", "NewTaskBranch"],
     ["files", "NewTaskFiles"],
     ["files/src/index.ts", "NewTaskFile"],
     ["attachments/attachment-1", "NewTaskAttachment"],

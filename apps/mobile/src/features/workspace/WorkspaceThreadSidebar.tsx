@@ -1,7 +1,4 @@
-import type {
-  EnvironmentProject,
-  EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 
@@ -11,7 +8,6 @@ import { usePendingTaskListActions } from "../home/usePendingTaskListActions";
 import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context";
 import { openSettings } from "../settings/settings-navigation";
 import { ThreadNavigationSidebar } from "../threads/ThreadNavigationSidebar";
-import { useOpenThreadPullRequests } from "../threads/use-open-thread-pull-requests";
 import { useSelectWorkspaceDetail } from "./useSelectWorkspaceDetail";
 
 type Route = { readonly name: string; readonly params?: object };
@@ -51,7 +47,6 @@ export function WorkspaceThreadSidebar() {
     openWorkspaceTab,
   } = useAdaptiveWorkspaceLayout();
   const selectDetail = useSelectWorkspaceDetail();
-  const openThreadPullRequests = useOpenThreadPullRequests();
   const selectedThread = useNavigationState(selectedThreadKey);
   const selectThreadRoute = (params: ReactNavigation.RootParamList["Thread"]) =>
     selectDetail({ name: "Thread", params });
@@ -74,17 +69,6 @@ export function WorkspaceThreadSidebar() {
           },
         })
       }
-      onNewThreadOnBranch={(thread: EnvironmentThreadShell) =>
-        selectThreadRoute({
-          draft: {
-            requestId: uuidv4(),
-            environmentId: String(thread.environmentId),
-            projectId: String(thread.projectId),
-            branch: thread.branch,
-            worktreePath: thread.worktreePath,
-          },
-        })
-      }
       onOpenPendingTask={openPendingTask}
       onSelectThread={(thread) =>
         selectThreadRoute({
@@ -92,7 +76,6 @@ export function WorkspaceThreadSidebar() {
           threadId: String(thread.id),
         })
       }
-      onOpenThreadPullRequests={openThreadPullRequests}
       onSearchQueryChange={setPrimarySidebarSearchQuery}
       searchQuery={primarySidebarSearchQuery}
     />

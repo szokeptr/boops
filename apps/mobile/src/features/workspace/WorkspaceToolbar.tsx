@@ -18,11 +18,9 @@ import { WorkspaceDock } from "./WorkspaceDock";
 import { WorkspaceSearchField } from "./WorkspaceSearchField";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { WORKSPACE_TOOLBAR, type WorkspaceTab } from "./workspace-tabs-state";
-import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 
 const TABS: ReadonlyArray<{ id: WorkspaceTab; label: string; icon: AppSymbolName }> = [
   { id: "threads", label: "Threads", icon: "text.bubble" },
-  { id: "pullRequests", label: "PRs", icon: PullRequestGlyph.pullRequest },
 ];
 
 function ToolbarButton(props: {
@@ -61,7 +59,7 @@ export function WorkspaceToolbar(props: {
   const focusSearch = () => {
     if (!workspace) return false;
     const tab = workspace.state.selectedTab;
-    if (tab !== "threads" && tab !== "pullRequests") return false;
+    if (tab !== "threads") return false;
     workspace.dispatch({ type: "scroll", tab, offset: workspace.getScrollOffset(tab) });
     workspace.dispatch({ type: "search" });
     setFocusRequest((request) => request + 1);
@@ -121,7 +119,6 @@ export function WorkspaceToolbar(props: {
             ) : null}
             <WorkspaceSearchField
               ref={input}
-              tab={state.selectedTab}
               query={tab.query}
               onChangeQuery={(query) => dispatch({ type: "query", query })}
               onFocus={() => dispatch({ type: "search" })}
