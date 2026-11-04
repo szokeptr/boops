@@ -1,7 +1,6 @@
 import {
-  botAvatar,
   deriveBotActivity,
-  resolveBotMainThread,
+  resolveBotMainThreadId,
   type BotThreadRow,
 } from "@t3tools/client-runtime/state/bot-list";
 import type {
@@ -21,7 +20,6 @@ import { RelativeTime } from "../RelativeTime";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { SidebarInset } from "../ui/sidebar";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
-import { BotAvatar } from "./BotAvatar";
 import { BotStatusLabel } from "./BotStatusLabel";
 
 export function BotActivityPage(props: {
@@ -67,7 +65,7 @@ export function BotActivityView(props: {
   readonly localLastVisitedAt?: Readonly<Record<string, string>>;
 }) {
   const { project } = props;
-  const main = resolveBotMainThread(project, props.threads);
+  const mainThreadId = resolveBotMainThreadId(project, props.threads);
   const rows = deriveBotActivity({
     project,
     threads: props.threads,
@@ -76,22 +74,16 @@ export function BotActivityView(props: {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <WorkspacePageHeader electron={isElectron}>
-        {main === null ? null : (
+        {mainThreadId === null ? null : (
           <Link
             to="/$environmentId/$threadId"
-            params={{ environmentId: main.environmentId, threadId: main.id }}
+            params={{ environmentId: project.environmentId, threadId: mainThreadId }}
             aria-label={`Back to ${project.title}`}
             className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <ArrowLeftIcon aria-hidden className="size-4" />
           </Link>
         )}
-        <BotAvatar
-          projectId={project.id}
-          name={project.title}
-          avatar={botAvatar(project)}
-          className="size-6 text-3xs"
-        />
         <h1 className="min-w-0 truncate text-sm font-medium">
           {project.title}
           <span className="text-muted-foreground"> · Activity</span>

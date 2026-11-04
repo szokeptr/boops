@@ -1,4 +1,9 @@
-import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  botMainThreadId,
+  type EnvironmentId,
+  type ProjectId,
+  type ThreadId,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
 import { scopeThreadRef, scopedProjectKey, scopedThreadKey } from "../environment/scoped.ts";
@@ -11,13 +16,20 @@ import {
 } from "./threadStatus.ts";
 import { toSortableTimestamp } from "./threadSort.ts";
 
-export type BotStatus = "working" | "needs-you" | "idle";
+/** What one thread of a bot is doing. */
+export type BotThreadStatus = "working" | "needs-you" | "idle";
+
+/**
+ * What the bot is doing, as its avatar shows it. Hatching: its conversation has
+ * not had a turn yet. Dozing: idle and quiet for a while.
+ */
+export type BotStatus = BotThreadStatus | "dozing" | "hatching";
 
 export interface BotThreadRow {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly title: string;
-  readonly status: BotStatus;
+  readonly status: BotThreadStatus;
   readonly unread: boolean;
   readonly lastActivityAt: string;
 }
@@ -47,15 +59,15 @@ export interface BotListInput {
   readonly machineLabels: ReadonlyMap<EnvironmentId, string>;
   /** Client-kept visit watermarks by scoped thread key, for servers without visit tracking. */
   readonly localLastVisitedAt?: Readonly<Record<string, string>>;
+  /** Epoch milliseconds; without it no bot dozes. */
+  readonly now?: number;
 }
 
 // Rows render one line; a long reply would only be clipped by CSS.
 const PREVIEW_MAX_LENGTH = 200;
 
-/** The bot's avatar. Always null until projects carry one. */
-export function botAvatar(_project: EnvironmentProject): string | null {
-  return null;
-}
+// A day without a message reads as asleep on the avatar.
+const BOT_DOZE_AFTER_MS = 24 * 60 * 60 * 1_000;
 
 /** Initials of the bot's first two words, or the first two letters of a one-word name. */
 export function botMonogram(name: string): string {
@@ -73,43 +85,24 @@ export function botMonogram(name: string): string {
   return letters.length === 0 ? "?" : letters.toLocaleUpperCase();
 }
 
-/** A stable non-negative number per project, so a placeholder keeps its colour. */
-export function botAvatarSeed(projectId: ProjectId): number {
-  let hash = 0;
-  for (let index = 0; index < projectId.length; index += 1) {
-    hash = (hash * 31 + projectId.charCodeAt(index)) | 0;
-  }
-  return Math.abs(hash);
-}
-
 function isListedThread(thread: EnvironmentThreadShell): boolean {
   return thread.archivedAt === null && thread.deletedAt === null;
 }
 
-/**
- * The bot's main conversation: the earliest-created live top-level thread of
- * its project, until projects name their main thread.
- */
-export function resolveBotMainThread(
+/** The bot's own live threads; project ids are only unique within an environment. */
+function botThreads(
   project: Pick<EnvironmentProject, "environmentId" | "id">,
   threads: ReadonlyArray<EnvironmentThreadShell>,
-): EnvironmentThreadShell | null {
-  let main: EnvironmentThreadShell | null = null;
-  for (const thread of threads) {
-    if (thread.environmentId !== project.environmentId || thread.projectId !== project.id) continue;
-    if (!isListedThread(thread) || thread.lineage.parentThreadId !== null) continue;
-    if (
-      main === null ||
-      thread.createdAt < main.createdAt ||
-      (thread.createdAt === main.createdAt && thread.id < main.id)
-    ) {
-      main = thread;
-    }
-  }
-  return main;
+): EnvironmentThreadShell[] {
+  return threads.filter(
+    (thread) =>
+      thread.environmentId === project.environmentId &&
+      thread.projectId === project.id &&
+      isListedThread(thread),
+  );
 }
 
-function botStatusOfThread(thread: EnvironmentThreadShell): BotStatus {
+function botStatusOfThread(thread: EnvironmentThreadShell): BotThreadStatus {
   switch (resolveThreadStatus(thread)) {
     case "approval":
     case "input":
@@ -125,7 +118,7 @@ function botStatusOfThread(thread: EnvironmentThreadShell): BotStatus {
   }
 }
 
-const STATUS_RANK: Record<BotStatus, number> = { idle: 0, working: 1, "needs-you": 2 };
+const STATUS_RANK: Record<BotThreadStatus, number> = { idle: 0, working: 1, "needs-you": 2 };
 
 function isThreadUnread(
   thread: EnvironmentThreadShell,
@@ -187,12 +180,26 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
     if (project.archivedAt != null || project.isScratch) continue;
     const key = scopedProjectKey({ environmentId: project.environmentId, projectId: project.id });
     const threads = threadsByProjectKey.get(key) ?? [];
-    const main = resolveBotMainThread(project, threads);
-    let status: BotStatus = "idle";
+    const mainThreadId = botMainThreadId(project, threads);
+    const main = threads.find((thread) => thread.id === mainThreadId) ?? null;
+    let threadStatus: BotThreadStatus = "idle";
     for (const thread of threads) {
-      const threadStatus = botStatusOfThread(thread);
-      if (STATUS_RANK[threadStatus] > STATUS_RANK[status]) status = threadStatus;
+      const status = botStatusOfThread(thread);
+      if (STATUS_RANK[status] > STATUS_RANK[threadStatus]) threadStatus = status;
     }
+    const lastActivityAt =
+      main === null
+        ? laterIso(project.createdAt, project.updatedAt)
+        : laterIso(threadActivityAt(main), main.createdAt);
+    const status: BotStatus =
+      threadStatus !== "idle"
+        ? threadStatus
+        : main === null || main.latestRun === null
+          ? "hatching"
+          : input.now !== undefined &&
+              input.now - (toSortableTimestamp(lastActivityAt) ?? input.now) > BOT_DOZE_AFTER_MS
+            ? "dozing"
+            : "idle";
     const message = main?.source.latestVisibleMessage ?? null;
     rows.push({
       key,
@@ -200,17 +207,14 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
       machineLabel: input.machineLabels.get(project.environmentId) ?? null,
       projectId: project.id,
       name: project.title,
-      avatar: botAvatar(project),
-      mainThreadId: main?.id ?? null,
+      avatar: project.avatar ?? null,
+      mainThreadId,
       lastMessagePreview: message === null ? null : previewText(message.text),
       lastMessageFromUser: message?.role === "user",
       status,
       unread: main !== null && isThreadUnread(main, input.localLastVisitedAt),
-      lastActivityAt:
-        main === null
-          ? laterIso(project.createdAt, project.updatedAt)
-          : laterIso(threadActivityAt(main), main.createdAt),
-      activityThreadCount: threads.length - (main === null ? 0 : 1),
+      lastActivityAt,
+      activityThreadCount: threads.filter((thread) => thread.id !== mainThreadId).length,
     });
   }
   return rows.sort((a, b) => compareByActivity(a, b, a.key, b.key));
@@ -218,29 +222,29 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
 
 /** A bot's threads other than its main one, most recently active first. */
 export function deriveBotActivity(input: {
-  readonly project: Pick<EnvironmentProject, "environmentId" | "id">;
+  readonly project: Pick<EnvironmentProject, "environmentId" | "id" | "mainThreadId">;
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
   readonly localLastVisitedAt?: Readonly<Record<string, string>>;
 }): ReadonlyArray<BotThreadRow> {
-  const main = resolveBotMainThread(input.project, input.threads);
-  const rows: BotThreadRow[] = [];
-  for (const thread of input.threads) {
-    if (
-      thread.environmentId !== input.project.environmentId ||
-      thread.projectId !== input.project.id ||
-      !isListedThread(thread) ||
-      thread.id === main?.id
-    ) {
-      continue;
-    }
-    rows.push({
+  const threads = botThreads(input.project, input.threads);
+  const mainThreadId = botMainThreadId(input.project, threads);
+  return threads
+    .filter((thread) => thread.id !== mainThreadId)
+    .map((thread): BotThreadRow => ({
       environmentId: thread.environmentId,
       threadId: thread.id,
       title: thread.title,
       status: botStatusOfThread(thread),
       unread: isThreadUnread(thread, input.localLastVisitedAt),
       lastActivityAt: threadActivityAt(thread),
-    });
-  }
-  return rows.sort((a, b) => compareByActivity(a, b, a.threadId, b.threadId));
+    }))
+    .sort((a, b) => compareByActivity(a, b, a.threadId, b.threadId));
+}
+
+/** The bot's main thread id, read from the shells this client holds. */
+export function resolveBotMainThreadId(
+  project: Pick<EnvironmentProject, "environmentId" | "id" | "mainThreadId">,
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+): ThreadId | null {
+  return botMainThreadId(project, botThreads(project, threads));
 }

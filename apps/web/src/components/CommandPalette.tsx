@@ -159,7 +159,7 @@ import {
   useCommandPaletteStore,
 } from "../commandPaletteStore";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
-import { resolveBotMainThread } from "@t3tools/client-runtime/state/bot-list";
+import { resolveBotMainThreadId } from "@t3tools/client-runtime/state/bot-list";
 import {
   cn,
   getLocalFileManagerName,
@@ -766,11 +766,11 @@ function OpenCommandPaletteDialog(props: {
 
   // A project is a bot, so it opens on the bot's main conversation.
   const openProjectFromSearch = async (project: (typeof projects)[number]) => {
-    const mainThread = resolveBotMainThread(project, threads);
-    if (mainThread) {
+    const mainThreadId = resolveBotMainThreadId(project, threads);
+    if (mainThreadId) {
       await navigate({
         to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(scopeThreadRef(mainThread.environmentId, mainThread.id)),
+        params: buildThreadRouteParams(scopeThreadRef(project.environmentId, mainThreadId)),
       });
       return;
     }
@@ -1791,11 +1791,11 @@ function OpenCommandPaletteDialog(props: {
           input: { projectId: existing.id, archived: false },
         }).then((result) => reportProjectFailure("Failed to unarchive project", result));
       }
-      const mainThread = resolveBotMainThread(existing, threads);
-      if (mainThread) {
+      const mainThreadId = resolveBotMainThreadId(existing, threads);
+      if (mainThreadId) {
         await navigate({
           to: "/$environmentId/$threadId",
-          params: buildThreadRouteParams(scopeThreadRef(mainThread.environmentId, mainThread.id)),
+          params: buildThreadRouteParams(scopeThreadRef(existing.environmentId, mainThreadId)),
         });
       } else {
         const navigationResult = await settlePromise(() =>

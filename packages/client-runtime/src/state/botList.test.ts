@@ -10,7 +10,12 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { botMonogram, deriveBotActivity, deriveBotList, resolveBotMainThread } from "./botList.ts";
+import {
+  botMonogram,
+  deriveBotActivity,
+  deriveBotList,
+  resolveBotMainThreadId,
+} from "./botList.ts";
 import { presentThreadShell, scopeProject } from "./models.ts";
 import { v2Project, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
 
@@ -75,31 +80,23 @@ function message(text: string, updatedAt: string, role: "user" | "assistant" = "
   };
 }
 
-describe("resolveBotMainThread", () => {
-  it("falls back to the earliest-created live top-level thread", () => {
+describe("resolveBotMainThreadId", () => {
+  it("reads the recorded main thread, else this environment's oldest live thread", () => {
     const bot = project(laptop, "bot");
-    const first = thread(laptop, "bot", "first", {
+    const archived = thread(laptop, "bot", "archived", {
       createdAt: at("2026-06-02T00:00:00.000Z"),
       archivedAt: at("2026-06-03T00:00:00.000Z"),
     });
-    const second = thread(laptop, "bot", "second", { createdAt: at("2026-06-03T00:00:00.000Z") });
-    const child = thread(laptop, "bot", "child", {
-      createdAt: at("2026-06-01T00:00:00.000Z"),
-      lineage: {
-        rootThreadId: second.id,
-        parentThreadId: second.id,
-        relationshipToParent: "subagent",
-      },
-    });
-    const third = thread(laptop, "bot", "third", { createdAt: at("2026-06-04T00:00:00.000Z") });
+    const oldest = thread(laptop, "bot", "oldest", { createdAt: at("2026-06-03T00:00:00.000Z") });
+    const newer = thread(laptop, "bot", "newer", { createdAt: at("2026-06-04T00:00:00.000Z") });
     const otherEnvironment = thread(vps, "bot", "elsewhere", {
       createdAt: at("2026-05-01T00:00:00.000Z"),
     });
+    const threads = [newer, archived, otherEnvironment, oldest];
 
-    expect(resolveBotMainThread(bot, [third, child, first, otherEnvironment, second])?.id).toBe(
-      second.id,
-    );
-    expect(resolveBotMainThread(bot, [first])).toBeNull();
+    expect(resolveBotMainThreadId(bot, threads)).toBe(oldest.id);
+    expect(resolveBotMainThreadId({ ...bot, mainThreadId: newer.id }, threads)).toBe(newer.id);
+    expect(resolveBotMainThreadId(bot, [archived])).toBeNull();
   });
 });
 
@@ -113,9 +110,23 @@ describe("deriveBotList", () => {
       project(laptop, "approval"),
       project(laptop, "input"),
       project(laptop, "background"),
+      project(laptop, "new"),
+      project(laptop, "empty"),
+      project(laptop, "dozing"),
     ];
+    const lastWord = message("see you", "2026-06-10T00:00:00.000Z");
     const threads = [
-      thread(laptop, "idle", "idle-main", { latestRunId: runId, status: "completed" }),
+      thread(laptop, "idle", "idle-main", {
+        latestRunId: runId,
+        status: "completed",
+        ...message("done", "2026-06-11T00:00:00.000Z"),
+      }),
+      thread(laptop, "new", "new-main"),
+      thread(laptop, "dozing", "dozing-main", {
+        latestRunId: runId,
+        status: "completed",
+        ...lastWord,
+      }),
       thread(laptop, "working", "working-main", {
         latestRunId: runId,
         activeRunId: runId,
@@ -123,7 +134,7 @@ describe("deriveBotList", () => {
       }),
       thread(laptop, "approval", "approval-main", pendingRequest("command")),
       thread(laptop, "input", "input-main", pendingRequest("user_input")),
-      thread(laptop, "background", "background-main"),
+      thread(laptop, "background", "background-main", { latestRunId: runId, status: "completed" }),
       thread(laptop, "background", "background-run", {
         createdAt: at("2026-06-05T00:00:00.000Z"),
         ...pendingRequest("command"),
@@ -131,7 +142,12 @@ describe("deriveBotList", () => {
     ];
 
     const statusByBot = Object.fromEntries(
-      deriveBotList({ projects, threads, machineLabels }).map((row) => [row.projectId, row.status]),
+      deriveBotList({
+        projects,
+        threads,
+        machineLabels,
+        now: Date.parse("2026-06-11T00:00:00.000Z") + 1,
+      }).map((row) => [row.projectId, row.status]),
     );
 
     expect(statusByBot).toEqual({
@@ -140,6 +156,9 @@ describe("deriveBotList", () => {
       approval: "needs-you",
       input: "needs-you",
       background: "needs-you",
+      new: "hatching",
+      empty: "hatching",
+      dozing: "dozing",
     });
   });
 

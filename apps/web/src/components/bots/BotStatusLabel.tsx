@@ -15,12 +15,12 @@ const STATUS_PRESENTATION = {
   },
 } as const;
 
-/** Nothing for idle; callers show the last message instead. */
+/** Only needs-you and working get a label; callers show the last message otherwise. */
 export function BotStatusLabel(props: {
   readonly status: BotStatus;
   readonly className?: string | undefined;
 }) {
-  if (props.status === "idle") return null;
+  if (props.status !== "needs-you" && props.status !== "working") return null;
   const presentation = STATUS_PRESENTATION[props.status];
   return (
     <span
