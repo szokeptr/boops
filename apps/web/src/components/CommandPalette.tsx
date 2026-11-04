@@ -103,7 +103,6 @@ import {
   copyPromptLink,
   promptLinkRepositoryOf,
 } from "./promptLinks/copyPromptLink";
-import { useClientSettings } from "../hooks/useSettings";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { readLocalApi } from "../localApi";
 import { configuredHostedAppUrl } from "../hostedPairing";
@@ -160,7 +159,7 @@ import {
   useCommandPaletteStore,
 } from "../commandPaletteStore";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
-import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
+import { resolveBotMainThread } from "@t3tools/client-runtime/state/bot-list";
 import {
   cn,
   getLocalFileManagerName,
@@ -216,7 +215,6 @@ import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { isSidebarHiddenThread } from "./Sidebar.logic";
 import { CommandPaletteContent } from "./CommandPaletteContent";
 import {
-  selectCommandPaletteClientSettings,
   useEnvironmentLookups,
   useProjectLookups,
   useSortedProjectGroups,
@@ -278,7 +276,7 @@ function openIntentView(intent: CommandPaletteOpenIntent | null): CommandPalette
     case "new-thread-in":
       return {
         addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
-        groups: [{ value: NEW_THREAD_IN_GROUP, label: "Projects", items: [] }],
+        groups: [{ value: NEW_THREAD_IN_GROUP, label: "Bots", items: [] }],
       };
     case "change-theme":
       return {
@@ -432,7 +430,6 @@ function OpenCommandPaletteDialog(props: {
     highlightClearedRef.current = true;
     setHighlightedItemValue(null);
   }
-  const clientSettings = useClientSettings(selectCommandPaletteClientSettings);
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
@@ -767,33 +764,13 @@ function OpenCommandPaletteDialog(props: {
     [browseNavigation],
   );
 
+  // A project is a bot, so it opens on the bot's main conversation.
   const openProjectFromSearch = async (project: (typeof projects)[number]) => {
-    const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-    const groupedProjectKeys = group
-      ? new Set(
-          group.memberProjectRefs.map(
-            (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
-          ),
-        )
-      : null;
-    const latestThread = groupedProjectKeys
-      ? (sortThreads(
-          threads.filter(
-            (thread) =>
-              thread.archivedAt === null &&
-              groupedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`),
-          ),
-          clientSettings.sidebarThreadSortOrder,
-        )[0] ?? null)
-      : getLatestThreadForProject(
-          threads.filter((thread) => thread.environmentId === project.environmentId),
-          project.id,
-          clientSettings.sidebarThreadSortOrder,
-        );
-    if (latestThread) {
+    const mainThread = resolveBotMainThread(project, threads);
+    if (mainThread) {
       await navigate({
         to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(scopeThreadRef(latestThread.environmentId, latestThread.id)),
+        params: buildThreadRouteParams(scopeThreadRef(mainThread.environmentId, mainThread.id)),
       });
       return;
     }
@@ -1266,7 +1243,7 @@ function OpenCommandPaletteDialog(props: {
       title: "New thread in...",
       icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
-      groups: [{ value: NEW_THREAD_IN_GROUP, label: "Projects", items: projectThreadItems }],
+      groups: [{ value: NEW_THREAD_IN_GROUP, label: "Bots", items: projectThreadItems }],
     });
   }
 
@@ -1704,7 +1681,7 @@ function OpenCommandPaletteDialog(props: {
           ? [
               {
                 value: NEW_THREAD_IN_GROUP,
-                label: "Projects",
+                label: "Bots",
                 // Every project archived and no "No project" home leaves only adding one.
                 items: projectThreadItems.length > 0 ? projectThreadItems : [addProjectAction],
               },
@@ -1814,17 +1791,11 @@ function OpenCommandPaletteDialog(props: {
           input: { projectId: existing.id, archived: false },
         }).then((result) => reportProjectFailure("Failed to unarchive project", result));
       }
-      const latestThread = getLatestThreadForProject(
-        threads.filter((thread) => thread.environmentId === existing.environmentId),
-        existing.id,
-        clientSettings.sidebarThreadSortOrder,
-      );
-      if (latestThread && latestThread.settledOverride !== "settled") {
+      const mainThread = resolveBotMainThread(existing, threads);
+      if (mainThread) {
         await navigate({
           to: "/$environmentId/$threadId",
-          params: buildThreadRouteParams(
-            scopeThreadRef(latestThread.environmentId, latestThread.id),
-          ),
+          params: buildThreadRouteParams(scopeThreadRef(mainThread.environmentId, mainThread.id)),
         });
       } else {
         const navigationResult = await settlePromise(() =>

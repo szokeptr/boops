@@ -36,7 +36,7 @@ import {
 import { useAcknowledgeThreadWoke, useThreadActions } from "../../hooks/useThreadActions";
 import { settleAndAdvance } from "../../settleAndAdvance";
 import type { ChatShortcutCommands } from "./useChatShortcuts";
-import { resolveThreadLastVisitedAt } from "../Sidebar.logic";
+import { resolveThreadLastVisitedAt } from "@t3tools/client-runtime/state/thread-status";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { type SetStateAction, useRef, useState } from "react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
