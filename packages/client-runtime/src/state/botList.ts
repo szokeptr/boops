@@ -1,6 +1,7 @@
 import {
   botMainThreadId,
   type EnvironmentId,
+  type ProjectAvatar,
   type ProjectId,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -42,7 +43,7 @@ export interface BotRow {
   readonly machineLabel: string | null;
   readonly projectId: ProjectId;
   readonly name: string;
-  readonly avatar: string | null;
+  readonly avatar: ProjectAvatar | null;
   readonly mainThreadId: ThreadId | null;
   readonly lastMessagePreview: string | null;
   readonly lastMessageFromUser: boolean;

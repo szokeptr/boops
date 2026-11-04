@@ -8,7 +8,7 @@ import { cn } from "~/lib/utils";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { RelativeTime } from "../RelativeTime";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { BotAvatarSlot } from "./BotAvatarSlot";
+import { BotAvatar } from "./BotAvatar";
 import { BotStatusLabel } from "./BotStatusLabel";
 
 export interface BotListProps {
@@ -66,7 +66,14 @@ function BotListRow(props: {
   const { row } = props;
   const content = (
     <>
-      <BotAvatarSlot avatar={row.avatar} name={row.name} status={row.status} size={32} />
+      <BotAvatar
+        avatar={row.avatar}
+        name={row.name}
+        size={32}
+        {...(row.status === "hatching"
+          ? { status: "idle", hatchStage: "egg" }
+          : { status: row.status })}
+      />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 items-baseline gap-2">
           <span

@@ -7,8 +7,6 @@ export {
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
 export {
-  pullRequestListLines,
-  type PullRequestListLine,
   type ThreadCurrentPullRequest,
   type ThreadPullRequestBadge,
   type ThreadPullRequestChain,
