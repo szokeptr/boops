@@ -1,6 +1,7 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 
 // Codex truncates entries over 4,000 bytes; keep each section self-contained and below that limit.
+// Hatching starts when PERSONA.md is missing, so creating a bot's home folder must not create it.
 export const POCKS_BOT_INSTRUCTION_SECTIONS: ReadonlyArray<string> = [
   `## Pocks bot
 

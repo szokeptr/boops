@@ -87,6 +87,7 @@ import {
 } from "./secret-grading.ts";
 /** Agent models by id, with the display name a harness gives them. */
 const MODELS = {
+  "claude-haiku-5-5": "Haiku 5.5",
   "claude-sonnet-5-5": "Sonnet 5.5",
   "claude-opus-5-5": "Opus 5.5",
   "gpt-6.1-sol": "GPT-6.1 Sol",
