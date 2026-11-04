@@ -111,7 +111,7 @@ it("previews assistant quotes as readable text and preserves the citation when e
   );
 });
 
-it("shows who sent a queued message and folds automation and agent prompts", async () => {
+it("shows who sent a queued message and folds routine and agent prompts", async () => {
   setup();
   const message = (id: string, fields: Record<string, unknown>) => ({
     id,
@@ -129,7 +129,7 @@ it("shows who sent a queued message and folds automation and agent prompts", asy
         "GitHub labeled a pull request.\nFollow the runbook.",
         {
           createdBy: "agent",
-          scheduledTaskId: "task:webhook",
+          routine: { taskId: "task:webhook", name: "PR dispatcher", trigger: "webhook" },
         },
       ],
       [
@@ -159,12 +159,12 @@ it("shows who sent a queued message and folds automation and agent prompts", asy
   const onOpenThread = vi.fn();
   await using _screen = await renderQueue({ onOpenThread });
 
-  const automation = page.getByRole("button", { name: /PR dispatcher/ });
+  const automation = page.getByRole("button", { name: /PR dispatcher · Webhook/ });
   await expect.element(automation).toHaveAttribute("aria-expanded", "false");
   await expect.element(page.getByText(/Follow the runbook/)).not.toBeInTheDocument();
   await automation.click();
   await expect.element(page.getByText(/Follow the runbook/)).toBeVisible();
-  await expect.element(page.getByRole("link", { name: "Open automation" })).toBeInTheDocument();
+  await expect.element(page.getByRole("link", { name: "Open routine" })).toBeInTheDocument();
 
   await expect.element(page.getByRole("button", { name: /Release lead/ })).toBeVisible();
   await page.getByRole("button", { name: "Open thread" }).click({ force: true });

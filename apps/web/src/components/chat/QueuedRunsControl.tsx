@@ -12,7 +12,10 @@ import type {
   RunId,
   ThreadId,
 } from "@t3tools/contracts";
-import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+import {
+  resolveUserMessagePresentation,
+  routineLabelText,
+} from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowUpIcon,
@@ -37,7 +40,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { GuestMessageName } from "./guestMessageStyle";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
-import { FoldedMessageHeader, useScheduledTaskTitle } from "./TimelineUserMessageRow";
+import { FoldedMessageHeader } from "./TimelineUserMessageRow";
 
 export interface EditQueuedRunRequest {
   readonly runId: RunId;
@@ -407,10 +410,9 @@ function QueuedMessage(props: {
 }) {
   const presentation = props.message ? resolveUserMessagePresentation(props.message) : null;
   const attribution = presentation?.attribution ?? null;
-  const scheduledTaskId = presentation?.scheduledTaskId;
+  const routine = presentation?.routine;
   const senderThreadId = props.message?.senderThreadId;
   const [expanded, setExpanded] = useState(false);
-  const taskTitle = useScheduledTaskTitle(props.environmentId, scheduledTaskId);
   const senderShell = useQuietThreadShell(
     attribution === "agent" && senderThreadId
       ? { environmentId: props.environmentId, threadId: senderThreadId }
@@ -420,8 +422,11 @@ function QueuedMessage(props: {
     attribution === "automation"
       ? {
           icon: CalendarClockIcon,
-          label: "Automation",
-          summary: taskTitle ?? props.previewText.split(/\r?\n/, 1)[0] ?? "",
+          label: "Routine",
+          summary:
+            routine === undefined
+              ? (props.previewText.split(/\r?\n/, 1)[0] ?? "")
+              : routineLabelText(routine),
         }
       : attribution === "agent"
         ? {
@@ -504,17 +509,17 @@ function QueuedMessage(props: {
                 Open thread
               </InlineButton>
             ) : null}
-            {scheduledTaskId ? (
+            {routine ? (
               <InlineButton
                 tone="muted"
                 render={
                   <Link
                     to="/settings/scheduled-tasks"
-                    search={{ environmentId: props.environmentId, taskId: scheduledTaskId }}
+                    search={{ environmentId: props.environmentId, taskId: routine.taskId }}
                   />
                 }
               >
-                Open automation
+                Open routine
               </InlineButton>
             ) : null}
             <TimelineRowTimestamp

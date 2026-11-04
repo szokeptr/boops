@@ -779,8 +779,18 @@ function TaskForm({
       );
       return;
     }
-    if (!projects.some((project) => project.id === draft.projectId)) {
+    const project = projects.find((candidate) => candidate.id === draft.projectId);
+    if (project === undefined) {
       Dialog.alert("Project unavailable", "Choose a project in this environment.");
+      return;
+    }
+    // A new routine posts into the bot's main thread unless it was saved with another.
+    const threadId = draft.task?.threadId ?? project.mainThreadId ?? null;
+    if (threadId === null) {
+      Dialog.alert(
+        "Pick a bot",
+        "Routines post into a bot's conversation, and this project has none.",
+      );
       return;
     }
     const input: ScheduledTaskUpsertInput = {
@@ -791,7 +801,7 @@ function TaskForm({
       modelSelection: draft.modelSelection,
       schedule,
       enabled: draft.enabled,
-      threadId: draft.task?.threadId ?? null,
+      threadId,
       workspaceStrategy:
         draft.workspace === "root"
           ? { type: "root" }

@@ -1159,13 +1159,13 @@ function ScheduledTaskDestination({
     <Field label="Destination">
       {ref === null ? (
         <p className="text-sm text-muted-foreground">
-          Each run starts a new thread with the workspace and model below.
+          Pick a bot. Each run posts into its conversation.
         </p>
       ) : (
         <div className="space-y-1 text-sm">
           <p className="wrap-anywhere">{thread?.title.trim() || `Thread ${ref.threadId}`}</p>
           <p className="text-muted-foreground">
-            Each run continues this conversation, in its workspace and with its current model.
+            Each run posts here as a routine message, queued behind any turn in progress.
           </p>
         </div>
       )}
@@ -1241,6 +1241,10 @@ function ScheduledTaskEditorForm({
     : task;
   const selectedProjectId = draft.projectId || projects[0]?.id || "";
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
+  // A new routine posts into the bot's main thread unless it was saved with another.
+  const targetThreadId = draft.threadId
+    ? (draft.threadId as ThreadId)
+    : (selectedProject?.mainThreadId ?? null);
   const instanceEntries = providerInstanceEntriesFor(
     providers,
     settings,
@@ -1292,6 +1296,13 @@ function ScheduledTaskEditorForm({
       selection === null
     ) {
       reportFailure("Scheduled task is incomplete", "Add a title, prompt, project, and model.");
+      return;
+    }
+    if (targetThreadId === null) {
+      reportFailure(
+        "Pick a bot",
+        "Routines post into a bot's conversation, and this project has none.",
+      );
       return;
     }
     const parsedFilters = parseWebhookFilterDrafts(draft.filters);
@@ -1355,7 +1366,7 @@ function ScheduledTaskEditorForm({
       enabled: draft.enabled,
       schedule,
       projectId: selectedProjectId as ProjectId,
-      threadId: draft.threadId ? (draft.threadId as ThreadId) : null,
+      threadId: targetThreadId,
       workspaceStrategy,
       modelSelection,
       // Tasks have no mode picker; a mode above the administrator's ceiling would fail every run.
@@ -1479,10 +1490,7 @@ function ScheduledTaskEditorForm({
             />
           </Field>
 
-          <ScheduledTaskDestination
-            environmentId={environmentId}
-            threadId={draft.threadId ? (draft.threadId as ThreadId) : null}
-          />
+          <ScheduledTaskDestination environmentId={environmentId} threadId={targetThreadId} />
 
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Project" htmlFor="scheduled-task-project">

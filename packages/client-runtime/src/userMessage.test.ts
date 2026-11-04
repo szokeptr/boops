@@ -7,6 +7,7 @@ import {
   resolveUserMessageFileCards,
   resolveUserMessageGrouping,
   resolveUserMessagePresentation,
+  routineLabelText,
 } from "./userMessage.ts";
 
 describe("resolveUserMessageGrouping", () => {
@@ -27,7 +28,14 @@ describe("resolveUserMessageGrouping", () => {
       { ...own, role: "assistant" },
       { ...own, createdBy: "agent" as const },
       { ...own, createdBy: "agent" as const, creationSource: "server" as const },
-      { ...own, scheduledTaskId: ScheduledTaskId.make("task") },
+      {
+        ...own,
+        routine: {
+          taskId: ScheduledTaskId.make("task"),
+          name: "Task",
+          trigger: "interval",
+        } as const,
+      },
       {
         ...own,
         context: {
@@ -165,7 +173,7 @@ describe("resolveUserMessagePresentation", () => {
       expect(resolveUserMessagePresentation({ ...message, text: legacyText })).toEqual({
         text: legacyText,
         attribution: null,
-        scheduledTaskId: undefined,
+        routine: undefined,
       });
     }
   });
@@ -178,7 +186,7 @@ describe("resolveUserMessagePresentation", () => {
       expect(resolveUserMessagePresentation({ role: "user", text })).toEqual({
         text: "",
         attribution: null,
-        scheduledTaskId: undefined,
+        routine: undefined,
       });
     }
   });
@@ -197,7 +205,7 @@ describe("resolveUserMessagePresentation", () => {
           },
         },
       }),
-    ).toEqual({ text: "Why?", attribution: "guest", scheduledTaskId: undefined, guestName: "Sam" });
+    ).toEqual({ text: "Why?", attribution: "guest", routine: undefined, guestName: "Sam" });
   });
 
   it("attributes older server-sent restart continuations to T3 Code, not another agent", () => {
@@ -217,7 +225,23 @@ describe("resolveUserMessagePresentation", () => {
     }
   });
 
-  it("recovers the triggering automation from older scheduler message ids", () => {
+  it("labels a routine message with the routine's name and trigger", () => {
+    const routine = {
+      taskId: ScheduledTaskId.make("task:heartbeat"),
+      name: "Heartbeat",
+      trigger: "interval",
+    } as const;
+    const presentation = resolveUserMessagePresentation({
+      role: "user",
+      createdBy: "system",
+      text: "Check your notes.",
+      routine,
+    });
+    expect(presentation).toEqual({ text: "Check your notes.", attribution: "automation", routine });
+    expect(routineLabelText(routine)).toBe("Heartbeat · Repeating");
+  });
+
+  it("recognizes older scheduler messages by their id", () => {
     for (const trigger of ["scheduled", "manual"]) {
       expect(
         resolveUserMessagePresentation({
@@ -229,7 +253,7 @@ describe("resolveUserMessagePresentation", () => {
       ).toEqual({
         text: "Check for crashes.\n",
         attribution: "automation",
-        scheduledTaskId: "task:daily-audit",
+        routine: undefined,
       });
     }
   });

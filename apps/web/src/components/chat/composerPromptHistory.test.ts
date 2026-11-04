@@ -104,7 +104,12 @@ describe("buildComposerPromptHistoryEntries", () => {
   it("skips messages sent by automations, agents, and T3 Code", () => {
     const typed = buildComposerPromptHistoryEntries([
       { id: "m1", role: "user", text: "typed" },
-      { id: "m2", role: "user", text: "scheduled", scheduledTaskId: ScheduledTaskId.make("task") },
+      {
+        id: "m2",
+        role: "user",
+        text: "scheduled",
+        routine: { taskId: ScheduledTaskId.make("task"), name: "Daily", trigger: "interval" },
+      },
       {
         id: "scheduled-task-message:task:1:scheduled",
         role: "user",

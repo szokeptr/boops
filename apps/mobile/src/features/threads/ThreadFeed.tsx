@@ -39,6 +39,7 @@ import {
   IDLE_COMPACTING_LABELS,
   resolveUserMessageFileCards,
   resolveUserMessagePresentation,
+  routineLabelText,
 } from "@t3tools/client-runtime/user-message";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRuntime";
@@ -54,7 +55,7 @@ import {
   type MessageId,
   type OrchestrationV2ProjectedTurnItem,
   type RunId,
-  type ScheduledTaskId,
+  type OrchestrationV2RoutineLabel,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { renderAssistantCitationsAsText } from "@t3tools/shared/assistantCitations";
@@ -256,8 +257,6 @@ import {
   useThreadChipIcons,
 } from "../../state/entities";
 import { useThreadSelection } from "../../state/use-thread-selection";
-import { useEnvironmentQuery } from "../../state/query";
-import { serverEnvironment } from "../../state/server";
 import { composerDocumentAttachmentRecord } from "../../lib/composerContext";
 import * as Option from "effect/Option";
 import { appAtomRegistry } from "../../state/atom-registry";
@@ -1445,12 +1444,12 @@ function OpenSenderThreadButton(props: {
   );
 }
 
-/** Automation prompts are long, repeated runbooks; a folded bubble keeps them out of the way. */
+/** Routine prompts are long, repeated runbooks; a folded bubble keeps them out of the way. */
 function ThreadAutomationMessageRow(props: {
   readonly environmentId: EnvironmentId;
   readonly text: string;
   readonly context?: OrchestrationMessageContext;
-  readonly scheduledTaskId: ScheduledTaskId | undefined;
+  readonly routine: OrchestrationV2RoutineLabel | undefined;
   readonly timestampLabel: string;
   readonly expanded: boolean;
   readonly onToggle: () => void;
@@ -1465,13 +1464,10 @@ function ThreadAutomationMessageRow(props: {
   readonly renderImage: MarkdownImageRenderer;
 }) {
   const navigation = useNavigation();
-  const tasks = useEnvironmentQuery(
-    props.scheduledTaskId
-      ? serverEnvironment.scheduledTasksLive({ environmentId: props.environmentId, input: {} })
-      : null,
-  );
-  const taskTitle = tasks.data?.tasks.find((task) => task.id === props.scheduledTaskId)?.title;
-  const summary = taskTitle ?? props.text.trim().split(/\r?\n/, 1)[0] ?? "";
+  const summary =
+    props.routine === undefined
+      ? (props.text.trim().split(/\r?\n/, 1)[0] ?? "")
+      : routineLabelText(props.routine);
 
   return (
     <View className="mb-5 items-end">
@@ -1485,7 +1481,7 @@ function ThreadAutomationMessageRow(props: {
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Automation: ${summary}`}
+          accessibilityLabel={`Routine: ${summary}`}
           accessibilityHint={`Double tap to ${props.expanded ? "hide" : "show"} the prompt.`}
           accessibilityState={{ expanded: props.expanded }}
           hitSlop={4}
@@ -1502,9 +1498,7 @@ function ThreadAutomationMessageRow(props: {
             tintColorClassName="accent-user-bubble-foreground-muted"
             type="monochrome"
           />
-          <Text className="font-t3-medium text-sm text-user-bubble-foreground-muted">
-            Automation
-          </Text>
+          <Text className="font-t3-medium text-sm text-user-bubble-foreground-muted">Routine</Text>
           <Text numberOfLines={1} className="min-w-0 shrink text-sm text-user-bubble-foreground">
             {summary}
           </Text>
@@ -1534,15 +1528,13 @@ function ThreadAutomationMessageRow(props: {
       </View>
       {props.expanded ? (
         <View className="mt-1 flex-row items-center justify-end gap-2 pr-0.5">
-          {props.scheduledTaskId ? (
+          {props.routine ? (
             <Pressable
               accessibilityRole="link"
               hitSlop={6}
               onPress={() => openSettings(navigation, "SettingsScheduledTasks")}
             >
-              <Text className="font-t3-medium text-xs text-foreground-secondary">
-                Open automation
-              </Text>
+              <Text className="font-t3-medium text-xs text-foreground-secondary">Open routine</Text>
             </Pressable>
           ) : null}
           <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
@@ -1906,7 +1898,7 @@ function renderFeedEntry(
           environmentId={props.environmentId}
           text={presentation.text}
           context={message.context}
-          scheduledTaskId={presentation.scheduledTaskId}
+          routine={presentation.routine}
           timestampLabel={timestampLabel}
           expanded={props.expandedWorkRows[rowId] ?? false}
           onToggle={() => props.onToggleWorkRow(rowId, entry.id)}
