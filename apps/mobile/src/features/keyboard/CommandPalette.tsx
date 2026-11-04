@@ -298,9 +298,9 @@ export function CommandPalette(props: {
       {
         key: "addProject",
         kind: "action",
-        title: "Add project",
-        searchTerms: ["folder", "clone", "repository", "git"],
-        run: () => navigation.navigate("AddProject"),
+        title: "New bot",
+        searchTerms: ["bot", "create", "hatch", "assistant"],
+        run: () => navigation.navigate("CreateBot"),
       },
       {
         key: "settings",

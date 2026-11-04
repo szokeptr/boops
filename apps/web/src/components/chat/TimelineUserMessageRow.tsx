@@ -35,6 +35,7 @@ import {
   MessagesSquareIcon,
   Redo2Icon,
   PencilIcon,
+  SparklesIcon,
 } from "lucide-react";
 import { Link as LinkIconNode } from "lucide";
 import { Button, InlineButton } from "../ui/button";
@@ -262,16 +263,38 @@ export function UserMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mes
 
 function UserMessageContent({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const { attribution } = resolveUserMessagePresentation(row.message);
   return ctx.workflowOpening?.messageId === row.message.id ? (
     <WorkflowOpeningBlock
       opening={ctx.workflowOpening}
       environmentId={ctx.activeThreadEnvironmentId}
       onOpenThread={(threadId) => ctx.onOpenThread(ThreadId.make(threadId))}
     />
-  ) : resolveUserMessagePresentation(row.message).attribution === "automation" ? (
+  ) : attribution === "automation" ? (
     <AutomationMessageRow row={row} />
+  ) : attribution === "system" ? (
+    <SystemMessageRow text={row.message.text} />
   ) : (
     <UserTimelineRow row={row} />
+  );
+}
+
+/** A server-sent prompt, such as a bot's hatching kickoff, is an event in the thread, not a turn by the user. */
+function SystemMessageRow({ text }: { text: string }) {
+  return (
+    <div
+      role="separator"
+      aria-label={text}
+      className="mx-auto flex w-full max-w-(--chat-content-max-width) items-center gap-3 py-1 text-muted-foreground text-xs"
+      data-user-message-attribution="system"
+    >
+      <span className="h-px flex-1 bg-border/70" />
+      <span className="flex min-w-0 items-center gap-1.5">
+        <SparklesIcon aria-hidden="true" className="size-3 shrink-0" />
+        <span className="truncate">{text}</span>
+      </span>
+      <span className="h-px flex-1 bg-border/70" />
+    </div>
   );
 }
 

@@ -134,9 +134,9 @@ function NewTaskHeader(props: {
           props.canAddProject
             ? [
                 {
-                  accessibilityLabel: "Add project",
+                  accessibilityLabel: "New bot",
                   icon: "plus",
-                  onPress: () => navigation.dispatch(StackActions.push("AddProject")),
+                  onPress: () => navigation.dispatch(StackActions.push("CreateBot")),
                 },
               ]
             : []
@@ -404,11 +404,11 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               {Platform.OS === "android" ? (
                 <>
                   <Button
-                    label={catalogState.hasReadyEnvironment ? "Add new project" : "Add environment"}
+                    label={catalogState.hasReadyEnvironment ? "New bot" : "Add environment"}
                     tone="primary"
                     onPress={() =>
                       catalogState.hasReadyEnvironment
-                        ? navigation.dispatch(StackActions.push("AddProject"))
+                        ? navigation.dispatch(StackActions.push("CreateBot"))
                         : navigation.navigate("ConnectionsNew")
                     }
                   />
@@ -432,9 +432,9 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 <>
                   <View className="mt-1">
                     <Button
-                      label="Add new project"
+                      label="New bot"
                       tone="primary"
-                      onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
+                      onPress={() => navigation.dispatch(StackActions.push("CreateBot"))}
                     />
                   </View>
                   {canStartScratch ? (

@@ -56,6 +56,7 @@ import { AddProjectLocalRoute } from "./features/projects/AddProjectLocalRoute";
 import { AddProjectNewRoute } from "./features/projects/AddProjectNewRoute";
 import { AddProjectRepositoryRoute } from "./features/projects/AddProjectRepositoryRoute";
 import { AddProjectSourceRoute } from "./features/projects/AddProjectSourceRoute";
+import { CreateBotScreen } from "./features/projects/CreateBotScreen";
 import { NewTaskEnvironmentPickerRouteScreen } from "./features/threads/NewTaskContextPickerScreens";
 import {
   ExistingThreadSettingsRouteScreen,
@@ -570,6 +571,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
       linking: "new/draft/environment",
       screen: NewTaskEnvironmentPickerRouteScreen,
       options: { ...GLASS_HEADER_OPTIONS, title: "Environment" },
+    }),
+    CreateBot: createNativeStackScreen({
+      linking: "new/bot",
+      screen: CreateBotScreen,
+      options: { ...GLASS_HEADER_OPTIONS, title: "New bot" },
     }),
     AddProject: createNativeStackScreen({
       linking: "new/add-project",

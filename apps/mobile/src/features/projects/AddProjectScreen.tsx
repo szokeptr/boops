@@ -144,7 +144,7 @@ function sourceFromParam(value: string | string[] | undefined): AddProjectRemote
   return parseAddProjectRemoteSource(stringParam(value));
 }
 
-function SectionTitle(props: { readonly children: string }) {
+export function SectionTitle(props: { readonly children: string }) {
   return (
     <Text
       className={
@@ -158,7 +158,7 @@ function SectionTitle(props: { readonly children: string }) {
   );
 }
 
-function AddProjectShell(props: { readonly children: ReactNode; readonly title: string }) {
+export function AddProjectShell(props: { readonly children: ReactNode; readonly title: string }) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -180,7 +180,7 @@ function AddProjectShell(props: { readonly children: ReactNode; readonly title: 
   );
 }
 
-function ListSection(props: { readonly children: ReactNode }) {
+export function ListSection(props: { readonly children: ReactNode }) {
   return (
     <View
       className={
@@ -194,7 +194,7 @@ function ListSection(props: { readonly children: ReactNode }) {
   );
 }
 
-function ListRow(props: {
+export function ListRow(props: {
   readonly title: string;
   readonly subtitle?: string | null;
   readonly icon: ReactNode;
@@ -262,7 +262,7 @@ function ListRow(props: {
   );
 }
 
-function PrimaryActionButton(props: {
+export function PrimaryActionButton(props: {
   readonly label: string;
   readonly disabled?: boolean;
   readonly loading?: boolean;
@@ -379,7 +379,7 @@ function useBrowsePathInput(environment: EnvironmentOption | null, pinnedDirecto
   return { isBrowseNavigating, pathInput, setPathInput, navigateToBrowsePath };
 }
 
-function useEnvironmentOptions(
+export function useEnvironmentOptions(
   selectedEnvironmentId: EnvironmentId | null = null,
 ): ReadonlyArray<EnvironmentOption> {
   const serverConfigByEnvironmentId = useServerConfigs();

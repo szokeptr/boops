@@ -6,6 +6,7 @@ import { isPreviewAvailableFor } from "../browser/previewRuntime";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { dispatchPreviewAction, type PreviewAction } from "../components/preview/previewActionBus";
+import { openCreateBotDialog } from "../components/CreateBotDialog";
 import { isAppModalPage } from "../components/sidebar/mainAppLocation";
 import { shouldCreateNewThreadInCurrentProject } from "../components/Sidebar.logic";
 import { createNewThreadHandler, resolveDefaultProjectRef } from "../hooks/useHandleNewThread";
@@ -121,6 +122,10 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         if (environmentId === null) return;
         claim(event);
         void scratch.startScratchThread(environmentId);
+      },
+      "bot.new": (event) => {
+        claim(event);
+        openCreateBotDialog();
       },
       "chat.new": (event) => {
         const { legacySidebarEnabled } = getClientSettings();

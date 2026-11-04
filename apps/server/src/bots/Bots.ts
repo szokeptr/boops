@@ -4,6 +4,7 @@ import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
+  MessageId,
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -62,6 +63,9 @@ export class Bots extends Context.Service<
 
 const MAX_SLUG_ATTEMPTS = 100;
 
+// The injected bot instructions drive the interview; this only gives the bot its first turn.
+export const HATCH_KICKOFF_TEXT = "You were just created. Start hatching.";
+
 const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -93,6 +97,27 @@ const make = Effect.gen(function* () {
       cause: `Every folder name for "${slug}" is taken.`,
     });
   });
+
+  // A bot that missed its kickoff still hatches on the user's first message, so this never fails create.
+  const hatch = (id: string, threadId: ThreadId) =>
+    threads
+      .dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(`bot-hatch:${id}`),
+        messageId: MessageId.make(`bot-hatch:${id}`),
+        threadId,
+        text: HATCH_KICKOFF_TEXT,
+        attachments: [],
+        createdBy: "system",
+        creationSource: "server",
+        dispatchMode: { type: "start_immediately" },
+      })
+      .pipe(
+        Effect.asVoid,
+        Effect.catch((cause) =>
+          Effect.logWarning("bot hatching kickoff failed", { threadId, cause }),
+        ),
+      );
 
   const create: Bots["Service"]["create"] = Effect.fn("Bots.create")(function* (input) {
     const workspaceRoot = yield* claimHome(input.name);
@@ -173,6 +198,7 @@ const make = Effect.gen(function* () {
           (cause) => new BotCreateError({ stage: "main-thread", workspaceRoot, cause }),
         ),
       );
+    if (input.hatch ?? true) yield* hatch(id, mainThreadId);
     return { projectId: project.id, mainThreadId };
   });
 

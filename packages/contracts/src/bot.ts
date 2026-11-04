@@ -10,6 +10,8 @@ export const BotCreateInput = Schema.Struct({
   modelSelection: ModelSelection,
   /** The look picked while hatching; absent lets the server step away from sibling bots' looks. */
   avatar: Schema.optional(ProjectAvatar),
+  /** Start the main thread's first turn so the bot opens its hatching interview. Defaults on. */
+  hatch: Schema.optional(Schema.Boolean),
 });
 export type BotCreateInput = typeof BotCreateInput.Type;
 

@@ -1899,6 +1899,15 @@ function renderFeedEntry(
         />
       );
     }
+    if (isUser && presentation.attribution === "system") {
+      return (
+        <ThreadContextDivider
+          label={presentation.text}
+          icon={{ ios: "sparkles", android: "auto_awesome" }}
+          iconColor={iconSubtleColor}
+        />
+      );
+    }
     if (isUser && presentation.attribution === "automation") {
       const rowId = `automation:${message.id}`;
       return (
