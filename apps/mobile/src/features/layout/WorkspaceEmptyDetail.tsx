@@ -2,7 +2,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { Platform, Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
-import { NewThreadButton } from "../../components/NewThreadButton";
+import { AddBotButton } from "../../components/AddBotButton";
 import { FloatingActionButton } from "../../components/ui/FloatingActionButton";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { ScreenContent } from "../../components/ui/ScreenContent";
@@ -10,7 +10,7 @@ import type { WorkspaceTab } from "../workspace/workspace-tabs-state";
 
 export function WorkspaceEmptyDetail(props: {
   readonly tab?: WorkspaceTab | "settings";
-  readonly onStartNewTask?: () => void;
+  readonly onAddBot?: () => void;
   readonly onAddConnection?: () => void;
 }) {
   const settings = props.tab === "settings";
@@ -28,7 +28,7 @@ export function WorkspaceEmptyDetail(props: {
           <View className="w-full max-w-[430px]">
             <EmptyState
               title="No environments connected"
-              detail="Add an environment to load projects and start coding sessions."
+              detail="Add an environment to load the bots running on it."
               variant="plain"
               action={
                 <FloatingActionButton
@@ -50,25 +50,21 @@ export function WorkspaceEmptyDetail(props: {
               type="hierarchical"
             />
             <Text className="text-center text-xl font-t3-bold">
-              {settings ? "Select a setting" : "Select a thread"}
+              {settings ? "Select a setting" : "Select a bot"}
             </Text>
             <Text className="text-center text-base text-foreground-muted">
-              {settings
-                ? "Choose a page from the sidebar."
-                : Platform.OS === "android"
-                  ? "Choose a thread from the sidebar or start a new thread."
-                  : "Choose a thread from the sidebar or start a new task."}
+              {settings ? "Choose a page from the sidebar." : "Choose a bot from the sidebar."}
             </Text>
-            {props.onStartNewTask && !settings ? (
+            {props.onAddBot && !settings ? (
               Platform.OS === "android" ? (
-                <NewThreadButton extended className="mt-2" onPress={props.onStartNewTask} />
+                <AddBotButton extended className="mt-2" onPress={props.onAddBot} />
               ) : (
                 <Pressable
                   accessibilityRole="button"
                   className="mt-2 flex-row items-center gap-2 rounded-full bg-primary px-5 py-3 active:opacity-70"
-                  onPress={props.onStartNewTask}
+                  onPress={props.onAddBot}
                 >
-                  <Text className="text-base font-t3-bold text-primary-foreground">New thread</Text>
+                  <Text className="text-base font-t3-bold text-primary-foreground">Add bot</Text>
                 </Pressable>
               )
             ) : null}

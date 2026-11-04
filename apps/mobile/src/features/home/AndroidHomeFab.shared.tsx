@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 export function AndroidHomeFabLayout(props: {
-  readonly onStartNewTask: () => void;
+  readonly onAddBot: () => void;
   readonly children: ReactNode;
   readonly sidebar?: boolean;
   readonly disabled?: boolean;
@@ -10,7 +10,7 @@ export function AndroidHomeFabLayout(props: {
 }
 
 /**
- * The filter button stacks on the New thread FAB from this same origin so the two
+ * The filter button stacks on the Add bot FAB from this same origin so the two
  * cannot drift apart. In dp rather than a rem class so Material's 16dp margin does
  * not grow with the app's text size.
  */

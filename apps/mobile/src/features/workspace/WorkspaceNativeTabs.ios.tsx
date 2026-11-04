@@ -184,15 +184,15 @@ export function WorkspaceNativeTabs(props: {
 /** The workspace tabs at the foot of the sidebar. */
 export function WorkspaceSidebarTabsFooter() {
   const workspace = useWorkspaceTabs()!;
-  const { startNewTask } = useAdaptiveWorkspaceLayout();
+  const { addBot } = useAdaptiveWorkspaceLayout();
   const compact = useFloatingWorkspaceTabs();
   return (
     <WorkspaceSidebarTabs
       compact={compact}
       reserveComposeSpace={compact}
-      onNewTask={
+      onAddBot={
         compact && !workspace.settingsOpen && workspace.state.selectedTab === "threads"
-          ? startNewTask
+          ? addBot
           : undefined
       }
     />

@@ -7,14 +7,14 @@ import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context
 import { useAndroidWorkspaceRoot } from "./AndroidWorkspaceTabsProvider";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { WorkspaceTabPanes } from "./WorkspaceTabPanes";
-import { WorkspaceThreadSidebar } from "./WorkspaceThreadSidebar";
+import { WorkspaceBotSidebar } from "./WorkspaceBotSidebar";
 import { WorkspaceAppBarScope } from "../../components/ui/WorkspaceAppBar.android";
 
 /** The Home route in the sidebar column: the selected tab's list. */
 export function AndroidWorkspaceSidebar() {
   const workspace = useWorkspaceTabs()!;
   const enabled = useEnabledNavigationTabs();
-  const { startNewTask } = useAdaptiveWorkspaceLayout();
+  const { addBot } = useAdaptiveWorkspaceLayout();
   // Settings and Usage cover the sidebar.
   const coveredByPage =
     (useAndroidWorkspaceRoot()?.settingsOpen ?? false) || workspace.state.selectedTab === "usage";
@@ -26,8 +26,8 @@ export function AndroidWorkspaceSidebar() {
         selected={workspace.state.selectedTab}
         renderTab={(tab) =>
           tab === "threads" ? (
-            <AndroidHomeFabLayout sidebar disabled={coveredByPage} onStartNewTask={startNewTask}>
-              <WorkspaceThreadSidebar />
+            <AndroidHomeFabLayout sidebar disabled={coveredByPage} onAddBot={addBot}>
+              <WorkspaceBotSidebar />
             </AndroidHomeFabLayout>
           ) : (
             <View className="flex-1 bg-screen" />

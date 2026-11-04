@@ -51,6 +51,7 @@ import {
 import { McpAppFullscreenScreen } from "./features/threads/McpAppFullscreenScreen";
 import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteScreen";
 import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewRouteScreen";
+import { BotActivityRouteScreen } from "./features/bots/BotActivityRouteScreen";
 import { AddProjectDestinationRoute } from "./features/projects/AddProjectDestinationRoute";
 import { AddProjectLocalRoute } from "./features/projects/AddProjectLocalRoute";
 import { AddProjectNewRoute } from "./features/projects/AddProjectNewRoute";
@@ -561,6 +562,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ThreadRouteScreen,
       linking: { path: "threads/:environmentId?/:threadId?", alias: ["new/draft"] },
       options: THREAD_HEADER_OPTIONS,
+    }),
+    BotActivity: createNativeStackScreen({
+      screen: BotActivityRouteScreen,
+      linking: "bots/:environmentId/:projectId/activity",
+      options: { ...DETAIL_HEADER_OPTIONS, title: "Activity" },
     }),
     NewTaskProject: createNativeStackScreen({
       screen: NewTaskRouteScreen,

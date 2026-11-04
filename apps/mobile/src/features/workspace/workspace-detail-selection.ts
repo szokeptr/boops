@@ -11,7 +11,9 @@ import { workspaceRoutesOf } from "../layout/workspace-overlay-routes";
 type RootParams = ReactNavigation.RootParamList;
 
 /** A page the workspace's detail column shows on its own: what a list row selects. */
-export type WorkspaceDetail = { readonly name: "Thread"; readonly params: RootParams["Thread"] };
+export type WorkspaceDetail =
+  | { readonly name: "Thread"; readonly params: RootParams["Thread"] }
+  | { readonly name: "BotActivity"; readonly params: RootParams["BotActivity"] };
 
 const SELECT_WORKSPACE_DETAIL = "SELECT_WORKSPACE_DETAIL";
 
@@ -30,6 +32,7 @@ export function selectWorkspaceDetail(detail: WorkspaceDetail): SelectWorkspaceD
 
 const IDENTITY = {
   Thread: ["environmentId", "threadId"],
+  BotActivity: ["environmentId", "projectId"],
 } as const;
 
 type RouteLike = { readonly name: string; readonly key?: string; readonly params?: object };

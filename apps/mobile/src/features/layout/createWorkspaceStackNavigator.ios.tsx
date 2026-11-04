@@ -199,7 +199,7 @@ function WorkspaceColumns(
     panes,
     setPrimarySidebarVisible,
     toggleAuxiliaryPane,
-    startNewTask,
+    addBot,
     openWorkspaceTab,
     sidebarByOrientation,
     nativeInspectorWidth,
@@ -245,10 +245,9 @@ function WorkspaceColumns(
   const workspaceTabs = useWorkspaceTabs();
   const selectedTab = workspaceTabs?.state.selectedTab;
   const settingsOpen = workspaceTabs?.settingsOpen ?? false;
-  const openNewTask = startNewTask;
   // The cover detail rail needs room for thread tools above the fixed tabs.
   // The unfolded Duo keeps compose in its detail bar.
-  const detailCompose = deviceType === "duo-unfolded" && !settingsOpen ? openNewTask : undefined;
+  const detailCompose = deviceType === "duo-unfolded" && !settingsOpen ? addBot : undefined;
   const inspector = use(NativeWorkspaceInspectorContext);
   const hideInspector = () => {
     if (inspector.visible) toggleAuxiliaryPane();
@@ -407,9 +406,9 @@ function WorkspaceColumns(
             <ColumnContent>
               <WorkspaceEmptyDetail
                 tab={settingsOpen ? "settings" : selectedTab}
-                onStartNewTask={
+                onAddBot={
                   // Duo provides compose in the detail bar; iPad uses the empty-state action.
-                  detailCompose ? undefined : openNewTask
+                  detailCompose ? undefined : addBot
                 }
               />
             </ColumnContent>

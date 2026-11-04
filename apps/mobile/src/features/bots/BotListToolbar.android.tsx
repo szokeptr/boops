@@ -4,20 +4,17 @@ import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 import { BackHandler, Keyboard } from "react-native";
 
 import { AppBar } from "../../components/ui/AppBar";
-import { appBarMenuItemsFromActions } from "../../components/ui/menuActionItems";
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
 import { WorkspaceBrandTitle } from "../workspace/WorkspaceBrandTitle";
-import { useWorkspaceConnectionState } from "../../state/workspace";
-import type { ThreadListToolbarProps } from "./ThreadListToolbar.types";
+import type { BotListToolbarProps } from "./BotListToolbar";
 
-export function ThreadListToolbar(props: ThreadListToolbarProps) {
+export function BotListToolbar(props: BotListToolbarProps) {
   const navigation = useNavigation();
   const workspace = useWorkspaceTabs();
   const isTabActive = workspace?.isTabActive;
   const homeFocused = useNavigationState((state) => state.routes[state.index]?.name === "Home");
   const listFocused =
     homeFocused && (workspace === null || workspace.state.selectedTab === "threads");
-  const connectionState = useWorkspaceConnectionState();
   const { onRequestVisibility, onSearchQueryChange } = props;
   const [searchOpen, setSearchOpen] = useState(false);
   const searching = searchOpen || props.searchQuery.length > 0;
@@ -58,7 +55,7 @@ export function ThreadListToolbar(props: ThreadListToolbarProps) {
       title="T3 Code"
       titleContent={
         <WorkspaceBrandTitle
-          accessibilityLabel="T3 Code, Threads"
+          accessibilityLabel="T3 Code, Bots"
           onOpenEnvironments={props.onOpenEnvironments}
         />
       }
@@ -66,24 +63,11 @@ export function ThreadListToolbar(props: ThreadListToolbarProps) {
         value: props.searchQuery,
         onChangeText: onSearchQueryChange,
         placeholder: "Search",
-        accessibilityLabel: "Search threads",
+        accessibilityLabel: "Search bots",
         active: searching,
         onOpen: openSearch,
         onClose: closeSearch,
       }}
-      menus={
-        connectionState.hasConnections
-          ? [
-              {
-                title: "Filter threads",
-                icon: props.filterCustomized
-                  ? "line.3.horizontal.decrease.circle.fill"
-                  : "line.3.horizontal.decrease.circle",
-                items: appBarMenuItemsFromActions(props.filterActions, props.onFilterSelect),
-              },
-            ]
-          : undefined
-      }
     />
   );
 }

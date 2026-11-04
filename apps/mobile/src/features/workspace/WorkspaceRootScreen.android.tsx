@@ -28,7 +28,7 @@ export function WorkspaceRootScreen() {
 
 function WorkspaceRoot() {
   const floatingTabsEnabled = useAndroidFloatingTabs();
-  const { layout, startNewTask, workspacePageWidth } = useAdaptiveWorkspaceLayout();
+  const { layout, addBot, workspacePageWidth } = useAdaptiveWorkspaceLayout();
   const workspace = useWorkspaceTabs()!;
   const enabled = useEnabledNavigationTabs();
   const insets = useSafeAreaInsets();
@@ -87,9 +87,9 @@ function WorkspaceRoot() {
           )}
         </SafeAreaInsetsContext>
         {layout.usesSplitView ? null : floatingTabsEnabled ? (
-          <FloatingWorkspaceTabs fillWidth onNewThread={startNewTask} />
+          <FloatingWorkspaceTabs fillWidth onNewThread={addBot} />
         ) : (
-          <AndroidWorkspaceNavigation onNewThread={startNewTask} />
+          <AndroidWorkspaceNavigation onNewThread={addBot} />
         )}
       </View>
     </WorkspaceTabsContext>
