@@ -59,6 +59,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
         const at = "2026-03-24T00:00:00.000Z";
         const event = { aggregateKind: "project", aggregateId: projectId, occurredAt: at } as const;
         const meta = { commandId: null, causationEventId: null, correlationId: null, metadata: {} };
+        const avatar = { hue: "teal", accessory: "crown", glow: "cyan" } as const;
         yield* projects.apply({
           ...event,
           ...meta,
@@ -85,7 +86,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
             projectId,
             pinnedAt: at,
             archivedAt: at,
-            avatar: "pixel-fox",
+            avatar,
             mainThreadId: ThreadId.make("thread-main"),
             updatedAt: at,
           },
@@ -101,10 +102,14 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
         const project = Option.getOrNull(yield* projects.get(projectId));
         assert.strictEqual(project?.pinnedAt, at);
         assert.strictEqual(project?.archivedAt, at);
-        assert.strictEqual(project?.avatar, "pixel-fox");
+        assert.deepStrictEqual(project?.avatar, avatar);
         assert.strictEqual(project?.mainThreadId, "thread-main");
         const shell = Option.getOrNull(yield* projects.getShell(projectId));
         assert.strictEqual(shell?.mainThreadId, "thread-main");
+
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`UPDATE projection_projects SET avatar = 'pixel-fox' WHERE project_id = ${projectId}`;
+        assert.isNull(Option.getOrNull(yield* projects.get(projectId))?.avatar);
       }),
     );
   },

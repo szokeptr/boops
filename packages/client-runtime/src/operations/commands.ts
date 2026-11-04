@@ -15,6 +15,7 @@ import {
   type OrchestrationV2CreationSource,
   type PlanId,
   type ProjectId,
+  type ProjectAvatar,
   type ProjectIconOverride,
   type ProjectScript,
   type ProviderApprovalDecision,
@@ -62,7 +63,7 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly scripts?: ReadonlyArray<ProjectScript>;
   readonly pinned?: boolean;
   readonly archived?: boolean;
-  readonly avatar?: string | null;
+  readonly avatar?: ProjectAvatar | null;
   readonly mainThreadId?: ThreadId | null;
 }
 

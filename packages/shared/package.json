@@ -43,6 +43,10 @@
       "types": "./src/mobileSourceMaps.ts",
       "import": "./src/mobileSourceMaps.ts"
     },
+    "./botAvatar": {
+      "types": "./src/botAvatar.ts",
+      "import": "./src/botAvatar.ts"
+    },
     "./model": {
       "types": "./src/model.ts",
       "import": "./src/model.ts"

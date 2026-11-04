@@ -3,6 +3,7 @@ import {
   type EventId,
   MAX_SCRIPT_ID_LENGTH,
   type ModelSelection,
+  type ProjectAvatar,
   type ProjectIconOverride,
   ProjectId,
   type ProjectScript,
@@ -41,7 +42,7 @@ export interface ProjectMetaUpdateCommand {
   readonly scripts?: ReadonlyArray<ProjectScript>;
   readonly pinned?: boolean;
   readonly archived?: boolean;
-  readonly avatar?: string | null;
+  readonly avatar?: ProjectAvatar | null;
   readonly mainThreadId?: ThreadId | null;
 }
 

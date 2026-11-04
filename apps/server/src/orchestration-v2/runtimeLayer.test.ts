@@ -22,6 +22,7 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2ShellSnapshot,
   type OrchestrationV2RuntimeRequest,
+  type ProjectAvatar,
   ProjectId,
   type PullRequestDetail,
   type PullRequestComment,
@@ -8694,13 +8695,14 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
       const projects = yield* ProjectService.ProjectService;
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
-      const create = (name: string) =>
+      const create = (name: string, avatar?: ProjectAvatar) =>
         bots
-          .create({ name, modelSelection })
+          .create({ name, modelSelection, ...(avatar ? { avatar } : {}) })
           .pipe(Effect.provideService(HostProcess.HomeDirectory, home));
 
       const first = yield* create("Ada Lovelace");
-      const second = yield* create("ada  lovelace!");
+      // Seeds the same look as the first name, so only the family rule tells them apart.
+      const second = yield* create("ada_lovelace");
 
       const roots = [
         path.join(home, "pocks", "ada-lovelace"),
@@ -8715,11 +8717,23 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
         assert.equal(project?.workspaceRoot, root);
         assert.deepEqual(project?.defaultModelSelection, modelSelection);
         assert.equal(project?.mainThreadId, bot.mainThreadId);
-        assert.isNull(project?.avatar);
+        assert.isNotNull(project?.avatar);
         const thread = yield* orchestrator.getThreadShell(bot.mainThreadId);
         assert.equal(thread?.projectId, bot.projectId);
         assert.deepEqual(thread?.modelSelection, modelSelection);
       }
+      const [firstLook, secondLook] = yield* Effect.forEach([first, second], (bot) =>
+        projects
+          .getById(bot.projectId)
+          .pipe(Effect.map((project) => Option.getOrThrow(project).avatar)),
+      );
+      assert.notEqual(firstLook?.hue, secondLook?.hue);
+      assert.notEqual(firstLook?.accessory, secondLook?.accessory);
+
+      const picked = { ...firstLook!, glow: "white" } as const;
+      const hatched = yield* create("Grace Hopper", picked);
+      const hatchedProject = Option.getOrThrow(yield* projects.getById(hatched.projectId));
+      assert.deepEqual(hatchedProject.avatar, picked);
     }).pipe(Effect.scoped),
   );
 });
