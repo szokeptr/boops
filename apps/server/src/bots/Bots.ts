@@ -1,9 +1,13 @@
 import {
+  type BotArchiveInput,
+  type BotArchiveResult,
   type BotChildStart,
   type BotCreateInput,
   type BotCreateResult,
+  type BotDeleteInput,
   type BotFamilyAuthor,
   type BotMcpDelivery,
+  type BotUnarchiveInput,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
@@ -37,11 +41,23 @@ export class BotHomeFolderError extends Schema.TaggedError<BotHomeFolderError>()
   "BotHomeFolderError",
   {
     folder: Schema.String,
+    action: Schema.optional(Schema.Literals(["create", "remove"])),
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
-    return "Failed to create the bot's home folder.";
+    return this.action === "remove"
+      ? "Deleted the bot, but failed to remove its home folder."
+      : "Failed to create the bot's home folder.";
+  }
+}
+
+export class BotFolderNotRemovableError extends Schema.TaggedError<BotFolderNotRemovableError>()(
+  "BotFolderNotRemovableError",
+  { folder: Schema.String },
+) {
+  override get message(): string {
+    return "Only a home folder inside ~/pocks is removed with its bot. Delete it without removing the folder.";
   }
 }
 
@@ -78,6 +94,27 @@ export interface BotFamilyMessage {
   readonly author: BotFamilyAuthor;
   readonly text: string;
   readonly createdAt: string;
+}
+
+export class BotNotFoundError extends Schema.TaggedError<BotNotFoundError>()("BotNotFoundError", {
+  projectId: ProjectId,
+}) {
+  override get message(): string {
+    return "The bot was not found.";
+  }
+}
+
+export class BotLifecycleError extends Schema.TaggedError<BotLifecycleError>()(
+  "BotLifecycleError",
+  {
+    operation: Schema.Literals(["archive", "unarchive", "delete"]),
+    projectId: ProjectId,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Failed to ${this.operation} the bot.`;
+  }
 }
 
 export class Bots extends Context.Service<
@@ -118,6 +155,28 @@ export class Bots extends Context.Service<
       readonly childProjectId: ProjectId;
       readonly text: string;
     }) => Effect.Effect<BotMcpDelivery, BotFamilyError>;
+    /**
+     * Pauses the bot's routines and heartbeat and hides it from the bot list; its threads and
+     * home folder stay. `includeChildren` also archives the live bots below it. Returns every bot
+     * it archived.
+     */
+    readonly archive: (
+      input: BotArchiveInput,
+    ) => Effect.Effect<BotArchiveResult, BotNotFoundError | BotLifecycleError>;
+    /** Brings the bot back and turns on only the routines archiving paused. */
+    readonly unarchive: (
+      input: BotUnarchiveInput,
+    ) => Effect.Effect<void, BotNotFoundError | BotLifecycleError>;
+    /**
+     * Removes the bot's routines, threads and project. The home folder goes only when asked, and
+     * only when it lies inside `~/pocks/`.
+     */
+    readonly delete: (
+      input: BotDeleteInput,
+    ) => Effect.Effect<
+      void,
+      BotNotFoundError | BotFolderNotRemovableError | BotHomeFolderError | BotLifecycleError
+    >;
   }
 >()("t3/bots/Bots") {}
 
@@ -467,7 +526,115 @@ const make = Effect.gen(function* () {
     },
   );
 
-  return Bots.of({ create, createChild, childrenOf, readChild, messageChild, reportToParent });
+  const readBot = Effect.fn("Bots.readBot")(function* (
+    operation: BotLifecycleError["operation"],
+    projectId: ProjectId,
+  ) {
+    const project = yield* projects
+      .getById(projectId)
+      .pipe(Effect.mapError((cause) => new BotLifecycleError({ operation, projectId, cause })));
+    if (Option.isNone(project)) return yield* new BotNotFoundError({ projectId });
+    return project.value;
+  });
+
+  const lifecycleCommandId = Effect.fn("Bots.lifecycleCommandId")(function* (
+    operation: BotLifecycleError["operation"],
+    projectId: ProjectId,
+  ) {
+    const id = yield* random
+      .uuidV4()
+      .pipe(Effect.mapError((cause) => new BotLifecycleError({ operation, projectId, cause })));
+    return CommandId.make(`bot-${operation}:${id}`);
+  });
+
+  const setArchived = Effect.fn("Bots.setArchived")(function* (
+    projectId: ProjectId,
+    archived: boolean,
+  ) {
+    const operation = archived ? "archive" : "unarchive";
+    const commandId = yield* lifecycleCommandId(operation, projectId);
+    const fail = (cause: unknown) => new BotLifecycleError({ operation, projectId, cause });
+    // Pause before hiding and show before resuming, so a failure never leaves a hidden bot running.
+    if (archived) yield* routines.pauseForProject(projectId).pipe(Effect.mapError(fail));
+    yield* projects.update({ commandId, projectId, archived }).pipe(Effect.mapError(fail));
+    if (!archived) yield* routines.resumeForProject(projectId).pipe(Effect.mapError(fail));
+  });
+
+  // Descendants too, so a grandchild does not keep running under an archived bot.
+  const liveDescendants = Effect.fn("Bots.liveDescendants")(function* (projectId: ProjectId) {
+    const found: Array<ProjectId> = [];
+    const queue = [projectId];
+    const seen = new Set(queue);
+    while (queue.length > 0) {
+      const children = yield* childrenOf(queue.shift()!).pipe(
+        Effect.mapError((cause) => new BotLifecycleError({ operation: "archive", projectId, cause })),
+      );
+      for (const child of children) {
+        if (seen.has(child.id)) continue;
+        seen.add(child.id);
+        queue.push(child.id);
+        if (child.archivedAt == null) found.push(child.id);
+      }
+    }
+    return found;
+  });
+
+  const archive: Bots["Service"]["archive"] = Effect.fn("Bots.archive")(function* (input) {
+    yield* readBot("archive", input.projectId);
+    const projectIds = [
+      input.projectId,
+      ...(input.includeChildren === true ? yield* liveDescendants(input.projectId) : []),
+    ];
+    yield* Effect.forEach(projectIds, (projectId) => setArchived(projectId, true), {
+      discard: true,
+    });
+    return { projectIds };
+  });
+
+  const unarchive: Bots["Service"]["unarchive"] = Effect.fn("Bots.unarchive")(function* (input) {
+    yield* readBot("unarchive", input.projectId);
+    yield* setArchived(input.projectId, false);
+  });
+
+  const isInsidePocks = Effect.fn("Bots.isInsidePocks")(function* (folder: string) {
+    const root = path.join(yield* HostProcess.HomeDirectory, "pocks");
+    const relative = path.relative(root, folder);
+    return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+  });
+
+  const deleteBot: Bots["Service"]["delete"] = Effect.fn("Bots.delete")(function* (input) {
+    const { projectId } = input;
+    const project = yield* readBot("delete", projectId);
+    const folder = project.workspaceRoot;
+    // Refuse before removing anything, so a folder outside ~/pocks never half-deletes the bot.
+    if (input.removeHomeFolder === true && !(yield* isInsidePocks(folder))) {
+      return yield* new BotFolderNotRemovableError({ folder });
+    }
+    const fail = (cause: unknown) =>
+      new BotLifecycleError({ operation: "delete", projectId, cause });
+    const commandId = yield* lifecycleCommandId("delete", projectId);
+    yield* routines.deleteForProject(projectId).pipe(Effect.mapError(fail));
+    yield* projects.delete({ commandId, projectId, force: true }).pipe(Effect.mapError(fail));
+    if (input.removeHomeFolder === true) {
+      yield* fileSystem
+        .remove(folder, { recursive: true })
+        .pipe(
+          Effect.mapError((cause) => new BotHomeFolderError({ folder, action: "remove", cause })),
+        );
+    }
+  });
+
+  return Bots.of({
+    create,
+    createChild,
+    childrenOf,
+    readChild,
+    messageChild,
+    reportToParent,
+    archive,
+    unarchive,
+    delete: deleteBot,
+  });
 });
 
 export const layer = Layer.effect(Bots, make);
