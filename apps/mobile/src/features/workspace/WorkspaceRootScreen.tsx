@@ -62,7 +62,7 @@ function WorkspaceRootTitle(props: {
   return (
     <View style={{ width: maxWidth, minHeight: 32, justifyContent: "center" }}>
       <WorkspaceConnectionTitle
-        brand={<CompactBrandTitle accessibilityLabel={`T3 Code, ${tabTitle}`} fit />}
+        brand={<CompactBrandTitle accessibilityLabel={`Boops, ${tabTitle}`} fit />}
         maxWidth={maxWidth}
         onPress={props.onOpenEnvironments}
       />
@@ -163,7 +163,7 @@ function WorkspaceRootContent() {
         ) : (
           <AppBar
             embedded
-            title="T3 Code"
+            title="Boops"
             titleContent={renderHeaderTitle()}
             actions={[
               ...(state.selectedTab === "threads"
