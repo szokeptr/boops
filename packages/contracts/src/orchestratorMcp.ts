@@ -781,6 +781,27 @@ export const OrchestratorMcpRequestSecretResult = Schema.Union([
 ]);
 export type OrchestratorMcpRequestSecretResult = typeof OrchestratorMcpRequestSecretResult.Type;
 
+export const OrchestratorMcpRequestUserActionInput = Schema.Struct({
+  title: TrimmedNonEmptyString.check(Schema.isMaxLength(200)).annotate({
+    description: "Card title, such as 'Log in to Stripe'.",
+  }),
+  reason: TrimmedNonEmptyString.annotate({
+    description: "What to do and why you can't do it yourself.",
+  }),
+  url: Schema.optional(TrimmedNonEmptyString).annotate({ description: "Where to do it." }),
+});
+export type OrchestratorMcpRequestUserActionInput =
+  typeof OrchestratorMcpRequestUserActionInput.Type;
+
+export const OrchestratorMcpRequestUserActionResult = Schema.Struct({
+  status: Schema.Literals(["done", "declined"]).annotate({
+    description:
+      "done: the user says it's done; check, then continue. declined: don't ask again; say what's blocked.",
+  }),
+});
+export type OrchestratorMcpRequestUserActionResult =
+  typeof OrchestratorMcpRequestUserActionResult.Type;
+
 export const OrchestratorMcpEnvironmentLinkInput = Schema.Struct({
   environmentId: Schema.optional(EnvironmentId).annotate({
     description:
