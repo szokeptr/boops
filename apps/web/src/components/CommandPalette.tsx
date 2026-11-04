@@ -54,6 +54,7 @@ import {
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
+  BotIcon,
   BugIcon,
   ChartNoAxesColumnIcon,
   CheckIcon,
@@ -233,6 +234,7 @@ import {
   remoteProjectSourceIcon,
   sourceControlHostIcon,
 } from "./CommandPaletteAddProject";
+import { openCreateBotDialog } from "./CreateBotDialog";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
 import {
@@ -1227,7 +1229,17 @@ function OpenCommandPaletteDialog(props: {
     if (firstOption) startNewProject(firstOption.environmentId, null);
   };
 
-  const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+  const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [
+    {
+      kind: "action",
+      value: "action:new-bot",
+      searchTerms: ["new bot", "create bot", "add bot", "hatch", "assistant"],
+      title: "New bot",
+      icon: <BotIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "bot.new",
+      run: async () => openCreateBotDialog(),
+    },
+  ];
 
   if (projects.length > 0) {
     const activeProjectTitle =
