@@ -5,7 +5,6 @@ import {
   CommandId,
   ContextTransferId,
   EnvironmentId,
-  GitCommandError,
   MessageId,
   NodeId,
   ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
@@ -2602,7 +2601,7 @@ describe("OrchestratorMcpService provider resolution", () => {
                 },
                 client: undefined,
               },
-              { projectId },
+              {},
             ),
           ),
           Effect.provide(
@@ -2626,7 +2625,7 @@ describe("OrchestratorMcpService provider resolution", () => {
                   Layer.mock(SecretRequests.SecretRequests)({}),
                   Layer.mock(RemoteDelegation.RemoteDelegation)({}),
                   Layer.mock(ScheduledTaskService.ScheduledTaskService)({
-                    list: () => Effect.succeed({ tasks: [task({})] }),
+                    list: () => Effect.succeed({ tasks: [task({ projectId: shell.projectId })] }),
                   }),
                 ),
               ),
@@ -2736,20 +2735,24 @@ describe("OrchestratorMcpService provider resolution", () => {
     );
   });
 
-  describe("the base branch of an unbound scheduled task", () => {
-    const projectId = ProjectId.make("project:scheduled-base");
-    const workspaceRoot = "/repo/scheduled-base";
-    const existing: ScheduledTask = {
-      id: ScheduledTaskId.make("scheduled-task:base"),
-      title: "Nightly",
-      prompt: "Check the build",
+  describe("routines from a bot's thread", () => {
+    const callerId = ThreadId.make("thread:bot-side");
+    const mainThreadId = ThreadId.make("thread:bot-main");
+    const otherThreadId = ThreadId.make("thread:other-bot");
+    const caller = liveThreadShell(callerId);
+    const projectId = caller.projectId;
+    const otherProjectId = ProjectId.make("project:other-bot");
+    const routine = (id: string, inProject: ProjectId): ScheduledTask => ({
+      id: ScheduledTaskId.make(id),
+      title: id,
+      prompt: "Check in",
       enabled: true,
       schedule: { type: "interval", everyMs: 3_600_000 },
-      projectId,
-      threadId: null,
+      projectId: inProject,
+      threadId: inProject === projectId ? mainThreadId : otherThreadId,
       workspaceStrategy: { type: "root" },
-      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
-      runtimeMode: "approval-required",
+      modelSelection: caller.modelSelection,
+      runtimeMode: "full-access",
       interactionMode: "default",
       createdBy: "agent",
       creationSource: "mcp",
@@ -2760,194 +2763,139 @@ describe("OrchestratorMcpService provider resolution", () => {
       lastRunStatus: "never",
       lastRunError: null,
       runCount: 0,
-    };
-    const client: McpInvocationScope = {
-      environmentId: EnvironmentId.make("environment:scheduled-base"),
-      requestNamespace: "client:scheduled-base",
-      thread: undefined,
-      client: {
-        sessionId: "scheduled-base",
-        label: "Claude Code",
-        access: "approval-required",
+    });
+    const own = routine("routine:own", projectId);
+    const foreign = routine("routine:foreign", otherProjectId);
+    const scope: McpInvocationScope = {
+      environmentId: EnvironmentId.make("environment:bot"),
+      requestNamespace: "provider:bot-side",
+      thread: {
+        threadId: callerId,
+        providerSessionId: "provider:bot-side",
+        providerInstanceId: caller.providerInstanceId,
       },
+      client: undefined,
       capabilities: new Set(["orchestration"]),
       issuedAt: 1,
     };
-    const service = (
-      git: Partial<GitVcsDriver.GitVcsDriver["Service"]>,
-      saved: Ref.Ref<ReadonlyArray<ScheduledTask["workspaceStrategy"]>>,
-    ) =>
-      OrchestratorMcpService.layer.pipe(
-        Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
-        Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)(git)),
-        Layer.provide(
-          Layer.mergeAll(
-            NodeServices.layer,
-            NodeCrypto.layer,
-            Layer.mock(ThreadManagementService.ThreadManagementService)({}),
-            ServerSettings.layerTest(),
-            Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
-            Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
-              list: () => Effect.succeed([]),
-            }),
-            Layer.mock(ProjectService.ProjectService)({
-              getById: () =>
-                Effect.succeedSome({
-                  id: projectId,
-                  workspaceRoot,
-                  defaultModelSelection: existing.modelSelection,
-                } as never),
-            }),
-            Layer.mock(SecretRequests.SecretRequests)({}),
-            Layer.mock(RemoteDelegation.RemoteDelegation)({}),
-            Layer.mock(ScheduledTaskService.ScheduledTaskService)({
-              list: () => Effect.succeed({ tasks: [existing] }),
-              upsert: (input) =>
-                Ref.update(saved, (strategies) => [...strategies, input.workspaceStrategy]).pipe(
-                  Effect.as({ task: existing }),
-                ),
-            }),
+    const outsideThread: McpInvocationScope = {
+      ...scope,
+      requestNamespace: "client:bot",
+      thread: undefined,
+      client: { sessionId: "bot", label: "Claude Code", access: "full-access" },
+    };
+    const service = (projectMainThread: ThreadId | null, writes: Ref.Ref<ReadonlyArray<string>>) =>
+      OrchestratorMcpService.OrchestratorMcpService.pipe(
+        Effect.provide(
+          layerOrchestratorService.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                NodeServices.layer,
+                NodeCrypto.layer,
+                Layer.mock(ThreadManagementService.ThreadManagementService)({
+                  getThreadShell: (threadId) =>
+                    Effect.succeed(
+                      threadId === otherThreadId
+                        ? { ...liveThreadShell(threadId), projectId: otherProjectId }
+                        : liveThreadShell(threadId),
+                    ),
+                  getThreadRecords: (threadId) =>
+                    Effect.succeed(idleThreadProjection(liveThreadShell(threadId))),
+                }),
+                ServerSettings.layerTest(),
+                Layer.mock(ProviderRegistry.ProviderRegistry)({
+                  getProviders: Effect.succeed([]),
+                }),
+                Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
+                  list: () => Effect.succeed([]),
+                }),
+                Layer.mock(ProjectService.ProjectService)({
+                  getById: () =>
+                    Effect.succeedSome({ id: projectId, mainThreadId: projectMainThread } as never),
+                }),
+                Layer.mock(SecretRequests.SecretRequests)({}),
+                Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+                Layer.mock(ScheduledTaskService.ScheduledTaskService)({
+                  list: () => Effect.succeed({ tasks: [own, foreign] }),
+                  upsert: (input) =>
+                    Ref.update(writes, (all) => [
+                      ...all,
+                      `upsert ${input.projectId} ${input.threadId}`,
+                    ]).pipe(Effect.as({ task: own })),
+                  delete: (input) =>
+                    Ref.update(writes, (all) => [...all, `delete ${input.id}`]).pipe(
+                      Effect.as({ id: input.id }),
+                    ),
+                }),
+              ),
+            ),
           ),
         ),
       );
-    const masterRepository: Partial<GitVcsDriver.GitVcsDriver["Service"]> = {
-      resolvePrimaryRemoteName: () => Effect.succeed("origin"),
-      resolveDefaultBranchName: (cwd, remoteName) =>
-        Effect.succeed(cwd === workspaceRoot && remoteName === "origin" ? "master" : null),
-      resolveCommit: () => Effect.succeed({ commitSha: "abc123" }),
-    };
     const schedule = { type: "interval", everyMs: 3_600_000 } as const;
 
-    it.effect("starts from the project's default branch", () =>
-      Effect.gen(function* () {
-        const saved = yield* Ref.make<ReadonlyArray<ScheduledTask["workspaceStrategy"]>>([]);
-        const mcp = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
-          Effect.provide(service(masterRepository, saved)),
-        );
-        yield* mcp.scheduleTask(client, { projectId, prompt: "Check the build", schedule });
-        assert.deepEqual(yield* Ref.get(saved), [
-          { type: "worktree", baseRef: "origin/master", startFromOrigin: true },
-        ]);
-      }),
-    );
-
-    it.effect("follows the default branch when a task is unbound from its thread", () =>
-      Effect.gen(function* () {
-        const saved = yield* Ref.make<ReadonlyArray<ScheduledTask["workspaceStrategy"]>>([]);
-        const mcp = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
-          Effect.provide(service(masterRepository, saved)),
-        );
-        yield* mcp.updateScheduledTask(client, {
-          scheduledTaskId: existing.id,
-          bindToCurrentThread: false,
-        });
-        assert.deepEqual(yield* Ref.get(saved), [
-          { type: "worktree", baseRef: "origin/master", startFromOrigin: true },
-        ]);
-      }),
-    );
-
     it.effect.each([
-      {
-        name: "no remote, only master",
-        remote: null,
-        remoteDefault: null,
-        refs: ["refs/heads/master"],
-        baseRef: "master",
-      },
-      {
-        name: "no remote, main and master",
-        remote: null,
-        remoteDefault: null,
-        refs: ["refs/heads/master", "refs/heads/main"],
-        baseRef: "main",
-      },
-      {
-        name: "no remote, neither main nor master",
-        remote: null,
-        remoteDefault: null,
-        refs: ["refs/heads/develop"],
-        baseRef: "main",
-      },
-      {
-        name: "no recorded HEAD, remote main and a stale local master",
-        remote: "origin",
-        remoteDefault: null,
-        refs: ["refs/heads/master", "refs/remotes/origin/main"],
-        baseRef: "origin/main",
-      },
-      {
-        name: "no recorded HEAD, master only on the remote",
-        remote: "origin",
-        remoteDefault: null,
-        refs: ["refs/remotes/origin/master"],
-        baseRef: "origin/master",
-      },
-      {
-        name: "no recorded HEAD, local main and master only on the remote",
-        remote: "origin",
-        remoteDefault: null,
-        refs: ["refs/heads/main", "refs/remotes/origin/master"],
-        baseRef: "origin/master",
-      },
-      {
-        name: "no recorded HEAD, nothing conventional on the remote, local main",
-        remote: "origin",
-        remoteDefault: null,
-        refs: ["refs/heads/main", "refs/remotes/origin/develop"],
-        baseRef: "main",
-      },
-      {
-        name: "a recorded HEAD whose branch is gone",
-        remote: "origin",
-        remoteDefault: "main",
-        refs: ["refs/heads/main", "refs/remotes/origin/master"],
-        baseRef: "origin/master",
-      },
-      {
-        name: "a remote not called origin",
-        remote: "upstream",
-        remoteDefault: "develop",
-        refs: ["refs/remotes/upstream/develop"],
-        baseRef: "upstream/develop",
-      },
-      {
-        name: "a remote not called origin, no recorded HEAD",
-        remote: "upstream",
-        remoteDefault: null,
-        refs: ["refs/remotes/upstream/main"],
-        baseRef: "upstream/main",
-      },
-    ])("$name starts from $baseRef", ({ remote, remoteDefault, refs, baseRef }) =>
+      { name: "the project's main thread", main: mainThreadId, expected: mainThreadId },
+      { name: "the calling thread without a main thread", main: null, expected: callerId },
+    ])("posts a new routine into $name by default", ({ main, expected }) =>
       Effect.gen(function* () {
-        const saved = yield* Ref.make<ReadonlyArray<ScheduledTask["workspaceStrategy"]>>([]);
-        const gitFailure = (cwd: string, detail: string) =>
-          new GitCommandError({ operation: "GitVcsDriver.test", command: "git", cwd, detail });
-        const mcp = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
-          Effect.provide(
-            service(
-              {
-                resolvePrimaryRemoteName: (cwd) =>
-                  remote === null
-                    ? Effect.fail(gitFailure(cwd, "No git remote is configured."))
-                    : Effect.succeed(remote),
-                resolveDefaultBranchName: () => Effect.succeed(remoteDefault),
-                resolveCommit: ({ cwd, revision }) =>
-                  refs.includes(revision)
-                    ? Effect.succeed({ commitSha: "abc123" })
-                    : Effect.fail(gitFailure(cwd, "Needed a single revision")),
-              },
-              saved,
-            ),
-          ),
+        const writes = yield* Ref.make<ReadonlyArray<string>>([]);
+        const mcp = yield* service(main, writes);
+        yield* mcp.scheduleTask(scope, { prompt: "Check in", schedule });
+        assert.deepEqual(yield* Ref.get(writes), [`upsert ${projectId} ${expected}`]);
+      }),
+    );
+
+    it.effect("manages only its own project's routines", () =>
+      Effect.gen(function* () {
+        const writes = yield* Ref.make<ReadonlyArray<string>>([]);
+        const mcp = yield* service(mainThreadId, writes);
+        const listed = yield* mcp.listScheduledTasks(scope, {});
+        assert.deepEqual(
+          listed.tasks.map((task) => task.scheduledTaskId),
+          [own.id],
         );
-        yield* mcp.scheduleTask(client, { projectId, prompt: "Check the build", schedule });
-        assert.deepEqual(yield* Ref.get(saved), [
-          { type: "worktree", baseRef, startFromOrigin: true },
-        ]);
+        const denied = [
+          yield* mcp.listScheduledTasks(scope, { projectId: otherProjectId }).pipe(Effect.flip),
+          yield* mcp
+            .scheduleTask(scope, { threadId: otherThreadId, prompt: "Check in", schedule })
+            .pipe(Effect.flip),
+          yield* mcp
+            .updateScheduledTask(scope, { scheduledTaskId: foreign.id, enabled: false })
+            .pipe(Effect.flip),
+          yield* mcp
+            .updateScheduledTask(scope, { scheduledTaskId: own.id, threadId: otherThreadId })
+            .pipe(Effect.flip),
+          yield* mcp.deleteScheduledTask(scope, { scheduledTaskId: foreign.id }).pipe(Effect.flip),
+        ];
+        assert.deepEqual(
+          denied.map((error) => error.code),
+          Array.from({ length: 5 }, () => "capability_denied"),
+        );
+        assert.deepEqual(yield* Ref.get(writes), []);
+        yield* mcp.deleteScheduledTask(scope, { scheduledTaskId: own.id });
+        assert.deepEqual(yield* Ref.get(writes), [`delete ${own.id}`]);
+      }),
+    );
+
+    it.effect("needs a threadId from a client outside a thread", () =>
+      Effect.gen(function* () {
+        const writes = yield* Ref.make<ReadonlyArray<string>>([]);
+        const mcp = yield* service(mainThreadId, writes);
+        const missing = yield* mcp
+          .scheduleTask(outsideThread, { prompt: "Check in", schedule })
+          .pipe(Effect.flip);
+        assert.equal(missing.code, "target_required");
+        yield* mcp.scheduleTask(outsideThread, {
+          threadId: otherThreadId,
+          prompt: "Check in",
+          schedule,
+        });
+        assert.deepEqual(yield* Ref.get(writes), [`upsert ${otherProjectId} ${otherThreadId}`]);
       }),
     );
   });
+
   it.effect(
     "reports the child run's selection after a restart and the thread selection before launch",
     () =>

@@ -231,6 +231,7 @@ export const ScheduledTask = Schema.Struct({
   enabled: Schema.Boolean,
   schedule: ScheduledTaskSchedule,
   projectId: ProjectId,
+  /** Null only on tasks saved before routines required a thread; their runs fail. */
   threadId: Schema.NullOr(ThreadId),
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
   modelSelection: ModelSelection,
@@ -270,7 +271,8 @@ export const ScheduledTaskUpsertInput = Schema.Struct({
   enabled: Schema.Boolean,
   schedule: ScheduledTaskUpsertSchedule,
   projectId: ProjectId,
-  threadId: Schema.optional(Schema.NullOr(ThreadId)),
+  /** Runs post into this thread, queued behind its active turn. */
+  threadId: ThreadId,
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,

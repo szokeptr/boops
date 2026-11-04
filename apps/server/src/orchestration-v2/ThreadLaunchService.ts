@@ -18,7 +18,7 @@ import {
   ProjectId,
   type RunId,
   type RuntimeMode,
-  type ScheduledTaskId,
+  type OrchestrationV2RoutineLabel,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -70,7 +70,7 @@ export type ThreadLaunchWorkspaceStrategy =
 
 export interface ThreadLaunchInitialMessage {
   readonly messageId?: MessageId;
-  readonly scheduledTaskId?: ScheduledTaskId;
+  readonly routine?: OrchestrationV2RoutineLabel;
   readonly senderThreadId?: ThreadId;
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
@@ -985,9 +985,9 @@ const make = Effect.gen(function* () {
               threadId,
               messageId,
               text: input.initialMessage.text,
-              ...(input.initialMessage.scheduledTaskId === undefined
+              ...(input.initialMessage.routine === undefined
                 ? {}
-                : { scheduledTaskId: input.initialMessage.scheduledTaskId }),
+                : { routine: input.initialMessage.routine }),
               ...(input.initialMessage.senderThreadId === undefined
                 ? {}
                 : { senderThreadId: input.initialMessage.senderThreadId }),

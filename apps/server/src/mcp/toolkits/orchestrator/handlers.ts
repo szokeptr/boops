@@ -90,7 +90,7 @@ const handlers = {
           if (prompt === undefined || schedule === undefined) {
             return yield* new OrchestratorMcpFailure({
               code: "invalid_request",
-              message: "A new scheduled task needs `prompt` and `schedule`.",
+              message: "A new routine needs `prompt` and `schedule`.",
             });
           }
           const scope = yield* McpInvocationContext.McpInvocationContext;
@@ -100,21 +100,20 @@ const handlers = {
       // A scheduled run starts long after its caller, with nothing to carry the link.
       { refused: "schedule tasks in this environment" },
     ),
-    McpToolAccess.writes(
-      ({ scheduledTaskId, prompt, title, schedule, enabled, bindToCurrentThread }) =>
-        Effect.gen(function* () {
-          if (scheduledTaskId === undefined) return yield* Effect.die("unreachable");
-          const scope = yield* McpInvocationContext.McpInvocationContext;
-          const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-          return yield* service.updateScheduledTask(scope, {
-            scheduledTaskId,
-            prompt,
-            title,
-            schedule,
-            enabled,
-            bindToCurrentThread,
-          });
-        }),
+    McpToolAccess.writes(({ scheduledTaskId, prompt, title, schedule, enabled, threadId }) =>
+      Effect.gen(function* () {
+        if (scheduledTaskId === undefined) return yield* Effect.die("unreachable");
+        const scope = yield* McpInvocationContext.McpInvocationContext;
+        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+        return yield* service.updateScheduledTask(scope, {
+          scheduledTaskId,
+          prompt,
+          title,
+          schedule,
+          enabled,
+          threadId,
+        });
+      }),
     ),
   ),
   list_scheduled_tasks: McpToolAccess.reads((input) =>

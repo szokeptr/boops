@@ -306,9 +306,7 @@ export const layerExecutor: Layer.Layer<
                         ...(message.notification === undefined
                           ? {}
                           : { notification: message.notification }),
-                        ...(message.scheduledTaskId === undefined
-                          ? {}
-                          : { scheduledTaskId: message.scheduledTaskId }),
+                        ...(message.routine === undefined ? {} : { routine: message.routine }),
                         ...(message.senderThreadId === undefined
                           ? {}
                           : { senderThreadId: message.senderThreadId }),

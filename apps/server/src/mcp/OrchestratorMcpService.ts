@@ -265,7 +265,7 @@ function scheduledTaskSummary(task: ScheduledTask, mayRun: boolean): Orchestrato
     prompt: task.prompt,
     enabled: task.enabled,
     projectId: task.projectId,
-    boundThreadId: task.threadId,
+    threadId: task.threadId,
     schedule: task.schedule,
     nextRunAt: task.nextRunAt,
     lastRunStatus: task.lastRunStatus,
@@ -1037,17 +1037,6 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const projectDefaultModelSelection = (
-    project: Effect.Success<ReturnType<typeof requireProject>>,
-  ) =>
-    project.defaultModelSelection === null
-      ? Effect.fail(
-          failure(
-            "invalid_request",
-            `Project ${project.id} has no default model, so this caller cannot pick one for it.`,
-          ),
-        )
-      : Effect.succeed(project.defaultModelSelection);
   const secretRequests = yield* SecretRequests.SecretRequests;
 
   const requireCapability = (scope: McpInvocationScope) =>
@@ -1219,15 +1208,6 @@ const make = Effect.gen(function* () {
     target: Pick<OrchestrationV2ThreadProjection, "thread">,
   ) =>
     parent === undefined || target.thread.id === parent.thread.id
-      ? Effect.void
-      : assertLiveCaller(scope, parent);
-
-  const assertLiveCallerForOtherProject = (
-    scope: McpInvocationScope,
-    parent: Pick<OrchestrationV2ThreadProjection, "thread" | "runs"> | undefined,
-    projectId: ProjectId,
-  ) =>
-    parent === undefined || projectId === parent.thread.projectId
       ? Effect.void
       : assertLiveCaller(scope, parent);
 
@@ -1852,50 +1832,46 @@ const make = Effect.gen(function* () {
       effect.pipe(Effect.timeoutOption(Duration.millis(timeoutMs)), Effect.map(Option.flatten)),
   );
 
-  const refExists = (cwd: string, revision: string) =>
-    gitDriver.resolveCommit({ cwd, revision }).pipe(
-      Effect.as(true),
-      Effect.orElseSucceed(() => false),
-    );
+  /** A thread manages only its own project's routines; clients outside a thread manage any. */
+  const requireOwnProject = (
+    parent: Pick<OrchestrationV2ThreadProjection, "thread"> | undefined,
+    projectId: ProjectId,
+  ) =>
+    parent === undefined || parent.thread.projectId === projectId
+      ? Effect.void
+      : Effect.fail(
+          failure("capability_denied", "A thread manages only its own project's routines."),
+        );
 
-  const resolveScheduledTaskBaseRef = Effect.fn(
-    "OrchestratorMcpService.resolveScheduledTaskBaseRef",
-  )(function* (cwd: string) {
-    const remoteName = yield* gitDriver
-      .resolvePrimaryRemoteName(cwd)
-      .pipe(Effect.orElseSucceed(() => null));
-    const conventional = ["main", "master"];
-    if (remoteName !== null) {
-      const remoteDefault = yield* gitDriver
-        .resolveDefaultBranchName(cwd, remoteName)
-        .pipe(Effect.orElseSucceed(() => null));
-      // Fetch does not update a recorded HEAD, so it can outlive the branch it names.
-      for (const branch of remoteDefault === null
-        ? conventional
-        : [remoteDefault, ...conventional]) {
-        // Launch resolves a bare name through a local branch's upstream, or else assumes `origin`.
-        if (yield* refExists(cwd, `refs/remotes/${remoteName}/${branch}`)) {
-          return `${remoteName}/${branch}`;
-        }
+  /** The thread a routine posts into: the given one, else the project's main thread, else the caller's. */
+  const resolveRoutineThread = Effect.fn("OrchestratorMcpService.resolveRoutineThread")(function* (
+    scope: McpInvocationScope,
+    parent: Pick<OrchestrationV2ThreadProjection, "thread" | "runs"> | undefined,
+    requestedThreadId: ThreadId | undefined,
+  ) {
+    const threadId =
+      requestedThreadId ??
+      (parent === undefined
+        ? undefined
+        : ((yield* requireProject(parent.thread.projectId)).mainThreadId ?? undefined));
+    if (threadId === undefined || threadId === parent?.thread.id) {
+      if (parent === undefined) {
+        return yield* failure(
+          "target_required",
+          "Pass threadId: this MCP client is not running inside a T3 thread.",
+        );
       }
+      return parent.thread;
     }
-    // Local-only repositories, or a remote with neither a usable HEAD nor a conventional branch.
-    for (const branch of conventional) {
-      if (yield* refExists(cwd, `refs/heads/${branch}`)) return branch;
+    const shell = yield* threadManagement
+      .getThreadShell(threadId)
+      .pipe(Effect.mapError(threadManagementFailure));
+    if (shell === null || shell.deletedAt !== null) {
+      return yield* failure("thread_not_found", `Thread ${threadId} was not found.`);
     }
-    return "main";
-  });
-
-  const scheduledTaskWorkspaceStrategy = Effect.fn(
-    "OrchestratorMcpService.scheduledTaskWorkspaceStrategy",
-  )(function* (boundToThread: boolean, projectId: ProjectId) {
-    if (boundToThread) return { type: "root" as const };
-    const { workspaceRoot } = yield* requireProject(projectId);
-    return {
-      type: "worktree" as const,
-      baseRef: yield* resolveScheduledTaskBaseRef(workspaceRoot),
-      startFromOrigin: true,
-    };
+    yield* requireOwnProject(parent, shell.projectId);
+    if (parent !== undefined) yield* assertLiveCaller(scope, parent);
+    return shell;
   });
 
   const scheduledTaskRunModes = Effect.fn("OrchestratorMcpService.scheduledTaskRunModes")(
@@ -1983,34 +1959,19 @@ const make = Effect.gen(function* () {
   return OrchestratorMcpService.of({
     scheduleTask: Effect.fn("OrchestratorMcpService.scheduleTask")(function* (scope, input) {
       const { parent, limits } = yield* loadCaller(scope);
-      const projectId = yield* resolveProjectTarget(parent, input.projectId);
-      yield* assertLiveCallerForOtherProject(scope, parent, projectId);
-      const project = yield* requireProject(projectId);
-      const bindToCurrentThread =
-        input.bindToCurrentThread ??
-        (parent !== undefined && parent.thread.projectId === projectId);
-      if (bindToCurrentThread && (parent === undefined || parent.thread.projectId !== projectId)) {
-        return yield* failure(
-          "invalid_request",
-          parent === undefined
-            ? "bindToCurrentThread needs an agent running inside a T3 thread."
-            : "bindToCurrentThread binds to this thread, which belongs to a different project.",
-        );
-      }
-      const modelSelection =
-        parent?.thread.modelSelection ?? (yield* projectDefaultModelSelection(project));
+      const target = yield* resolveRoutineThread(scope, parent, input.threadId);
       const derivedTitle = input.prompt.split("\n")[0]?.trim() ?? "";
       const title =
-        input.title ?? (derivedTitle.length > 0 ? derivedTitle.slice(0, 80) : "Scheduled task");
+        input.title ?? (derivedTitle.length > 0 ? derivedTitle.slice(0, 80) : "Routine");
       const upsertInput: ScheduledTaskUpsertInput = {
         title,
         prompt: input.prompt,
         enabled: input.enabled ?? true,
         schedule: input.schedule,
-        projectId,
-        threadId: bindToCurrentThread && parent !== undefined ? parent.thread.id : null,
-        workspaceStrategy: yield* scheduledTaskWorkspaceStrategy(bindToCurrentThread, projectId),
-        modelSelection,
+        projectId: target.projectId,
+        threadId: target.id,
+        workspaceStrategy: { type: "root" },
+        modelSelection: target.modelSelection,
         runtimeMode: limits.runtimeMode,
         interactionMode: limits.interactionMode,
         createdBy: "agent",
@@ -2039,6 +2000,7 @@ const make = Effect.gen(function* () {
     listScheduledTasks: Effect.fn("OrchestratorMcpService.listScheduledTasks")(
       function* (scope, input) {
         const { parent, limits } = yield* loadCaller(scope);
+        if (input.projectId !== undefined) yield* requireOwnProject(parent, input.projectId);
         const projectId = input.projectId ?? parent?.thread.projectId;
         const { tasks } = yield* scheduledTasks
           .list()
@@ -2059,38 +2021,21 @@ const make = Effect.gen(function* () {
       function* (scope, input) {
         const { parent, limits } = yield* loadCaller(scope);
         const existing = yield* loadScheduledTask(input.scheduledTaskId, limits);
-        yield* assertLiveCallerForOtherProject(scope, parent, existing.projectId);
-        if (
-          input.bindToCurrentThread === true &&
-          (parent === undefined || parent.thread.projectId !== existing.projectId)
-        ) {
-          return yield* failure(
-            "invalid_request",
-            parent === undefined
-              ? "bindToCurrentThread needs an agent running inside a T3 thread."
-              : "bindToCurrentThread binds to this thread, which belongs to a different project.",
-          );
-        }
-        const threadId =
-          input.bindToCurrentThread === undefined
-            ? existing.threadId
-            : input.bindToCurrentThread && parent !== undefined
-              ? parent.thread.id
-              : null;
-        // Update workspace strategy on rebinding so unbound root tasks cannot run in the shared checkout.
-        const workspaceStrategy =
-          input.bindToCurrentThread === undefined
-            ? existing.workspaceStrategy
-            : yield* scheduledTaskWorkspaceStrategy(input.bindToCurrentThread, existing.projectId);
+        yield* requireOwnProject(parent, existing.projectId);
+        // A task saved before routines required a thread moves to the caller's.
+        const target =
+          input.threadId === undefined && existing.threadId !== null
+            ? { id: existing.threadId, projectId: existing.projectId }
+            : yield* resolveRoutineThread(scope, parent, input.threadId);
         const upsertInput: ScheduledTaskUpsertInput = {
           id: existing.id,
           title: input.title ?? existing.title,
           prompt: input.prompt ?? existing.prompt,
           enabled: input.enabled ?? existing.enabled,
           schedule: input.schedule ?? existing.schedule,
-          projectId: existing.projectId,
-          threadId,
-          workspaceStrategy,
+          projectId: target.projectId,
+          threadId: target.id,
+          workspaceStrategy: existing.workspaceStrategy,
           modelSelection: existing.modelSelection,
           runtimeMode: existing.runtimeMode,
           interactionMode: existing.interactionMode,
@@ -2111,7 +2056,7 @@ const make = Effect.gen(function* () {
       function* (scope, input) {
         const { parent, limits } = yield* loadCaller(scope);
         const existing = yield* loadScheduledTask(input.scheduledTaskId, limits);
-        yield* assertLiveCallerForOtherProject(scope, parent, existing.projectId);
+        yield* requireOwnProject(parent, existing.projectId);
         yield* scheduledTasks
           .delete({ id: existing.id })
           .pipe(

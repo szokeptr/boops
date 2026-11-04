@@ -8,6 +8,7 @@ import {
   ProviderInstanceId,
   ScheduledTaskError,
   ScheduledTaskId,
+  type ScheduledTaskUpsertInput,
   ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -24,7 +25,6 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 
-import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
@@ -43,6 +43,7 @@ const insertRow = (
     status: string;
     scheduleJson?: string;
     prompt?: string;
+    threadId?: string | null;
   },
   now: string,
 ) =>
@@ -53,7 +54,7 @@ const insertRow = (
     enabled: row.enabled,
     schedule_json: row.scheduleJson ?? '{"type":"interval","everyMs":60000}',
     project_id: "project:test",
-    thread_id: null,
+    thread_id: row.threadId === undefined ? "thread:test" : row.threadId,
     workspace_strategy_json: '{"type":"root"}',
     model_selection_json: '{"instanceId":"codex","model":"gpt-5"}',
     runtime_mode: "full-access",
@@ -192,8 +193,8 @@ it.effect(
               ScheduledTaskService.layer,
               Layer.mergeAll(
                 ManagedPolicy.layerTest(),
-                Layer.mock(ThreadLaunchService.ThreadLaunchService)({
-                  launch: () =>
+                Layer.mock(ThreadManagementService.ThreadManagementService)({
+                  sendToThread: () =>
                     Ref.updateAndGet(dispatched, (n) => n + 1).pipe(
                       Effect.andThen((n) =>
                         n === 4
@@ -202,14 +203,13 @@ it.effect(
                             )
                           : Effect.void,
                       ),
-                      Effect.andThen(Effect.die(new Error("test launch failure"))),
+                      Effect.andThen(Effect.die(new Error("test dispatch failure"))),
                     ),
                 }),
                 Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
                   namedProjectsRoot: "/projects",
                   isScratchProject: () => Effect.succeed(false),
                 }),
-                Layer.mock(ThreadManagementService.ThreadManagementService)({}),
                 Layer.mock(SecretRequests.SecretRequests)({}),
                 NodeCrypto.layer,
                 Scheduler.layer,
@@ -252,7 +252,7 @@ it.effect(
       for (const id of ["due-healthy", "due-huge", "due-second"]) {
         const row = byId.get(id);
         assert.equal(row?.last_run_status, "failed");
-        assert.isTrue(row?.last_run_error?.includes("test launch failure") === true);
+        assert.isTrue(row?.last_run_error?.includes("test dispatch failure") === true);
         assert.equal(row?.run_count, 1);
       }
       assert.isNull(byId.get("due-huge")?.next_run_at);
@@ -286,8 +286,8 @@ it.effect(
               ScheduledTaskService.layer,
               Layer.mergeAll(
                 ManagedPolicy.layerTest(),
-                Layer.mock(ThreadLaunchService.ThreadLaunchService)({
-                  launch: () =>
+                Layer.mock(ThreadManagementService.ThreadManagementService)({
+                  sendToThread: () =>
                     Ref.updateAndGet(dispatched, (n) => n + 1).pipe(
                       Effect.andThen((n) =>
                         n === 1
@@ -300,14 +300,13 @@ it.effect(
                               )
                             : Effect.void,
                       ),
-                      Effect.andThen(Effect.die(new Error("test launch failure"))),
+                      Effect.andThen(Effect.die(new Error("test dispatch failure"))),
                     ),
                 }),
                 Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
                   namedProjectsRoot: "/projects",
                   isScratchProject: () => Effect.succeed(false),
                 }),
-                Layer.mock(ThreadManagementService.ThreadManagementService)({}),
                 Layer.mock(SecretRequests.SecretRequests)({}),
                 NodeCrypto.layer,
                 Scheduler.layer,
@@ -351,7 +350,6 @@ it.effect("thread cleanup notifies subscribers and a finishing run cannot recrea
       Layer.provide(
         Layer.mergeAll(
           ManagedPolicy.layerTest(),
-          Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             sendToThread: () =>
               Deferred.succeed(started, undefined).pipe(
@@ -421,7 +419,6 @@ it.effect("a bound run follows its thread when promotion moves it mid-send", () 
       Layer.provide(
         Layer.mergeAll(
           ManagedPolicy.layerTest(),
-          Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             sendToThread: (input) =>
               Ref.updateAndGet(sends, (all) => [
@@ -485,86 +482,16 @@ it.effect("a bound run follows its thread when promotion moves it mid-send", () 
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
-it.effect("refuses saving an enabled task above the policy ceiling", () =>
-  Effect.gen(function* () {
-    const layer = ScheduledTaskService.layer.pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          ManagedPolicy.layerTest({
-            schemaVersion: 1,
-            organization: "Example Corp",
-            limits: { maxRuntimeMode: "auto-accept-edits" },
-          }),
-          Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
-          Layer.mock(ThreadManagementService.ThreadManagementService)({}),
-          Layer.mock(SecretRequests.SecretRequests)({}),
-          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-            namedProjectsRoot: "/projects",
-            isScratchProject: () => Effect.succeed(false),
-          }),
-          NodeCrypto.layer,
-          Scheduler.layer,
-        ),
-      ),
-    );
-    yield* Effect.gen(function* () {
-      const service = yield* ScheduledTaskService.ScheduledTaskService;
-      const save = (enabled: boolean) =>
-        service.upsert({
-          id: ScheduledTaskId.make("task:above-ceiling"),
-          title: "Nightly",
-          prompt: "Check progress",
-          enabled,
-          schedule: { type: "interval", everyMs: 60_000 },
-          projectId: ProjectId.make("project:test"),
-          workspaceStrategy: { type: "root" },
-          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-          runtimeMode: "full-access",
-          interactionMode: "default",
-        });
-      const refused = yield* save(true).pipe(Effect.flip);
-      assert.equal(refused.message, "Example Corp limits threads to Auto-accept edits.");
-      assert.lengthOf((yield* service.list()).tasks, 0);
-      // A disabled task does not run, so it can still be saved.
-      yield* save(false);
-      assert.lengthOf((yield* service.list()).tasks, 1);
-      // Nor can it be switched back on while its mode is above the ceiling.
-      const reenabled = yield* service
-        .setEnabled({ id: ScheduledTaskId.make("task:above-ceiling"), enabled: true })
-        .pipe(Effect.flip);
-      assert.equal(reenabled.message, "Example Corp limits threads to Auto-accept edits.");
-      // A task bound to a thread runs in that thread's mode, so its own is not checked.
-      yield* service.upsert({
-        id: ScheduledTaskId.make("task:bound"),
-        title: "Follow up",
-        prompt: "Check progress",
-        enabled: true,
-        schedule: { type: "interval", everyMs: 60_000 },
-        projectId: ProjectId.make("project:test"),
-        threadId: ThreadId.make("thread:bound"),
-        workspaceStrategy: { type: "root" },
-        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-        runtimeMode: "full-access",
-        interactionMode: "default",
-      });
-    }).pipe(Effect.provide(layer));
-  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
-);
-
 it.effect("a run interrupted right after it reserves the task does not block the next run", () =>
   Effect.gen(function* () {
-    const launches = yield* Ref.make(0);
+    const sends = yield* Ref.make(0);
     const layer = ScheduledTaskService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
           ManagedPolicy.layerTest(),
-          Layer.mock(ThreadLaunchService.ThreadLaunchService)({
-            launch: () =>
-              Ref.update(launches, (n) => n + 1).pipe(
-                Effect.as({ threadId: ThreadId.make("thread:launched"), resumed: false } as never),
-              ),
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            sendToThread: () => Ref.update(sends, (n) => n + 1).pipe(Effect.as({} as never)),
           }),
-          Layer.mock(ThreadManagementService.ThreadManagementService)({}),
           Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
@@ -584,6 +511,7 @@ it.effect("a run interrupted right after it reserves the task does not block the
         enabled: true,
         schedule: { type: "interval", everyMs: 60_000 },
         projectId: ProjectId.make("project:test"),
+        threadId: ThreadId.make("thread:bound"),
         workspaceStrategy: { type: "root" },
         modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
         runtimeMode: "full-access",
@@ -613,8 +541,197 @@ it.effect("a run interrupted right after it reserves the task does not block the
       assert.isTrue(Exit.hasInterrupts(first));
 
       const second = yield* service.runNow({ id: task.id });
-      assert.equal(second.threadId, ThreadId.make("thread:launched"));
-      assert.equal(yield* Ref.get(launches), 1);
+      assert.equal(second.threadId, ThreadId.make("thread:bound"));
+      assert.equal(yield* Ref.get(sends), 1);
+    }).pipe(Effect.provide(layer));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+const routineDependencies = (
+  threadManagement: Partial<ThreadManagementService.ThreadManagementService["Service"]>,
+  workers: Map<string, Effect.Effect<void>>,
+) =>
+  Layer.mergeAll(
+    ManagedPolicy.layerTest(),
+    Layer.mock(ThreadManagementService.ThreadManagementService)(threadManagement),
+    Layer.mock(SecretRequests.SecretRequests)({}),
+    Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+      namedProjectsRoot: "/projects",
+      isScratchProject: () => Effect.succeed(false),
+    }),
+    NodeCrypto.layer,
+    Layer.succeed(Scheduler.Scheduler, {
+      register: <E, R>(name: string, work: Effect.Effect<void, E, R>) =>
+        Effect.gen(function* () {
+          const context = yield* Effect.context<R>();
+          workers.set(name, work.pipe(Effect.provideContext(context), Effect.orDie));
+        }),
+    }),
+  );
+
+const routineModelSelection = {
+  instanceId: ProviderInstanceId.make("codex"),
+  model: "gpt-5.4",
+};
+
+it.effect("every trigger kind queues the prompt into the routine's thread with its label", () =>
+  Effect.gen(function* () {
+    const start = DateTime.makeZonedUnsafe(
+      { year: 2026, month: 7, day: 1, hour: 9, minute: 0, second: 0, millisecond: 0 },
+      { timeZone: DateTime.zoneMakeLocal(), adjustForTimeZone: true },
+    );
+    yield* TestClock.setTime(DateTime.toEpochMillis(start));
+    const sent = yield* Ref.make<ReadonlyArray<ThreadManagementService.ThreadManagementSendInput>>(
+      [],
+    );
+    const workers = new Map<string, Effect.Effect<void>>();
+    const layer = ScheduledTaskService.layer.pipe(
+      Layer.provide(
+        routineDependencies(
+          {
+            sendToThread: (input) =>
+              Ref.update(sent, (all) => [...all, input]).pipe(Effect.as({} as never)),
+          },
+          workers,
+        ),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const sql = yield* SqlClient.SqlClient;
+      const projectId = ProjectId.make("project:bot");
+      const threadId = ThreadId.make("thread:bot");
+      const save = (title: string, schedule: ScheduledTaskUpsertInput["schedule"]) =>
+        service.upsert({
+          id: ScheduledTaskId.make(`task:${title}`),
+          title,
+          prompt: `Run ${title}`,
+          enabled: true,
+          schedule,
+          projectId,
+          threadId,
+          workspaceStrategy: { type: "root" },
+          modelSelection: routineModelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+        });
+      yield* save("Every minute", { type: "interval", everyMs: 60_000 });
+      yield* save("Morning", { type: "fixed_time", timeOfDay: "9:01" });
+      yield* save("Once", {
+        type: "once",
+        runAt: DateTime.formatIso(DateTime.add(start, { minutes: 1 })),
+      });
+      const manual = yield* save("By hand", { type: "interval", everyMs: 3_600_000 });
+      yield* service.runNow({ id: manual.task.id });
+      yield* TestClock.adjust("1 minute");
+      yield* workers.get("scheduled-tasks")!;
+
+      const byTask = new Map((yield* Ref.get(sent)).map((input) => [input.routine?.taskId, input]));
+      for (const [title, trigger] of [
+        ["Every minute", "interval"],
+        ["Morning", "fixed_time"],
+        ["Once", "once"],
+        ["By hand", "manual"],
+      ] as const) {
+        const input = byTask.get(ScheduledTaskId.make(`task:${title}`));
+        assert.deepEqual(
+          input && {
+            threadId: input.threadId,
+            text: input.text,
+            mode: input.mode,
+            routine: input.routine,
+          },
+          {
+            threadId,
+            text: `Run ${title}`,
+            mode: "queue",
+            routine: { taskId: ScheduledTaskId.make(`task:${title}`), name: title, trigger },
+          },
+          title,
+        );
+      }
+      assert.equal(byTask.size, 4);
+
+      // A task saved before routines required a thread fails visibly instead of starting one.
+      const now = DateTime.formatIso(DateTime.toUtc(yield* DateTime.now));
+      yield* insertRow(
+        sql,
+        { id: "task:no-thread", next: null, enabled: 1, status: "never", threadId: null },
+        now,
+      );
+      const orphan = yield* service.runNow({ id: ScheduledTaskId.make("task:no-thread") });
+      assert.isNull(orphan.threadId);
+      assert.equal(orphan.task.lastRunStatus, "failed");
+      assert.include(orphan.task.lastRunError, "no target thread");
+      assert.equal((yield* Ref.get(sent)).length, 4);
+    }).pipe(Effect.provide(layer));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect("ensureDefaultHeartbeat adds one editable Heartbeat per project", () =>
+  Effect.gen(function* () {
+    const projectId = ProjectId.make("project:bot");
+    const threadId = ThreadId.make("thread:bot");
+    const otherThreadId = ThreadId.make("thread:elsewhere");
+    const layer = ScheduledTaskService.layer.pipe(
+      Layer.provide(
+        routineDependencies(
+          {
+            getThreadShell: (id) =>
+              Effect.succeed(
+                id === threadId || id === otherThreadId
+                  ? ({
+                      id,
+                      projectId: id === threadId ? projectId : ProjectId.make("project:other"),
+                      deletedAt: null,
+                      modelSelection: routineModelSelection,
+                      runtimeMode: "approval-required",
+                      interactionMode: "default",
+                    } as never)
+                  : null,
+              ),
+          },
+          new Map(),
+        ),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const misplaced = yield* service
+        .ensureDefaultHeartbeat({ projectId, threadId: otherThreadId })
+        .pipe(Effect.flip);
+      assert.include(misplaced.message, "not in this project");
+
+      const { task } = yield* service.ensureDefaultHeartbeat({ projectId, threadId });
+      assert.deepInclude(task, {
+        title: "Heartbeat",
+        prompt: ScheduledTaskService.DEFAULT_HEARTBEAT_PROMPT,
+        enabled: true,
+        schedule: { type: "interval", everyMs: 6 * 60 * 60 * 1000 },
+        projectId,
+        threadId,
+        runtimeMode: "approval-required",
+      });
+      assert.isNotNull(task.nextRunAt);
+
+      const again = yield* service.ensureDefaultHeartbeat({ projectId, threadId });
+      assert.equal(again.task.id, task.id);
+      assert.lengthOf((yield* service.list()).tasks, 1);
+
+      // An edit survives later calls; it is a routine like any other.
+      yield* service.upsert({
+        ...task,
+        threadId,
+        title: "Slow heartbeat",
+        schedule: { type: "interval", everyMs: 12 * 60 * 60 * 1000 },
+        requireExisting: true,
+      });
+      const edited = yield* service.ensureDefaultHeartbeat({ projectId, threadId });
+      assert.equal(edited.task.title, "Slow heartbeat");
+      assert.lengthOf((yield* service.list()).tasks, 1);
+
+      yield* service.delete({ id: task.id });
+      assert.lengthOf((yield* service.list()).tasks, 0);
     }).pipe(Effect.provide(layer));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );

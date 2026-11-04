@@ -694,7 +694,7 @@ function cancelledAppOwnedTask(
 function mayStartSubagentFollowup(
   command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
 ): boolean {
-  if (command.scheduledTaskId !== undefined || command.restartContinuationOfRunId !== undefined)
+  if (command.routine !== undefined || command.restartContinuationOfRunId !== undefined)
     return false;
   if (command.notification !== undefined) return command.notification.source.kind !== "monitor";
   return command.createdBy === "user" || command.creationSource === "mcp";
@@ -2135,9 +2135,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ...(queuedMessage.context ? { context: queuedMessage.context } : {}),
           createdBy: queuedMessage.createdBy,
           creationSource: queuedMessage.creationSource,
-          ...(queuedMessage.scheduledTaskId === undefined
-            ? {}
-            : { scheduledTaskId: queuedMessage.scheduledTaskId }),
+          ...(queuedMessage.routine === undefined ? {} : { routine: queuedMessage.routine }),
           ...(queuedMessage.senderThreadId === undefined
             ? {}
             : { senderThreadId: queuedMessage.senderThreadId }),
@@ -2454,7 +2452,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const { messages } = projection;
     const unattended = new Set(
       messages
-        .filter((message) => message.createdBy !== "user" || message.scheduledTaskId !== undefined)
+        .filter((message) => message.createdBy !== "user" || message.routine !== undefined)
         .map((message) => message.id),
     );
     const now = yield* DateTime.now;
@@ -4757,7 +4755,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     readonly context?: import("@t3tools/contracts").OrchestrationMessageContext | undefined;
     readonly createdBy: OrchestrationV2ConversationMessage["createdBy"];
     readonly creationSource: OrchestrationV2ConversationMessage["creationSource"];
-    readonly scheduledTaskId?: OrchestrationV2ConversationMessage["scheduledTaskId"];
+    readonly routine?: OrchestrationV2ConversationMessage["routine"];
     readonly senderThreadId?: OrchestrationV2ConversationMessage["senderThreadId"];
     readonly idleCompaction?: OrchestrationV2ConversationMessage["idleCompaction"];
     readonly delegatedCompletion?: OrchestrationV2ConversationMessage["delegatedCompletion"];
@@ -4916,9 +4914,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ? {}
             : { delegatedCompletion: input.delegatedCompletion }),
           ...(input.notification === undefined ? {} : { notification: input.notification }),
-          ...(input.scheduledTaskId === undefined
-            ? {}
-            : { scheduledTaskId: input.scheduledTaskId }),
+          ...(input.routine === undefined ? {} : { routine: input.routine }),
           ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
           ...(input.idleCompaction === undefined ? {} : { idleCompaction: input.idleCompaction }),
           id: input.messageId,
@@ -4936,9 +4932,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         const turnItem: OrchestrationV2TurnItem = {
           createdBy: input.createdBy,
           creationSource: input.creationSource,
-          ...(input.scheduledTaskId === undefined
-            ? {}
-            : { scheduledTaskId: input.scheduledTaskId }),
+          ...(input.routine === undefined ? {} : { routine: input.routine }),
           ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
           ...(input.idleCompaction === undefined ? {} : { idleCompaction: input.idleCompaction }),
           id: idAllocator.derive.userTurnItem({ messageId: input.messageId }),
@@ -5923,9 +5917,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         attachments: command.attachments,
         createdBy: command.createdBy,
         creationSource: command.creationSource,
-        ...(command.scheduledTaskId === undefined
-          ? {}
-          : { scheduledTaskId: command.scheduledTaskId }),
+        ...(command.routine === undefined ? {} : { routine: command.routine }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
         forceRestart: dispatchMode.type === "restart_active",
@@ -5962,7 +5954,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const sentByUserFromClient =
       command.createdBy === "user" &&
       (command.creationSource === "web" || command.creationSource === "mobile") &&
-      command.scheduledTaskId === undefined;
+      command.routine === undefined;
     const heldRunsToRelease =
       sentByUserFromClient && startsOrQueuesRun && !worktreeSetupUnresolved
         ? projection.runs.filter((run) => run.status === "queued" && run.queueHeld === true)
@@ -6158,9 +6150,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const message: OrchestrationV2ConversationMessage = {
         createdBy: command.createdBy,
         creationSource: command.creationSource,
-        ...(command.scheduledTaskId === undefined
-          ? {}
-          : { scheduledTaskId: command.scheduledTaskId }),
+        ...(command.routine === undefined ? {} : { routine: command.routine }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
         id: command.messageId,
@@ -6524,9 +6514,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const message: OrchestrationV2ConversationMessage = {
         createdBy: command.createdBy,
         creationSource: command.creationSource,
-        ...(command.scheduledTaskId === undefined
-          ? {}
-          : { scheduledTaskId: command.scheduledTaskId }),
+        ...(command.routine === undefined ? {} : { routine: command.routine }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
         id: command.messageId,
@@ -6546,9 +6534,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const turnItem: OrchestrationV2TurnItem = {
         createdBy: command.createdBy,
         creationSource: command.creationSource,
-        ...(command.scheduledTaskId === undefined
-          ? {}
-          : { scheduledTaskId: command.scheduledTaskId }),
+        ...(command.routine === undefined ? {} : { routine: command.routine }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
         id: idAllocator.derive.userTurnItem({ messageId: command.messageId }),
@@ -7276,9 +7262,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const message: OrchestrationV2ConversationMessage = {
       createdBy: command.createdBy,
       creationSource: command.creationSource,
-      ...(command.scheduledTaskId === undefined
-        ? {}
-        : { scheduledTaskId: command.scheduledTaskId }),
+      ...(command.routine === undefined ? {} : { routine: command.routine }),
       ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
       ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
       id: command.messageId,
@@ -7298,9 +7282,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const turnItem: OrchestrationV2TurnItem = {
       createdBy: command.createdBy,
       creationSource: command.creationSource,
-      ...(command.scheduledTaskId === undefined
-        ? {}
-        : { scheduledTaskId: command.scheduledTaskId }),
+      ...(command.routine === undefined ? {} : { routine: command.routine }),
       ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
       ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
       id: idAllocator.derive.userTurnItem({ messageId: command.messageId }),
@@ -9687,9 +9669,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(queuedMessage.context ? { context: queuedMessage.context } : {}),
       createdBy: queuedMessage.createdBy,
       creationSource: queuedMessage.creationSource,
-      ...(queuedMessage.scheduledTaskId === undefined
-        ? {}
-        : { scheduledTaskId: queuedMessage.scheduledTaskId }),
+      ...(queuedMessage.routine === undefined ? {} : { routine: queuedMessage.routine }),
       ...(queuedMessage.senderThreadId === undefined
         ? {}
         : { senderThreadId: queuedMessage.senderThreadId }),

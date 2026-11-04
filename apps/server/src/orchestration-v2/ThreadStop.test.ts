@@ -763,7 +763,11 @@ it.effect("a message the user sends after Stop releases the held queue; an agent
       dispatchMode: { type: "queue_after_active" },
       createdBy: "user",
       creationSource: "web",
-      scheduledTaskId: ScheduledTaskId.make("scheduled:nightly"),
+      routine: {
+        taskId: ScheduledTaskId.make("scheduled:nightly"),
+        name: "Nightly check",
+        trigger: "interval",
+      },
     });
     const scheduled = (yield* orchestrator.getThreadProjection(threadId)).runs.at(-1)!;
     assert.deepEqual((yield* threadState(threadId)).runs, [

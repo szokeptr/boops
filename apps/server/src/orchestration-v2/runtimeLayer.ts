@@ -302,7 +302,9 @@ const layerScratchThreadPromotionProvided = ScratchThreadPromotion.layer.pipe(
   ),
 );
 const layerBotsProvided = Bots.layer.pipe(
-  Layer.provide(Layer.mergeAll(layerProjectService, layerThreadManagementProvided)),
+  Layer.provide(
+    Layer.mergeAll(layerProjectService, layerThreadManagementProvided, layerScheduledTaskProvided),
+  ),
 );
 const layerProviderContinuationWorkerProvided = ProviderContinuationService.layer.pipe(
   Layer.provide(

@@ -464,7 +464,7 @@ it.effect.each(deliveries)(
               assert.equal(after.subagents[0]?.completionDelivery?.state, "delivered");
             } else {
               assert.equal(
-                after.messages.filter((message) => message.scheduledTaskId !== undefined).length,
+                after.messages.filter((message) => message.routine !== undefined).length,
                 1,
               );
             }
