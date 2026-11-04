@@ -127,7 +127,7 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
  * Whether Shift is held, as context rather than a row prop: a Shift press then re-renders each
  * row's action group, not the rows or their buttons, in one commit.
  */
-export const PullRequestSpeedModeContext = createContext(false);
+const PullRequestSpeedModeContext = createContext(false);
 
 /** Tracks Shift for the quick actions below it. */
 export function PullRequestSpeedModeProvider({ children }: { children: ReactNode }) {

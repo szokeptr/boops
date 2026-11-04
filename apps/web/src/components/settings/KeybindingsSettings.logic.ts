@@ -15,6 +15,7 @@ import {
 
 import { shortcutConflictKey, shortcutKeyFromEvent } from "../../keybindings";
 import { isMacPlatform } from "../../lib/utils";
+import { projectScriptIdFromCommand } from "../../projectScripts";
 import { METRIC_OPTIONS, WINDOW_OPTIONS } from "../usage/usageShortcuts";
 
 // Rank every usage command; mixing rank and alphabetical comparisons makes order input-dependent.
@@ -246,12 +247,28 @@ export function groupKeybindingRows(
   });
 }
 
+// Coding commands keep their contract ids, but Pocks has no diff, branch, worktree, or script UI.
+const CODING_KEYBINDING_COMMANDS: ReadonlySet<KeybindingCommand> = new Set([
+  "diff.toggle",
+  "pullRequest.copyNumber",
+  "composer.host",
+  "composer.cycleHost",
+  "composer.workspace",
+  "composer.previousWorktree",
+  "composer.branch",
+]);
+
+export function isCodingKeybindingCommand(command: KeybindingCommand): boolean {
+  return CODING_KEYBINDING_COMMANDS.has(command) || projectScriptIdFromCommand(command) !== null;
+}
+
 export function buildKeybindingRows(
   keybindings: ResolvedKeybindingsConfig,
   platform = navigator.platform,
 ): ReadonlyArray<KeybindingRow> {
   const rowsById = new Map<string, KeybindingRow>();
   for (const binding of keybindings) {
+    if (isCodingKeybindingCommand(binding.command)) continue;
     const defaultBinding = defaultBindingForBinding(binding);
     const key = shortcutToKeybindingInput(binding.shortcut);
     const when = whenAstToExpression(binding.whenAst);
@@ -364,7 +381,9 @@ export function buildKeybindingCommandOptions(
   for (const binding of keybindings) {
     commands.add(binding.command);
   }
-  return [...commands].toSorted((left, right) => compareCommands(left, right, commandLabel));
+  return [...commands]
+    .filter((command) => !isCodingKeybindingCommand(command))
+    .toSorted((left, right) => compareCommands(left, right, commandLabel));
 }
 
 export function commandLabel(command: KeybindingCommand): string {

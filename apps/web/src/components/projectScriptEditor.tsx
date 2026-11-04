@@ -4,7 +4,6 @@ import {
   type EnvironmentId,
   type ProjectScript,
   type ProjectScriptIcon,
-  type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -21,10 +20,7 @@ import {
 } from "lucide-react";
 import React, { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 
-import {
-  keybindingValueForCommand,
-  decodeProjectScriptKeybindingRule,
-} from "~/lib/projectScriptKeybindings";
+import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { keybindingFromKeyboardEvent } from "~/components/settings/KeybindingsSettings.logic";
 import { commandForProjectScript, nextProjectScriptId } from "~/projectScripts";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
@@ -63,7 +59,7 @@ const SCRIPT_ICONS: Array<{ id: ProjectScriptIcon; label: string }> = [
   { id: "debug", label: "Debug" },
 ];
 
-export function ScriptIcon({
+function ScriptIcon({
   icon,
   className = "size-3.5",
 }: {
@@ -109,26 +105,6 @@ export interface ProjectScriptEditorRequest {
   scriptId: string | null;
   initial: NewProjectScriptInput;
   error?: string;
-}
-
-export function editorRequestForScript(
-  script: ProjectScript,
-  keybindings: ResolvedKeybindingsConfig,
-): ProjectScriptEditorRequest {
-  return {
-    scriptId: script.id,
-    initial: {
-      name: script.name,
-      command: script.command,
-      icon: script.icon,
-      runOnWorktreeCreate: script.runOnWorktreeCreate,
-      waitForSetup: script.runOnWorktreeCreate && script.async === false,
-      runOnSettle: script.runOnSettle ?? false,
-      keybinding: keybindingValueForCommand(keybindings, commandForProjectScript(script.id)),
-      previewUrl: script.previewUrl ?? null,
-      autoOpenPreview: script.autoOpenPreview ?? false,
-    },
-  };
 }
 
 export function ProjectScriptEditorDialog({
