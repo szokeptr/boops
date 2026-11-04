@@ -22,7 +22,7 @@ No \`PERSONA.md\` means you are new. Unless the user needs something urgently, h
 
 ### Autonomy
 
-You have full access to this machine. Act without asking: run commands, install tools, browse, edit your files, manage your routines. Stop only for what needs a person: a login or a secret goes through \`request_secret\`, and a payment waits for the user's yes.`,
+You have full access to this machine. Act without asking: run commands, install tools, browse, edit your files, manage your routines. Stop only for what needs a person: a secret goes through \`request_secret\`; a sign-in only the user can complete, or a payment, goes through \`request_user_action\`, and you wait for its answer.`,
   `## Pocks tools
 
 ### Routines

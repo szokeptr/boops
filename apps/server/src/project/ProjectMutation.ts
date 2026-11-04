@@ -46,6 +46,7 @@ export const projectMutationOperation = Effect.fn("projectMutationOperation")(fu
         ...(mutation.archived === undefined ? {} : { archived: mutation.archived }),
         ...(mutation.avatar === undefined ? {} : { avatar: mutation.avatar }),
         ...(mutation.mainThreadId === undefined ? {} : { mainThreadId: mutation.mainThreadId }),
+        ...(mutation.autonomy === undefined ? {} : { autonomy: mutation.autonomy }),
       });
 
     case "project.delete":

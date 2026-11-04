@@ -16,6 +16,8 @@ import {
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpRequestSecretInput,
   OrchestratorMcpRequestSecretResult,
+  OrchestratorMcpRequestUserActionInput,
+  OrchestratorMcpRequestUserActionResult,
   OrchestratorMcpFailure,
   OrchestratorMcpListScheduledTasksInput,
   OrchestratorMcpListScheduledTasksResult,
@@ -209,6 +211,18 @@ const RequestSecretTool = Tool.make("request_secret", {
   // Claude Code defers MCP tools behind ToolSearch; agents that never load this one ask in chat.
   .annotate(Tool.Meta, { "anthropic/alwaysLoad": true });
 
+const RequestUserActionTool = Tool.make("request_user_action", {
+  description:
+    "Ask the user to do what only a person can: log in, pay, approve an account change. Waits for done or declined. Not for secrets (request_secret) or questions.",
+  parameters: OrchestratorMcpRequestUserActionInput,
+  success: OrchestratorMcpRequestUserActionResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "Ask the user to do something")
+  .annotate(Tool.Destructive, false);
+
 const CreateThreadsTool = Tool.make("create_threads", {
   description:
     "Create new top-level threads in this checkout. Not delegation. One thread or its own worktree: `t3_thread_launch`. Project, branch, and worktree inherit.",
@@ -360,6 +374,7 @@ export const OrchestratorToolkit = Toolkit.make(
   ListScheduledTasksTool,
   DeleteScheduledTaskTool,
   RequestSecretTool,
+  RequestUserActionTool,
   CreateThreadsTool,
   ThreadListTool,
   ThreadReadTool,

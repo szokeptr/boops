@@ -183,6 +183,7 @@ export const make = Effect.gen(function* () {
     archivedAt: row.archivedAt,
     avatar: row.avatar,
     mainThreadId: row.mainThreadId,
+    autonomy: row.autonomy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -397,6 +398,7 @@ export const make = Effect.gen(function* () {
         ...(input.archived === undefined ? {} : { archived: input.archived }),
         ...(input.avatar === undefined ? {} : { avatar: input.avatar }),
         ...(input.mainThreadId === undefined ? {} : { mainThreadId: input.mainThreadId }),
+        ...(input.autonomy === undefined ? {} : { autonomy: input.autonomy }),
       });
       if (workspaceRoot !== previousRoot) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);

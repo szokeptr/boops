@@ -1,6 +1,7 @@
 import { remapComposerContextAttachments } from "@t3tools/shared/composerContextReferences";
 import {
   type ThreadLinkedPullRequest,
+  type BotAutonomy,
   CommandId,
   CheckpointId,
   CheckpointScopeId,
@@ -65,6 +66,7 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly archived?: boolean;
   readonly avatar?: ProjectAvatar | null;
   readonly mainThreadId?: ThreadId | null;
+  readonly autonomy?: BotAutonomy | null;
 }
 
 export interface DeleteProjectInput extends CommandMetadata {
@@ -384,6 +386,7 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
     ...(input.archived === undefined ? {} : { archived: input.archived }),
     ...(input.avatar === undefined ? {} : { avatar: input.avatar }),
     ...(input.mainThreadId === undefined ? {} : { mainThreadId: input.mainThreadId }),
+    ...(input.autonomy === undefined ? {} : { autonomy: input.autonomy }),
   });
 });
 

@@ -81,6 +81,7 @@ import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as PortScanner from "../../preview/PortScanner.ts";
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { WorkflowAgentTranscriptReadObserver } from "../workflowAgentTranscript.ts";
+import * as RuntimePolicy from "../RuntimePolicy.ts";
 import * as ServerConfig from "../../config.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH } from "@t3tools/provider-core/server/orchestrationInstructions";
@@ -440,6 +441,42 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
       tools: ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS,
       installPermissionCallback: false,
     });
+  });
+
+  it("keeps a home-folder bot's autonomous modes unprompted but inside the workspace", () => {
+    for (const runtimeMode of ["auto", "full-access"] as const) {
+      const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+        ProviderAdapter.ProviderAdapterV2RuntimePolicy.make(
+          RuntimePolicy.applyBotAutonomy(
+            { runtimeMode, interactionMode: "default", cwd: "/workspace" },
+            "home-folder",
+          ),
+        ),
+      );
+      assert.deepEqual(queryPolicy, {
+        permissionMode: "bypassPermissions",
+        allowDangerouslySkipPermissions: true,
+        installPermissionCallback: false,
+        confineToCwd: true,
+      });
+    }
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-home-folder",
+      resume: false,
+      cwd: "/workspace",
+      permissionMode: "bypassPermissions",
+      confineToCwd: true,
+    });
+    assert.deepEqual(options.sandbox, {
+      enabled: true,
+      autoAllowBashIfSandboxed: true,
+      allowUnsandboxedCommands: false,
+    });
+    assert.deepInclude(
+      typeof options.settings === "object" ? options.settings.permissions : undefined,
+      { blockWritesOutsideWorkingDirectories: true },
+    );
   });
 
   it("maps default full-access policy to Claude bypass permissions", () => {

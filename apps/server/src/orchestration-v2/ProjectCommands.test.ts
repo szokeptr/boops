@@ -35,6 +35,7 @@ const row = (overrides: Partial<ProjectRow> = {}): ProjectRow => ({
   archivedAt: null,
   avatar: null,
   mainThreadId: null,
+  autonomy: "full",
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
   deletedAt: null,
@@ -136,7 +137,11 @@ describe("planProjectCommand", () => {
     assert.deepEqual(created.defaultModelSelection, modelSelection);
     const fox = { hue: "tangerine", accessory: "rabbit", glow: "mint" } as const;
     const owl = { hue: "grape", accessory: "phones", glow: "white" } as const;
-    const update = (change: { avatar?: ProjectAvatar | null; mainThreadId?: ThreadId | null }) =>
+    const update = (change: {
+      avatar?: ProjectAvatar | null;
+      mainThreadId?: ThreadId | null;
+      autonomy?: "full" | "home-folder" | null;
+    }) =>
       payloadOf(
         plan(
           {
@@ -148,17 +153,20 @@ describe("planProjectCommand", () => {
           { project: row({ avatar: fox, mainThreadId: ThreadId.make("thread-main") }) },
         ),
       );
-    assert.deepInclude(update({ avatar: owl, mainThreadId: ThreadId.make("thread-new") }), {
-      avatar: owl,
-      mainThreadId: "thread-new",
-    });
-    assert.deepInclude(update({ avatar: null, mainThreadId: null }), {
+    assert.deepInclude(
+      update({ avatar: owl, mainThreadId: ThreadId.make("thread-new"), autonomy: "home-folder" }),
+      { avatar: owl, mainThreadId: "thread-new", autonomy: "home-folder" },
+    );
+    // Clearing autonomy resets it to the default rather than storing a third state.
+    assert.deepInclude(update({ avatar: null, mainThreadId: null, autonomy: null }), {
       avatar: null,
       mainThreadId: null,
+      autonomy: "full",
     });
     const untouched = update({});
     assert.notProperty(untouched, "avatar");
     assert.notProperty(untouched, "mainThreadId");
+    assert.notProperty(untouched, "autonomy");
   });
 
   it("rejects a workspace root held by another active project", () => {

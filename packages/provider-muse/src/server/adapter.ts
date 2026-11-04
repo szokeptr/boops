@@ -65,6 +65,7 @@ import { isMuseUsageLimitFailure, museUsageLimitResetAt } from "./usageLimits.ts
 import {
   createMuseSdkHostEffect,
   museApprovalMode,
+  museRuntimeMode,
   museCanonicalPath,
   musePermissionProfile,
   museWorkspaceRoot,
@@ -1232,7 +1233,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                 })),
               };
         // Muse does not propagate allowAll to workflow children; T3 answers for them.
-        const autoApprove = child && input.runtimePolicy.runtimeMode === "full-access";
+        const autoApprove = child && museRuntimeMode(input.runtimePolicy) === "full-access";
         const entry: PendingRequest = {
           native,
           request: runtimeRequest,
@@ -1702,7 +1703,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
               launchArgs: launch.args,
               cwd,
               environment,
-              runtimeMode: input.runtimePolicy.runtimeMode,
+              runtimeMode: museRuntimeMode(input.runtimePolicy),
               onProcessExit: (exit) => {
                 Deferred.doneUnsafe(processExited, Effect.succeed(exit));
               },
@@ -1847,7 +1848,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
               }
             : undefined;
           const startModel = yield* resolveModel(args.modelSelection);
-          const permissionProfile = musePermissionProfile(args.runtimePolicy.runtimeMode);
+          const permissionProfile = musePermissionProfile(museRuntimeMode(args.runtimePolicy));
           const result = yield* request(
             requestedId ? "session/resume" : "session/start",
             requestedId
@@ -1857,7 +1858,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                   ...(config ? { config } : {}),
                   ...(startModel ? { modelId: startModel } : {}),
                   providerId: "meta",
-                  approvalMode: museApprovalMode(args.runtimePolicy.runtimeMode),
+                  approvalMode: museApprovalMode(museRuntimeMode(args.runtimePolicy)),
                   permissionProfile,
                 },
           ).pipe(
@@ -1874,7 +1875,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             return yield* protocolError("Muse returned a different session identity");
           if (requestedId)
             yield* request("session/setApprovalMode", {
-              mode: museApprovalMode(args.runtimePolicy.runtimeMode),
+              mode: museApprovalMode(museRuntimeMode(args.runtimePolicy)),
             });
           const createdAt = yield* DateTime.now;
           thread = existing
@@ -1980,7 +1981,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           });
         if (turnInput.runtimePolicy.interactionMode === "plan")
           return yield* protocolError("Muse does not support dedicated Plan mode");
-        if (turnInput.runtimePolicy.runtimeMode !== input.runtimePolicy.runtimeMode)
+        if (museRuntimeMode(turnInput.runtimePolicy) !== museRuntimeMode(input.runtimePolicy))
           return yield* protocolError("Runtime policy changes require a fresh Muse host");
         const continuation =
           turnInput.message.createdBy === "agent" &&

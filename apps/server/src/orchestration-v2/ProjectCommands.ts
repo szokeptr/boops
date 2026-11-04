@@ -1,4 +1,6 @@
 import {
+  type BotAutonomy,
+  DEFAULT_BOT_AUTONOMY,
   type CommandId,
   type EventId,
   MAX_SCRIPT_ID_LENGTH,
@@ -44,6 +46,7 @@ export interface ProjectMetaUpdateCommand {
   readonly archived?: boolean;
   readonly avatar?: ProjectAvatar | null;
   readonly mainThreadId?: ThreadId | null;
+  readonly autonomy?: BotAutonomy | null;
 }
 
 export interface ProjectDeleteCommand {
@@ -224,6 +227,9 @@ export function planProjectCommand(input: {
             : { archivedAt: command.archived ? (project.archivedAt ?? occurredAt) : null }),
           ...(command.avatar === undefined ? {} : { avatar: command.avatar }),
           ...(command.mainThreadId === undefined ? {} : { mainThreadId: command.mainThreadId }),
+          ...(command.autonomy === undefined
+            ? {}
+            : { autonomy: command.autonomy ?? DEFAULT_BOT_AUTONOMY }),
           updatedAt: occurredAt,
         },
       });

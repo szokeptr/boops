@@ -1,4 +1,6 @@
 import {
+  type BotAutonomy,
+  DEFAULT_BOT_AUTONOMY,
   isRuntimeModeAbove,
   managedRuntimeModeCeilingMessage,
   ModelSelection,
@@ -99,6 +101,34 @@ function providerRuntimeMode(
     : "approval-required";
 }
 
+/** Codex's sandbox vocabulary, which every adapter reads; see each adapter for its mapping. */
+export const HOME_FOLDER_SANDBOX_POLICY = {
+  type: "workspaceWrite",
+  writableRoots: [],
+  networkAccess: true,
+} as const;
+
+/**
+ * A home-folder bot keeps its thread's mode but never acts outside its workspace on its own:
+ * autonomous modes stay autonomous inside the sandbox and fail outside it, supervised modes
+ * keep asking. It only narrows, so no thread mode can exceed the bot's setting.
+ */
+export const applyBotAutonomy = (
+  policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+  autonomy: BotAutonomy,
+): ProviderAdapter.ProviderAdapterV2RuntimePolicy => {
+  if (autonomy === "full") return policy;
+  switch (policy.runtimeMode) {
+    case "approval-required":
+      return policy;
+    case "auto-accept-edits":
+      return { ...policy, sandboxPolicy: HOME_FOLDER_SANDBOX_POLICY };
+    case "auto":
+    case "full-access":
+      return { ...policy, approvalPolicy: "never", sandboxPolicy: HOME_FOLDER_SANDBOX_POLICY };
+  }
+};
+
 const refuseAboveCeiling = (
   managedPolicy: ServerSettings.ServerSettingsService["Service"]["managedPolicy"],
   thread: OrchestrationV2AppThread,
@@ -159,37 +189,28 @@ export const layerFromProjectStore: Layer.Layer<
           instance === undefined
             ? undefined
             : (yield* instance.snapshot.getSnapshot).supportedRuntimeModes;
-        const cwd =
-          input.thread.worktreePath ??
-          (yield* projects.get(input.thread.projectId).pipe(
-            Effect.mapError(
-              (cause) =>
-                new RuntimePolicyResolveError({
-                  projectId: input.thread.projectId,
-                  providerInstanceId: input.modelSelection.instanceId,
-                  cause,
-                }),
-            ),
-            Effect.flatMap(
-              Option.match({
-                onNone: () =>
-                  Effect.fail(
-                    new RuntimePolicyResolveError({
-                      projectId: input.thread.projectId,
-                      providerInstanceId: input.modelSelection.instanceId,
-                      cause: "Project not found.",
-                    }),
-                  ),
-                onSome: (project) => Effect.succeed(project.workspaceRoot),
-              }),
-            ),
-          ));
-        return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-          runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
-          interactionMode: input.thread.interactionMode,
-          cwd,
-          ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),
-        });
+        const resolveError = (cause: unknown) =>
+          new RuntimePolicyResolveError({
+            projectId: input.thread.projectId,
+            providerInstanceId: input.modelSelection.instanceId,
+            cause,
+          });
+        const project = Option.getOrUndefined(
+          yield* projects.get(input.thread.projectId).pipe(Effect.mapError(resolveError)),
+        );
+        const cwd = input.thread.worktreePath ?? project?.workspaceRoot;
+        if (cwd === undefined) return yield* resolveError("Project not found.");
+        return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make(
+          applyBotAutonomy(
+            {
+              runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
+              interactionMode: input.thread.interactionMode,
+              cwd,
+              ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),
+            },
+            project?.autonomy ?? DEFAULT_BOT_AUTONOMY,
+          ),
+        );
       }),
     });
   }),

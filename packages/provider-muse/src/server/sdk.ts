@@ -118,6 +118,14 @@ export const museLaunch = Effect.fn("museLaunch")(function* (
   };
 });
 
+/** Muse's own sandbox is not workspace-scoped, so a T3 sandbox policy runs Muse supervised. */
+export function museRuntimeMode(policy: {
+  readonly runtimeMode: RuntimeMode;
+  readonly sandboxPolicy?: unknown;
+}): RuntimeMode {
+  return policy.sandboxPolicy === undefined ? policy.runtimeMode : "approval-required";
+}
+
 export function museApprovalMode(runtimeMode: RuntimeMode) {
   return runtimeMode === "full-access" ? "allowAll" : "promptUnmatched";
 }

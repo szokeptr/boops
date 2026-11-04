@@ -86,10 +86,12 @@ const ProjectCreateTool = Tool.make("t3_project_create", {
   success: Schema.Struct({ ...Project.fields, commitError: Schema.optional(Schema.String) }),
   dependencies: [...shared.dependencies, ManagedProjectFolders.ManagedProjectFolders],
 }).annotate(Tool.Destructive, true);
-// Bot identity is set from the clients until agents get an approval gate for it.
+// Bot identity is set from the clients until agents get an approval gate for it. Autonomy
+// stays client-only for good: a home-folder bot must not lift its own limit.
 const {
   avatar: _avatar,
   mainThreadId: _mainThreadId,
+  autonomy: _autonomy,
   ...projectUpdateFields
 } = ProjectUpdatePayload.fields;
 const ProjectUpdateTool = Tool.make("t3_project_update", {

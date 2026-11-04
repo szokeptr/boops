@@ -247,7 +247,13 @@ export function makeAntigravityAcpAdapterFlavor(
         mapError: (cause) => cause,
       });
     }),
-    sessionModeForPolicy: (policy) => antigravityPermissionMode(policy.runtimeMode),
+    // Antigravity has no workspace sandbox; an explicit policy stays in `default` so T3's check rules.
+    sessionModeForPolicy: (policy) =>
+      antigravityPermissionMode(
+        policy.approvalPolicy === undefined && policy.sandboxPolicy === undefined
+          ? policy.runtimeMode
+          : "approval-required",
+      ),
     runtimeModeForSessionMode: antigravityRuntimeModeForSessionMode,
     clientFileSystem: {
       readTextFile: (request, cwd) =>

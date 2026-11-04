@@ -176,6 +176,14 @@ export const BOT_AVATAR_ACCESSORIES = [
 export const BOT_AVATAR_GLOWS = ["mint", "cyan", "white"] as const;
 
 /** A bot's resolved Screenie look, stored so a rename keeps it. */
+/**
+ * How far a bot reaches on its machine. `full` acts as the user anywhere; `home-folder` keeps
+ * writes and commands inside the bot's home folder. Applies from the bot's next session.
+ */
+export const BotAutonomy = Schema.Literals(["full", "home-folder"]);
+export type BotAutonomy = typeof BotAutonomy.Type;
+export const DEFAULT_BOT_AUTONOMY: BotAutonomy = "full";
+
 export const ProjectAvatar = Schema.Struct({
   hue: Schema.Literals(BOT_AVATAR_HUES),
   accessory: Schema.Literals(BOT_AVATAR_ACCESSORIES),
@@ -212,6 +220,7 @@ export const Project = Schema.Struct({
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   avatar: Schema.optional(ReceivedProjectAvatar),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  autonomy: Schema.optional(BotAutonomy),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -251,6 +260,12 @@ export const ProjectUpdatePayload = Schema.Struct({
   avatar: Schema.optional(Schema.NullOr(ProjectAvatar)),
   /** The bot's conversation. Null falls back to the project's oldest unarchived thread. */
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  autonomy: Schema.optional(
+    Schema.NullOr(BotAutonomy).annotate({
+      description:
+        "full: the bot acts as you anywhere on this machine. home-folder: writes and commands stay in its home folder. Null resets to full. Takes effect at the bot's next session start.",
+    }),
+  ),
 });
 export type ProjectUpdatePayload = typeof ProjectUpdatePayload.Type;
 

@@ -3,7 +3,7 @@ import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import * as Dialog from "../../components/ui/Dialog";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, type BotAutonomy } from "@t3tools/contracts";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
 import {
   isAtomCommandInterrupted,
@@ -180,7 +180,11 @@ function ProjectOverviewContent(props: {
         target.serverConfig.environment.capabilities.projectOrganization === true,
     );
   // One machine at a time, stopping at the first failure, as web does.
-  const organize = async (input: { readonly pinned?: boolean; readonly archived?: boolean }) => {
+  const organize = async (input: {
+    readonly pinned?: boolean;
+    readonly archived?: boolean;
+    readonly autonomy?: BotAutonomy;
+  }) => {
     setIsOrganizing(true);
     for (const member of allMembers) {
       if (!readEnvironmentScope(member.environmentId, AuthOrchestrationOperateScope)) {
@@ -348,6 +352,22 @@ function ProjectOverviewContent(props: {
             ) : null}
           </View>
         </View>
+        {canOrganize ? (
+          <SettingsSwitchRow
+            icon="house"
+            label="Stay in its home folder"
+            subtitle={
+              offline
+                ? "Connect every machine with this project to change this."
+                : "Limits the bot's file changes and commands to its home folder. Applies from its next session."
+            }
+            value={allMembers.every((member) => member.autonomy === "home-folder")}
+            disabled={isOrganizing || offline}
+            onValueChange={(confined) =>
+              void organize({ autonomy: confined ? "home-folder" : "full" })
+            }
+          />
+        ) : null}
       </SettingsSection>
 
       {canOrganize ? (

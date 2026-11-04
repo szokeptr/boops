@@ -327,8 +327,13 @@ type TurnTerminal =
 type Rule = Permission.Rule;
 type RulesPolicy = Pick<
   ProviderAdapter.ProviderAdapterV2RuntimePolicy,
-  "runtimeMode" | "interactionMode"
+  "runtimeMode" | "interactionMode" | "approvalPolicy" | "sandboxPolicy"
 >;
+
+const isUnrestricted = (policy: RulesPolicy) =>
+  policy.runtimeMode === "full-access" && policy.sandboxPolicy === undefined;
+const isConfined = (policy: RulesPolicy) =>
+  policy.sandboxPolicy !== undefined && policy.approvalPolicy === "never";
 type NativeForm = EventOf<"form.created">["data"]["form"];
 
 interface PendingRequest {
@@ -378,13 +383,16 @@ const sessionRules = (
   grants: ReadonlyArray<Rule>,
   mcpServerName: string | null,
 ): ReadonlyArray<Rule> => [
-  ...(policy.runtimeMode === "full-access"
+  ...(isUnrestricted(policy)
     ? [rule("*", "allow")]
-    : [
-        rule("shell", "ask"),
-        rule("edit", policy.runtimeMode === "auto-accept-edits" ? "allow" : "ask"),
-        rule("external_directory", "ask"),
-      ]),
+    : isConfined(policy)
+      ? // No OS sandbox: confinement refuses shell and paths outside the workspace.
+        [rule("*", "allow"), rule("shell", "deny"), rule("external_directory", "deny")]
+      : [
+          rule("shell", "ask"),
+          rule("edit", policy.runtimeMode === "auto-accept-edits" ? "allow" : "ask"),
+          rule("external_directory", "ask"),
+        ]),
   ...grants,
   // Plan edits are re-allowed only for plan paths; free-tier sessions refuse denied shell/read.
   ...(policy.interactionMode === "plan" ? [rule("edit", "deny")] : []),
@@ -2826,13 +2834,13 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     ) {
       const plan = policy.interactionMode === "plan";
       const paths =
-        policy.runtimeMode === "full-access" && !plan
+        isUnrestricted(policy) && !plan
           ? []
           : yield* pathsFor(thread.directory, plan ? [thread.agent, "plan"] : [thread.agent]);
       return sessionRules(
         policy,
         paths,
-        policy.runtimeMode === "full-access" ? [] : thread.grants,
+        isUnrestricted(policy) || isConfined(policy) ? [] : thread.grants,
         appThreadId === null ? null : yield* mcpServerNameFor(appThreadId),
       );
     });
