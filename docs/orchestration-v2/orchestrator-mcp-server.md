@@ -474,11 +474,12 @@ runs its prompt on an interval, at a fixed time in the server's local time
 zone, or on each qualifying webhook request, even when no turn is active.
 Without a signature, anyone with the webhook URL can trigger a run.
 Signature checks, filters, and dedupe can skip a webhook request.
-`bindToCurrentThread` defaults to `true` only when the caller has a thread in
-the task's project; otherwise it defaults to `false`. Bound runs post into
-that thread; unbound runs each launch a fresh thread in the task's project.
-Explicit `bindToCurrentThread: true` without a caller thread in that project
-is rejected. Pausing uses `schedule_task` with `scheduledTaskId` and `enabled: false`;
+Every run posts its prompt into the task's thread as a user message labelled
+with the routine's name and trigger, queued behind any turn in progress; no run
+launches a thread. Without `threadId`, `schedule_task` targets the caller's
+project's main thread, or else the caller's own thread. A caller in a thread
+manages only its own project's tasks, and a caller outside a thread must pass
+`threadId`. Pausing uses `schedule_task` with `scheduledTaskId` and `enabled: false`;
 deletion is permanent.
 
 ## Delegated Task Lifecycle

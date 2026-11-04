@@ -1285,10 +1285,28 @@ export type OrchestrationV2Notification = typeof OrchestrationV2Notification.Typ
 export const OrchestrationV2IdleCompaction = Schema.Literals(["beforeCacheExpires", "onReturn"]);
 export type OrchestrationV2IdleCompaction = typeof OrchestrationV2IdleCompaction.Type;
 
+/** A schedule type, or `manual` for a run started by hand. */
+export const OrchestrationV2RoutineTrigger = Schema.Literals([
+  "interval",
+  "fixed_time",
+  "once",
+  "webhook",
+  "manual",
+]);
+export type OrchestrationV2RoutineTrigger = typeof OrchestrationV2RoutineTrigger.Type;
+
+/** The routine run that sent a message. The name is the routine's name when it fired. */
+export const OrchestrationV2RoutineLabel = Schema.Struct({
+  taskId: ScheduledTaskId,
+  name: TrimmedNonEmptyString,
+  trigger: OrchestrationV2RoutineTrigger,
+});
+export type OrchestrationV2RoutineLabel = typeof OrchestrationV2RoutineLabel.Type;
+
 export const OrchestrationV2ConversationMessage = Schema.Struct({
   notification: Schema.optional(OrchestrationV2Notification),
   ...OrchestrationV2CreationFields,
-  scheduledTaskId: Schema.optional(ScheduledTaskId),
+  routine: Schema.optional(OrchestrationV2RoutineLabel),
   senderThreadId: Schema.optional(ThreadId),
   idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
   /**
@@ -1603,7 +1621,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     ...OrchestrationV2CreationFields,
     type: Schema.Literal("user_message"),
     messageId: MessageId,
-    scheduledTaskId: Schema.optional(ScheduledTaskId),
+    routine: Schema.optional(OrchestrationV2RoutineLabel),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
@@ -2439,7 +2457,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     ...OrchestrationV2CreationFields,
     type: Schema.Literal("user_message"),
     messageId: MessageId,
-    scheduledTaskId: Schema.optional(ScheduledTaskId),
+    routine: Schema.optional(OrchestrationV2RoutineLabel),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
@@ -3149,7 +3167,7 @@ export const OrchestrationV2Command = Schema.Union([
     /** Sends this pending guest message; the server uses the guest's text, not `text`. */
     guestMessageId: Schema.optional(GuestMessageId),
     ...OrchestrationV2CreationFields,
-    scheduledTaskId: Schema.optional(ScheduledTaskId),
+    routine: Schema.optional(OrchestrationV2RoutineLabel),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     commandId: CommandId,

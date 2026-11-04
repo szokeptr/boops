@@ -588,7 +588,9 @@ it.effect.each([
             {
               id: MessageId.make("message_queued_restart"),
               createdBy: "user",
-              ...(scenario === "starting-scheduled" ? { scheduledTaskId: "scheduled-task" } : {}),
+              ...(scenario === "starting-scheduled"
+                ? { routine: { taskId: "scheduled-task", name: "Nightly", trigger: "interval" } }
+                : {}),
             },
           ]
         : [],

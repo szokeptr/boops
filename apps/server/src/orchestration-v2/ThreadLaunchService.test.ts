@@ -38,7 +38,6 @@ import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
@@ -327,13 +326,9 @@ function launchInput(input: {
   };
 }
 
-it.effect.each(
-  (["new", "existing"] as const).flatMap((target) =>
-    (["user", "agent"] as const).map((createdBy) => ({ target, createdBy })),
-  ),
-)(
-  "attributes $createdBy-configured automations in $target threads without changing their prompt",
-  ({ target, createdBy }) => {
+it.effect.each(["user", "agent"] as const)(
+  "posts a %s-configured routine into its thread with a routine label and the prompt unchanged",
+  (createdBy) => {
     const harness = makeHarness();
     const layerScheduledTasks = ScheduledTasks.layer.pipe(
       Layer.provide(
@@ -351,12 +346,9 @@ it.effect.each(
       const tasks = yield* ScheduledTasks.ScheduledTaskService;
       const launches = yield* ThreadLaunch.ThreadLaunchService;
       const threads = yield* ThreadManagement.ThreadManagementService;
-      const existing =
-        target === "existing"
-          ? yield* launches.launch(
-              launchInput({ command: "command:existing", thread: "thread:existing" }),
-            )
-          : null;
+      const existing = yield* launches.launch(
+        launchInput({ command: "command:existing", thread: "thread:existing" }),
+      );
       const { task } = yield* tasks.upsert({
         id: ScheduledTaskId.make("scheduled-task:attribution"),
         title: "Daily audit",
@@ -364,7 +356,7 @@ it.effect.each(
         enabled: false,
         schedule: { type: "interval", everyMs: 60_000 },
         projectId,
-        threadId: existing?.threadId ?? null,
+        threadId: existing.threadId,
         workspaceStrategy: { type: "root" },
         modelSelection,
         runtimeMode: "full-access",
@@ -378,22 +370,23 @@ it.effect.each(
         projectId,
         includeSubagents: false,
       });
-      const thread =
-        projectThreads.find((candidate) => candidate.id === existing?.threadId) ??
-        projectThreads[0];
-      assert.isDefined(thread);
-      assert.equal(result.threadId, thread!.id);
-      const projection = yield* threads.getThreadProjection(thread!.id);
+      assert.deepEqual(
+        projectThreads.map((thread) => thread.id),
+        [existing.threadId],
+      );
+      assert.equal(result.threadId, existing.threadId);
+      const projection = yield* threads.getThreadProjection(existing.threadId);
       const wire = yield* encodeThreadProjection(projection);
+      const label = { taskId: task.id, name: "Daily audit", trigger: "manual" } as const;
       assert.equal(wire.messages[0]?.text, task.prompt);
-      assert.equal(wire.messages[0]?.scheduledTaskId, task.id);
+      assert.deepEqual(wire.messages[0]?.routine, label);
       assert.equal(wire.messages[0]?.createdBy, createdBy);
       const turnItem = wire.turnItems.find(
         (item): item is Extract<typeof item, { type: "user_message" }> =>
           item.type === "user_message",
       );
       assert.equal(turnItem?.text, task.prompt);
-      assert.equal(turnItem?.scheduledTaskId, task.id);
+      assert.deepEqual(turnItem?.routine, label);
     }).pipe(Effect.provide(Layer.mergeAll(harness.layer, layerScheduledTasks)));
   },
 );
@@ -483,7 +476,7 @@ it.effect("runs a thread-bound automation on the provider the thread uses now", 
     const result = yield* tasks.runNow({ id: task.id });
     assert.equal(result.task.lastRunStatus, "succeeded");
     const projection = yield* threads.getThreadProjection(launched.threadId);
-    const message = projection.messages.find((item) => item.scheduledTaskId === task.id);
+    const message = projection.messages.find((item) => item.routine?.taskId === task.id);
     const run = projection.runs.find((item) => item.id === message?.runId);
     assert.deepStrictEqual(run?.modelSelection, claudeModelSelection);
     assert.deepStrictEqual(projection.thread.modelSelection, claudeModelSelection);
@@ -503,14 +496,18 @@ it.effect("retains automation and sender attribution while a message waits in th
         workspace: { type: "worktree", baseRef: "main" },
       }),
     );
-    const scheduledTaskId = ScheduledTaskId.make("scheduled-task:queued");
+    const routine = {
+      taskId: ScheduledTaskId.make("scheduled-task:queued"),
+      name: "Audit",
+      trigger: "interval",
+    } as const;
     const senderThreadId = ThreadId.make("thread:agent-sender");
     const queued = yield* threads.sendToThread({
       projectId,
       commandId: CommandId.make("command:automation:queued"),
       threadId: launched.threadId,
       messageId: MessageId.make("message:automation:queued"),
-      scheduledTaskId,
+      routine,
       senderThreadId,
       text: "Run the audit",
       attachments: [],
@@ -521,10 +518,65 @@ it.effect("retains automation and sender attribution while a message waits in th
     assert.equal(queued.delivery, "queued");
     const projection = yield* threads.getThreadProjection(launched.threadId);
     const message = projection.messages.find((item) => item.id === queued.message.id);
-    assert.equal(message?.scheduledTaskId, scheduledTaskId);
+    assert.deepEqual(message?.routine, routine);
     assert.equal(message?.senderThreadId, senderThreadId);
     assert.equal(message?.text, "Run the audit");
   }).pipe(Effect.provide(harness.layer));
+});
+
+it.effect("queues a routine that fires mid-turn behind the thread's active run", () => {
+  const harness = makeHarness({ runSetup: () => Effect.never });
+  const layerScheduledTasks = ScheduledTasks.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        harness.layer,
+        NodeCrypto.layer,
+        Scheduler.layer,
+        Layer.mock(SecretRequests.SecretRequests)({}),
+        ManagedPolicy.layerTest(),
+      ),
+    ),
+  );
+  return Effect.gen(function* () {
+    const tasks = yield* ScheduledTasks.ScheduledTaskService;
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const launched = yield* launches.launch(
+      launchInput({
+        command: "command:routine:busy",
+        thread: "thread:routine:busy",
+        message: "First message",
+        workspace: { type: "worktree", baseRef: "main" },
+      }),
+    );
+    const { task } = yield* tasks.upsert({
+      id: ScheduledTaskId.make("scheduled-task:busy"),
+      title: "Inbox sweep",
+      prompt: "Sweep the inbox.",
+      enabled: false,
+      schedule: { type: "interval", everyMs: 3_600_000 },
+      projectId,
+      threadId: launched.threadId,
+      workspaceStrategy: { type: "root" },
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const result = yield* tasks.runNow({ id: task.id });
+    assert.equal(result.task.lastRunStatus, "succeeded");
+    assert.equal(result.threadId, launched.threadId);
+    const projection = yield* threads.getThreadProjection(launched.threadId);
+    const message = projection.messages.find((item) => item.routine?.taskId === task.id);
+    assert.deepEqual(message?.routine, { taskId: task.id, name: "Inbox sweep", trigger: "manual" });
+    const [active, queued] = projection.runs;
+    assert.equal(active?.status, "preparing");
+    assert.equal(queued?.id, message?.runId);
+    assert.equal(queued?.status, "queued");
+    // An unattended run must not wait for the user to come back.
+    assert.notEqual(queued?.queueHeld, true);
+  }).pipe(Effect.provide(Layer.mergeAll(harness.layer, layerScheduledTasks)));
 });
 
 it.effect("provisions independent launches concurrently instead of behind a global semaphore", () =>
@@ -948,7 +1000,7 @@ function scheduledTaskInput(id: string, targetProjectId: ProjectId) {
     enabled: false,
     schedule: { type: "interval" as const, everyMs: 60_000 },
     projectId: targetProjectId,
-    threadId: null,
+    threadId: ThreadId.make("thread:scheduled"),
     workspaceStrategy: worktreeStrategy,
     modelSelection,
     runtimeMode: "full-access" as const,
@@ -1010,37 +1062,6 @@ it.effect("stores a Scratch scheduled task at the root and keeps worktrees elsew
       scheduledTaskInput("scheduled-task:git-upsert", otherProjectId),
     );
     assert.deepEqual(git.task.workspaceStrategy, worktreeStrategy);
-  }).pipe(Effect.provide(harness.layer));
-});
-
-it.effect("runs a Scratch scheduled task saved with a worktree in its own folder", () => {
-  const harness = scratchHarness();
-  return Effect.gen(function* () {
-    const tasks = yield* ScheduledTasks.ScheduledTaskService;
-    const threads = yield* ThreadManagement.ThreadManagementService;
-    const sql = yield* SqlClient.SqlClient;
-    const { task } = yield* tasks.upsert(
-      scheduledTaskInput("scheduled-task:scratch-stored", projectId),
-    );
-    // Tasks saved before Scratch was coerced still hold a worktree strategy.
-    yield* sql`
-      UPDATE scheduled_tasks
-      SET workspace_strategy_json = ${JSON.stringify(worktreeStrategy)}
-      WHERE task_id = ${task.id}
-    `;
-    const ran = yield* tasks.runNow({ id: task.id });
-    assert.equal(ran.task.lastRunStatus, "succeeded");
-    const [thread] = yield* threads.listProjectThreads({ projectId, includeSubagents: false });
-    assert.isDefined(thread);
-    const projection = yield* preparationSettled(thread!.id);
-    assert.equal(projection.runs[0]?.status, "starting");
-    assert.equal(projection.thread.worktreePath, "/scratch/folder-1");
-    assert.deepEqual(projection.runs[0]?.workspacePreparation, {
-      type: "existing_worktree",
-      worktreePath: "/scratch/folder-1",
-    });
-    assert.equal(harness.runSetup.mock.calls[0]?.[0]?.worktreePath, "/scratch/folder-1");
-    assert.equal(harness.createWorktree.mock.calls.length, 0);
   }).pipe(Effect.provide(harness.layer));
 });
 

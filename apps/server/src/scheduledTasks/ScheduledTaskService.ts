@@ -24,7 +24,7 @@ import {
   type ScheduledTaskSetEnabledInput,
   type ScheduledTaskUpsertInput,
   managedPolicyDeniedMessage,
-  managedRuntimeModeDenial,
+  type OrchestrationV2RoutineLabel,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -48,7 +48,6 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as Metrics from "../observability/Metrics.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -78,6 +77,12 @@ import { constantTimeEquals, verifyWebhookSignature } from "./webhookVerificatio
 export const WEBHOOK_ROUTE_PREFIX = "/api/hooks";
 const isScheduledTaskError = Schema.is(ScheduledTaskError);
 const PROMPT_TOO_LONG = "The filled-in prompt is too long.";
+// Bots share the user's provider subscription rate limits, so the default wakes rarely.
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 6 * 60 * 60 * 1000;
+export const DEFAULT_HEARTBEAT_PROMPT =
+  "Heartbeat. Check your memory notes and the commitments you made to the user, and do anything that is due. Tell the user only what needs them; if nothing does, reply in one short line.";
+const NO_TARGET_THREAD =
+  "This routine has no target thread. Edit it to post into a bot's conversation.";
 const WEBHOOK_DELIVERY_RETENTION = 50;
 const WEBHOOK_DEDUPE_DELIVERY_RETENTION = 20;
 const WEBHOOK_FILTERED_DELIVERY_RETENTION = 20;
@@ -275,6 +280,14 @@ export class ScheduledTaskService extends Context.Service<
     readonly triggerWebhook: (
       request: WebhookTriggerRequest,
     ) => Effect.Effect<WebhookTriggerResult, ScheduledTaskError>;
+    /**
+     * Creates the project's Heartbeat routine on `threadId`, or returns the one it already has.
+     * Users and bots edit or delete it like any routine.
+     */
+    readonly ensureDefaultHeartbeat: (input: {
+      readonly projectId: ProjectId;
+      readonly threadId: ThreadId;
+    }) => Effect.Effect<ScheduledTaskMutationResult, ScheduledTaskError>;
   }
 >()("t3/scheduledTasks/ScheduledTaskService") {}
 
@@ -440,7 +453,6 @@ export const layer = Layer.effect(
     const random = yield* SecureRandom.SecureRandom;
     const digest = yield* Digest.Digest;
     const mac = yield* Mac.Mac;
-    const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
     const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
     const secretRequests = yield* SecretRequests.SecretRequests;
@@ -885,6 +897,11 @@ export const layer = Layer.effect(
         const commandId = CommandId.make(`scheduled-task:${fireKey}`);
         const messageId = MessageId.make(`scheduled-task-message:${fireKey}`);
         const prompt = webhook?.prompt ?? active.prompt;
+        const routine: OrchestrationV2RoutineLabel = {
+          taskId: active.id,
+          name: active.title,
+          trigger: trigger === "manual" ? "manual" : active.schedule.type,
+        };
 
         // A bound thread can move to another project (No project to a project) while
         // this fires. Follow it; one move needs at most two retries. Same ids replay safely.
@@ -899,7 +916,7 @@ export const layer = Layer.effect(
               commandId,
               threadId,
               messageId,
-              scheduledTaskId: active.id,
+              routine,
               text: prompt,
               attachments: [],
               mode: "queue",
@@ -923,32 +940,11 @@ export const layer = Layer.effect(
             );
 
         // Capture defects and interrupts too so dispatch failures still reach markCompleted.
+        // A run queues behind the thread's active turn and follows the thread's current provider.
         const result =
           active.threadId === null
-            ? yield* Effect.exit(
-                threadLaunch
-                  .launch({
-                    commandId,
-                    projectId: active.projectId,
-                    title: active.title,
-                    modelSelection: active.modelSelection,
-                    runtimeMode: active.runtimeMode,
-                    interactionMode: active.interactionMode,
-                    workspaceStrategy: active.workspaceStrategy,
-                    initialMessage: {
-                      messageId,
-                      scheduledTaskId: active.id,
-                      text: prompt,
-                      attachments: [],
-                    },
-                    createdBy: active.createdBy,
-                    creationSource: active.creationSource,
-                  })
-                  .pipe(Effect.map((launched) => launched.threadId)),
-              )
+            ? yield* Effect.exit(Effect.fail(taskError(NO_TARGET_THREAD, { taskId: active.id })))
             : yield* Effect.exit(
-                // The stored selection only seeds fresh threads. A bound run
-                // follows the thread's current provider, so it passes none.
                 sendBound(ThreadId.make(active.threadId), active.projectId, 2).pipe(
                   Effect.as(ThreadId.make(active.threadId)),
                 ),
@@ -1209,16 +1205,6 @@ export const layer = Layer.effect(
           input.id === undefined ? {} : { taskId: input.id },
         );
       }
-      // Refused on save rather than at run time; a disabled task can still be saved, so one
-      // stored above the ceiling can be turned off before its mode is lowered. A task bound to a
-      // thread runs in that thread's mode, which the orchestrator checks instead.
-      const modeDenial =
-        input.enabled && input.threadId == null
-          ? managedRuntimeModeDenial(managedPolicy.summary, input.runtimeMode)
-          : undefined;
-      if (modeDenial !== undefined) {
-        return yield* taskError(modeDenial, input.id === undefined ? {} : { taskId: input.id });
-      }
       const now = yield* localNow;
       const uuid =
         input.commandId === undefined
@@ -1327,7 +1313,7 @@ export const layer = Layer.effect(
         enabled: input.enabled,
         schedule,
         projectId: input.projectId,
-        threadId: input.threadId ?? null,
+        threadId: input.threadId,
         workspaceStrategy,
         modelSelection: input.modelSelection,
         runtimeMode: input.runtimeMode,
@@ -1365,13 +1351,6 @@ export const layer = Layer.effect(
         webhookPolicyBlock !== undefined
       ) {
         return yield* taskError(webhookPolicyBlock, { taskId: input.id });
-      }
-      const modeDenial =
-        input.enabled && existing.threadId === null
-          ? managedRuntimeModeDenial(managedPolicy.summary, existing.runtimeMode)
-          : undefined;
-      if (modeDenial !== undefined) {
-        return yield* taskError(modeDenial, { taskId: input.id });
       }
       const now = yield* localNow;
       yield* requireFutureOnce(
@@ -2412,6 +2391,39 @@ export const layer = Layer.effect(
     });
     yield* scheduler.register("webhook-coalescing", dispatchPending());
 
+    const ensureDefaultHeartbeat: ScheduledTaskService["Service"]["ensureDefaultHeartbeat"] =
+      Effect.fn("ScheduledTaskService.ensureDefaultHeartbeat")(function* (input) {
+        // One id per project, so repeated calls find the routine instead of adding another.
+        const id = ScheduledTaskId.make(`heartbeat:${input.projectId}`);
+        const existing = yield* findTask(id);
+        if (existing !== null) return { task: existing };
+        const thread = yield* threadManagement
+          .getThreadShell(input.threadId)
+          .pipe(
+            Effect.mapError((cause) =>
+              taskError("Could not read the heartbeat's thread.", { taskId: id, cause }),
+            ),
+          );
+        if (thread === null || thread.deletedAt !== null || thread.projectId !== input.projectId) {
+          return yield* taskError("The heartbeat's thread is not in this project.", { taskId: id });
+        }
+        return yield* upsert({
+          id,
+          title: "Heartbeat",
+          prompt: DEFAULT_HEARTBEAT_PROMPT,
+          enabled: true,
+          schedule: { type: "interval", everyMs: DEFAULT_HEARTBEAT_INTERVAL_MS },
+          projectId: input.projectId,
+          threadId: input.threadId,
+          workspaceStrategy: { type: "root" },
+          modelSelection: thread.modelSelection,
+          runtimeMode: thread.runtimeMode,
+          interactionMode: thread.interactionMode,
+          createdBy: "system",
+          creationSource: "server",
+        });
+      });
+
     return ScheduledTaskService.of({
       list,
       subscribeList,
@@ -2425,6 +2437,7 @@ export const layer = Layer.effect(
       listWebhookDeliveries,
       getWebhookDelivery,
       triggerWebhook,
+      ensureDefaultHeartbeat,
     });
   }),
 );

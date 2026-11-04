@@ -8052,9 +8052,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             yield* rememberSnapshotMessage({
               createdBy: turnInput.message.createdBy,
               creationSource: turnInput.message.creationSource,
-              ...(turnInput.message.scheduledTaskId === undefined
+              ...(turnInput.message.routine === undefined
                 ? {}
-                : { scheduledTaskId: turnInput.message.scheduledTaskId }),
+                : { routine: turnInput.message.routine }),
               ...(turnInput.message.senderThreadId === undefined
                 ? {}
                 : { senderThreadId: turnInput.message.senderThreadId }),

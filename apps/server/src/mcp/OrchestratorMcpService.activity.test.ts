@@ -571,25 +571,26 @@ it("readThread and sendToThread reach threads in other projects", async () => {
       .pipe(Effect.flip);
     expect(staleInterrupt.code).toBe("parent_not_active");
 
+    // Routines stay in the caller's own project, live caller or not.
     const staleSchedule = yield* service
       .scheduleTask(makeScope(), {
-        projectId: foreignProjectId,
+        threadId: foreignThreadId,
         prompt: "check in later",
         schedule: { type: "interval", everyMs: 3_600_000 },
       })
       .pipe(Effect.flip);
-    expect(staleSchedule.code).toBe("parent_not_active");
+    expect(staleSchedule.code).toBe("capability_denied");
     const staleUpdate = yield* service
       .updateScheduledTask(makeScope(), {
         scheduledTaskId: ScheduledTaskId.make("task-foreign"),
         enabled: false,
       })
       .pipe(Effect.flip);
-    expect(staleUpdate.code).toBe("parent_not_active");
+    expect(staleUpdate.code).toBe("capability_denied");
     const staleDelete = yield* service
       .deleteScheduledTask(makeScope(), { scheduledTaskId: ScheduledTaskId.make("task-foreign") })
       .pipe(Effect.flip);
-    expect(staleDelete.code).toBe("parent_not_active");
+    expect(staleDelete.code).toBe("capability_denied");
 
     const backgroundTasks = [
       {

@@ -49,7 +49,6 @@ import type {
   OrchestrationV2TurnItem,
   OrchestrationV2UserMessageInputIntent,
   RunAttemptId,
-  ScheduledTaskId,
   TurnItemId,
 } from "@t3tools/contracts";
 import { idleCompactionOf, isCompactionCommandMessage, RunId, ThreadId } from "@t3tools/contracts";
@@ -134,7 +133,7 @@ export interface ThreadFeedMessage {
   readonly inputIntent?: OrchestrationV2UserMessageInputIntent;
   readonly createdBy?: OrchestrationV2Actor;
   readonly creationSource?: OrchestrationV2CreationSource;
-  readonly scheduledTaskId?: ScheduledTaskId;
+  readonly routine?: import("@t3tools/contracts").OrchestrationV2RoutineLabel;
   readonly senderThreadId?: ThreadId;
   readonly idleCompaction?: import("@t3tools/contracts").OrchestrationV2IdleCompaction;
   readonly visibility: OrchestrationV2ProjectedTurnItem["visibility"];
@@ -2137,7 +2136,7 @@ export function buildThreadFeed(
                 inputIntent: item.inputIntent,
                 createdBy: item.createdBy,
                 creationSource: item.creationSource,
-                ...(item.scheduledTaskId ? { scheduledTaskId: item.scheduledTaskId } : {}),
+                ...(item.routine ? { routine: item.routine } : {}),
                 ...(item.senderThreadId ? { senderThreadId: item.senderThreadId } : {}),
                 ...(item.idleCompaction ? { idleCompaction: item.idleCompaction } : {}),
               }

@@ -852,7 +852,7 @@ const hasAction = (
 const isInputTargetHandoff = (tool: string, args: unknown) =>
   hasAction(INPUT_TARGET_ACTIONS, tool, args);
 
-const resultThreadKeys = ["childThreadId", "targetThreadId", "boundThreadId", "threadId"] as const;
+const resultThreadKeys = ["childThreadId", "targetThreadId", "threadId"] as const;
 
 /** Thread ids a handoff tool result names: the thread that received the work. */
 const resultThreadIds = (content: unknown): ReadonlyArray<string> => {
@@ -923,8 +923,7 @@ const withToolAnalytics =
               Effect.map((records) => {
                 const run = records.runs.find((candidate) => candidate.id === runId);
                 return records.messages.some(
-                  (message) =>
-                    message.id === run?.userMessageId && message.scheduledTaskId !== undefined,
+                  (message) => message.id === run?.userMessageId && message.routine !== undefined,
                 );
               }),
               Effect.orElseSucceed(() => false),

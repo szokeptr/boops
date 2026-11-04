@@ -93,7 +93,6 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PreviewManager from "../preview/Manager.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ResourceCleanupService from "./ResourceCleanupService.ts";
-import * as ThreadLaunchService from "./ThreadLaunchService.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
@@ -328,18 +327,20 @@ const layerLegacyImportTest = Layer.merge(RuntimeLayer.layer, layerProjectionRep
   Layer.provide(layerPlatformTest),
 );
 
+const layerScheduledTaskDependenciesTest = Layer.mergeAll(
+  ManagedPolicy.layerTest(),
+  Layer.mock(SecretRequests.SecretRequests)({}),
+  Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+    namedProjectsRoot: "/projects",
+    isScratchProject: () => Effect.succeed(false),
+  }),
+  Scheduler.layer,
+);
 const layerScheduledTasksTest = ScheduledTaskService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
-      ManagedPolicy.layerTest(),
-      Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+      layerScheduledTaskDependenciesTest,
       Layer.mock(ThreadManagementService.ThreadManagementService)({}),
-      Layer.mock(SecretRequests.SecretRequests)({}),
-      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-        namedProjectsRoot: "/projects",
-        isScratchProject: () => Effect.succeed(false),
-      }),
-      Scheduler.layer,
     ),
   ),
 );
@@ -427,7 +428,7 @@ it.layer(layerProjectDeletionTest)("project deletion during thread commands", (i
             worktreePath: null,
           });
         }
-        const save = (name: string, target: ThreadId | null, webhook = false) =>
+        const save = (name: string, target: ThreadId, webhook = false) =>
           tasks.upsert({
             id: ScheduledTaskId.make(`automation:${deletion}:${name}`),
             title: name,
@@ -445,9 +446,6 @@ it.layer(layerProjectDeletionTest)("project deletion during thread commands", (i
           });
         const { task: bound } = yield* save("bound", threadId);
         const { task: webhook } = yield* save("webhook", threadId, true);
-        const { task: independent } = yield* save("independent", null);
-        yield* save("detached", threadId);
-        const { task: detached } = yield* save("detached", null);
         yield* save("moved", threadId);
         const { task: moved } = yield* save("moved", otherThreadId);
         const { task: other } = yield* save("other", otherThreadId);
@@ -491,7 +489,7 @@ it.layer(layerProjectDeletionTest)("project deletion during thread commands", (i
         const remainingIds = (yield* tasks.list()).tasks.map((task) => task.id);
         assert.notInclude(remainingIds, bound.id);
         assert.notInclude(remainingIds, webhook.id);
-        assert.includeMembers(remainingIds, [independent.id, detached.id, moved.id, other.id]);
+        assert.includeMembers(remainingIds, [moved.id, other.id]);
         assert.lengthOf((yield* tasks.listWebhookDeliveries({ id: webhook.id })).deliveries, 0);
         const rejected = yield* tasks.runNow({ id: bound.id }).pipe(Effect.flip);
         assert.equal(rejected.message, "Schedule task not found.");
@@ -8682,6 +8680,13 @@ it.layer(layerQueueResumeDisabledInstanceTest)(
 );
 
 const layerBotsTest = Bots.layer.pipe(
+  // Heartbeats read the bot's real main thread; fresh, so the memoized mock-backed build is not reused.
+  Layer.provideMerge(
+    Layer.fresh(ScheduledTaskService.layer).pipe(
+      Layer.provide(layerScheduledTaskDependenciesTest),
+      Layer.provide(SqlitePersistence.layerMemory),
+    ),
+  ),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   Layer.provideMerge(layerProjectDeletionTest),
 );
@@ -8694,6 +8699,7 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
       const bots = yield* Bots.Bots;
       const projects = yield* ProjectService.ProjectService;
       const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const tasks = yield* ScheduledTaskService.ScheduledTaskService;
       const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
       const create = (name: string, avatar?: ProjectAvatar) =>
         bots
@@ -8721,6 +8727,13 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
         const thread = yield* orchestrator.getThreadShell(bot.mainThreadId);
         assert.equal(thread?.projectId, bot.projectId);
         assert.deepEqual(thread?.modelSelection, modelSelection);
+        const routines = (yield* tasks.list()).tasks.filter(
+          (task) => task.projectId === bot.projectId,
+        );
+        assert.deepEqual(
+          routines.map((task) => [task.title, task.threadId, task.schedule, task.enabled]),
+          [["Heartbeat", bot.mainThreadId, { type: "interval", everyMs: 21_600_000 }, true]],
+        );
       }
       const [firstLook, secondLook] = yield* Effect.forEach([first, second], (bot) =>
         projects

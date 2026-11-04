@@ -9,7 +9,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 
-import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
@@ -25,7 +24,6 @@ it.effect("rejects a stale form save after deletion while preserving explicit-id
       NodeCrypto.layer,
       Scheduler.layer,
       ManagedPolicy.layerTest(),
-      Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         namedProjectsRoot: "/projects",
         isScratchProject: () => Effect.succeed(false),
@@ -42,6 +40,7 @@ it.effect("rejects a stale form save after deletion while preserving explicit-id
         enabled: true,
         schedule: { type: "interval", everyMs: 60_000 },
         projectId: "project-stale-schedule",
+        threadId: "thread-1",
         workspaceStrategy: { type: "root" },
         modelSelection: { instanceId: "codex", model: "gpt-5.4" },
         runtimeMode: "full-access",
@@ -73,7 +72,6 @@ it.effect("preserves a due run when a save only pads the scheduled hour", () =>
       NodeCrypto.layer,
       Scheduler.layer,
       ManagedPolicy.layerTest(),
-      Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         namedProjectsRoot: "/projects",
         isScratchProject: () => Effect.succeed(false),
@@ -90,6 +88,7 @@ it.effect("preserves a due run when a save only pads the scheduled hour", () =>
         enabled: true,
         schedule: { type: "fixed_time", timeOfDay: "9:00" },
         projectId: "project-schedule-time-format",
+        threadId: "thread-1",
         workspaceStrategy: { type: "root" },
         modelSelection: { instanceId: "codex", model: "gpt-5.4" },
         runtimeMode: "full-access",
@@ -128,7 +127,6 @@ it.effect("keeps the task list order when a toggle or edit rewrites updated_at",
       NodeCrypto.layer,
       Scheduler.layer,
       ManagedPolicy.layerTest(),
-      Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         namedProjectsRoot: "/projects",
         isScratchProject: () => Effect.succeed(false),
@@ -145,6 +143,7 @@ it.effect("keeps the task list order when a toggle or edit rewrites updated_at",
         enabled: true,
         schedule: { type: "interval", everyMs: 60_000 },
         projectId: "project-stable-order",
+        threadId: "thread-1",
         workspaceStrategy: { type: "root" },
         modelSelection: { instanceId: "codex", model: "gpt-5.4" },
         runtimeMode: "full-access",
@@ -183,17 +182,14 @@ it.effect(
         NodeCrypto.layer,
         Scheduler.layer,
         ManagedPolicy.layerTest(),
-        Layer.mock(ThreadLaunchService.ThreadLaunchService)({
-          launch: (input) =>
-            Deferred.succeed(launched, input.title).pipe(
-              Effect.as({ threadId: "thread-idle-poll", resumed: false } as never),
-            ),
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          sendToThread: (input) =>
+            Deferred.succeed(launched, input.routine?.name ?? "").pipe(Effect.as({} as never)),
         }),
         Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
           namedProjectsRoot: "/projects",
           isScratchProject: () => Effect.succeed(false),
         }),
-        Layer.mock(ThreadManagementService.ThreadManagementService)({}),
         Layer.mock(SecretRequests.SecretRequests)({}),
       );
       yield* Effect.gen(function* () {
@@ -208,6 +204,7 @@ it.effect(
             enabled: true,
             schedule: { type: "interval", everyMs: 3e14 },
             projectId: "project-idle-poll",
+            threadId: "thread-1",
             workspaceStrategy: { type: "root" },
             modelSelection: { instanceId: "codex", model: "gpt-5.4" },
             runtimeMode: "full-access",
@@ -221,6 +218,7 @@ it.effect(
             enabled: true,
             schedule: { type: "interval", everyMs: 60_000 },
             projectId: "project-idle-poll",
+            threadId: "thread-1",
             workspaceStrategy: { type: "root" },
             modelSelection: { instanceId: "codex", model: "gpt-5.4" },
             runtimeMode: "full-access",

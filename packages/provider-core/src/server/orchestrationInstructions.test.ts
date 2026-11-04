@@ -16,7 +16,7 @@ describe("Pocks bot instructions", () => {
       "`memory/INDEX.md`",
       "`schedule_task`",
       "`delete_scheduled_task`",
-      "`bindToCurrentThread`",
+      "`threadId`",
       "`request_secret`",
     ]) {
       assert.include(POCKS_BOT_INSTRUCTIONS, name);

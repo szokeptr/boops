@@ -6,8 +6,9 @@ import {
   type OrchestrationV2Actor,
   type OrchestrationV2CreationSource,
   type OrchestrationV2IdleCompaction,
+  type OrchestrationV2RoutineLabel,
+  type OrchestrationV2RoutineTrigger,
   type OrchestrationV2UserMessageInputIntent,
-  ScheduledTaskId,
 } from "@t3tools/contracts";
 import {
   isAttachmentOnlyBootstrapPrompt,
@@ -31,6 +32,19 @@ export const IDLE_COMPACTION_TITLES = {
 
 const LEGACY_AUTOMATION_PREFIX = /^\[Triggered by schedule task: [^\r\n]+\]\r?\n\r?\n/;
 const LEGACY_AUTOMATION_MESSAGE_ID = /^scheduled-task-message:(.+):\d+:(?:scheduled|manual)$/;
+
+const ROUTINE_TRIGGER_LABELS = {
+  interval: "Repeating",
+  fixed_time: "Scheduled time",
+  once: "One time",
+  webhook: "Webhook",
+  manual: "Run now",
+} satisfies Record<OrchestrationV2RoutineTrigger, string>;
+
+/** The row label for a routine message: its name and what fired it. */
+export function routineLabelText(routine: OrchestrationV2RoutineLabel): string {
+  return `${routine.name} · ${ROUTINE_TRIGGER_LABELS[routine.trigger]}`;
+}
 
 export function resolveUserMessageFileCards(message: {
   readonly text: string;
@@ -64,18 +78,18 @@ export function resolveUserMessagePresentation(message: {
   readonly text: string;
   readonly createdBy?: OrchestrationV2Actor;
   readonly creationSource?: OrchestrationV2CreationSource;
-  readonly scheduledTaskId?: ScheduledTaskId | undefined;
+  readonly routine?: OrchestrationV2RoutineLabel | undefined;
   readonly context?: { readonly guest?: GuestMessageAttribution | undefined } | undefined;
 }): {
   readonly text: string;
   /** "system" is a server event such as a bot's hatching kickoff; it renders as a divider. */
   readonly attribution: "automation" | "agent" | "t3code" | "guest" | "system" | null;
-  readonly scheduledTaskId: ScheduledTaskId | undefined;
+  readonly routine: OrchestrationV2RoutineLabel | undefined;
   /** Set when `attribution` is "guest". */
   readonly guestName?: string;
 } {
   if (message.role !== "user") {
-    return { text: message.text, attribution: null, scheduledTaskId: undefined };
+    return { text: message.text, attribution: null, routine: undefined };
   }
   // The stored text names the guest for the agent; people see the guest's own words.
   const guest = message.context?.guest;
@@ -83,26 +97,22 @@ export function resolveUserMessagePresentation(message: {
     return {
       text: guest.text,
       attribution: "guest",
-      scheduledTaskId: undefined,
+      routine: undefined,
       guestName: guest.name,
     };
   }
-  if (message.scheduledTaskId !== undefined) {
-    return {
-      text: message.text,
-      attribution: "automation",
-      scheduledTaskId: message.scheduledTaskId,
-    };
+  if (message.routine !== undefined) {
+    return { text: message.text, attribution: "automation", routine: message.routine };
   }
   const legacyPrefix = LEGACY_AUTOMATION_PREFIX.exec(message.text);
-  const legacyTaskId = legacyPrefix
-    ? LEGACY_AUTOMATION_MESSAGE_ID.exec(message.id ?? "")?.[1]
-    : undefined;
-  if (legacyPrefix !== null && (legacyTaskId !== undefined || message.createdBy === "agent")) {
+  if (
+    legacyPrefix !== null &&
+    (LEGACY_AUTOMATION_MESSAGE_ID.test(message.id ?? "") || message.createdBy === "agent")
+  ) {
     return {
       text: message.text.slice(legacyPrefix[0].length),
       attribution: "automation",
-      scheduledTaskId: legacyTaskId === undefined ? undefined : ScheduledTaskId.make(legacyTaskId),
+      routine: undefined,
     };
   }
   return {
@@ -116,7 +126,7 @@ export function resolveUserMessagePresentation(message: {
           : message.creationSource === "server"
             ? "t3code"
             : "agent",
-    scheduledTaskId: undefined,
+    routine: undefined,
   };
 }
 

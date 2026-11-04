@@ -7,6 +7,7 @@ import {
   type OrchestrationV2ContextHandoff,
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2ProviderThread,
+  type OrchestrationV2RoutineLabel,
   type OrchestrationV2Run,
   type OrchestrationV2RunAttempt,
   type OrchestrationV2TurnItem,
@@ -94,6 +95,10 @@ class WorktreeRecreateNoBaseError extends Schema.TaggedError<WorktreeRecreateNoB
 }
 
 const isProviderTurnStartError = Schema.is(ProviderTurnStartError);
+
+/** The agent reads the routine label from this line; people see it on the message row. */
+const routineHeader = (routine: OrchestrationV2RoutineLabel): string =>
+  `[Routine "${routine.name}", trigger: ${routine.trigger}. Sent by a routine, not typed by the user.]`;
 const isProviderAdapterOpenSessionError = Schema.is(
   ProviderAdapter.ProviderAdapterOpenSessionError,
 );
@@ -843,13 +848,17 @@ export const layer: Layer.Layer<
       });
       let effectiveHandoffs = handoffs;
       let resumeFellBack = false;
-      const userText = projectComposerContextForProvider({
-        text: message.text,
-        records: message.context?.records ?? [],
-      });
       // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.
       const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
       const goalCommand = goalDriver && parseGoalCommand(message) !== null;
+      const composedText = projectComposerContextForProvider({
+        text: message.text,
+        records: message.context?.records ?? [],
+      });
+      const userText =
+        message.routine === undefined || goalCommand
+          ? composedText
+          : `${routineHeader(message.routine)}\n\n${composedText}`;
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
       const noteContinuation = isRestartNoteContinuation(
         run,
@@ -1717,9 +1726,7 @@ export const layer: Layer.Layer<
           attachments: message.attachments,
           createdBy: message.createdBy,
           creationSource: message.creationSource,
-          ...(message.scheduledTaskId === undefined
-            ? {}
-            : { scheduledTaskId: message.scheduledTaskId }),
+          ...(message.routine === undefined ? {} : { routine: message.routine }),
           ...(message.senderThreadId === undefined
             ? {}
             : { senderThreadId: message.senderThreadId }),

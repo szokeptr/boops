@@ -694,7 +694,11 @@ it.effect("a caller cannot rewrite a scheduled task that runs above its own mode
       layerOrchestratorToolkit.pipe(
         Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
         Layer.provide(NodeCrypto.layer),
-        Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
+        Layer.provide(
+          Layer.mock(ThreadManagement.ThreadManagementService)({
+            getThreadShell: () => Effect.succeed(null),
+          }),
+        ),
         Layer.provide(ServerSettings.layerTest()),
         Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
         Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
@@ -745,7 +749,7 @@ it.effect.each([
     tasks: [],
     error: new ScheduledTaskError({ message: "must not run a missing task" }),
     code: "invalid_request",
-    message: "The scheduled task was not found.",
+    message: "The routine was not found.",
   },
 ])("run_scheduled_task_now $scenario", ({ tasks, error, code, message }) =>
   Effect.gen(function* () {
@@ -791,7 +795,7 @@ function scheduledTask(id: string, runtimeMode: "auto" | "full-access"): never {
     prompt: "Check the build",
     enabled: true,
     projectId: "project-a",
-    threadId: null,
+    threadId: "thread-routine",
     schedule: { type: "interval", everyMs: 3_600_000 },
     workspaceStrategy: { type: "worktree", baseRef: "main", startFromOrigin: true },
     modelSelection: { instanceId: "codex", model: "gpt-5" },

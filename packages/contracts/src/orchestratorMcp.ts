@@ -649,18 +649,17 @@ export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
 });
 export type OrchestratorMcpCapabilitiesResult = typeof OrchestratorMcpCapabilitiesResult.Type;
 
+const OrchestratorMcpRoutineThread = ThreadId.annotate({
+  description: "Thread its runs post into, in your project. Default: your thread.",
+});
+
 export const OrchestratorMcpScheduleTaskInput = Schema.Struct({
   environmentId: OrchestratorMcpEnvironmentTarget,
-  projectId: OrchestratorMcpProjectTarget,
+  threadId: Schema.optional(OrchestratorMcpRoutineThread),
   prompt: OrchestratorMcpPrompt,
   schedule: OrchestratorMcpSchedule,
   title: Schema.optional(OrchestratorMcpTitle),
   enabled: Schema.optional(Schema.Boolean.annotate({ description: "Default true." })),
-  bindToCurrentThread: Schema.optional(
-    Schema.Boolean.annotate({
-      description: "Default true: runs post in this thread. False: new thread per run.",
-    }),
-  ),
   clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
 });
 export type OrchestratorMcpScheduleTaskInput = typeof OrchestratorMcpScheduleTaskInput.Type;
@@ -681,7 +680,7 @@ export const OrchestratorMcpScheduledTask = Schema.Struct({
   prompt: Schema.String,
   enabled: Schema.Boolean,
   projectId: ProjectId,
-  boundThreadId: Schema.NullOr(ThreadId),
+  threadId: Schema.NullOr(ThreadId),
   schedule: ScheduledTaskSchedule,
   nextRunAt: Schema.NullOr(IsoDateTime),
   lastRunStatus: ScheduledTaskRunStatus,
@@ -703,7 +702,7 @@ export const OrchestratorMcpListScheduledTasksInput = Schema.Struct({
   environmentId: OrchestratorMcpEnvironmentTarget,
   projectId: Schema.optional(
     ProjectId.annotate({
-      description: "Default: your thread's project, or all outside a thread.",
+      description: "Outside a thread only. In a thread you see your project's routines.",
     }),
   ),
 });
@@ -723,7 +722,7 @@ export const OrchestratorMcpUpdateScheduledTaskInput = Schema.Struct({
   title: Schema.optional(OrchestratorMcpTitle),
   schedule: Schema.optional(OrchestratorMcpSchedule),
   enabled: Schema.optional(Schema.Boolean),
-  bindToCurrentThread: Schema.optional(Schema.Boolean),
+  threadId: Schema.optional(OrchestratorMcpRoutineThread),
 });
 export type OrchestratorMcpUpdateScheduledTaskInput =
   typeof OrchestratorMcpUpdateScheduledTaskInput.Type;

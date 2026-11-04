@@ -1,18 +1,13 @@
 import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { filePreviewKind } from "@t3tools/shared/filePreview";
 import { findRevealRef } from "./markdownFindContext";
+import { type MessageId, type ServerProviderSkill, ThreadId } from "@t3tools/contracts";
 import {
-  type EnvironmentId,
-  type MessageId,
-  type ScheduledTaskId,
-  type ServerProviderSkill,
-  ThreadId,
-} from "@t3tools/contracts";
-import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+  resolveUserMessagePresentation,
+  routineLabelText,
+} from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
 import { useQuietThreadShell } from "../../state/entities";
-import { useEnvironmentQuery } from "../../state/query";
-import { serverEnvironment } from "../../state/server";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { memo, use, useState, type ReactNode } from "react";
 import {
@@ -303,11 +298,9 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   const ctx = use(TimelineRowCtx);
   const [expanded, setExpanded] = useState(false);
   const revealRef = findRevealRef(() => setExpanded(true));
-  const { text, scheduledTaskId } = resolveUserMessagePresentation(row.message);
+  const { text, routine } = resolveUserMessagePresentation(row.message);
   const summary =
-    useScheduledTaskTitle(ctx.activeThreadEnvironmentId, scheduledTaskId) ??
-    text.trim().split(/\r?\n/, 1)[0] ??
-    "";
+    routine === undefined ? (text.trim().split(/\r?\n/, 1)[0] ?? "") : routineLabelText(routine);
 
   const revertTurnCount = row.revertTurnCount;
   const promptLink = promptLinkFor(text);
@@ -327,10 +320,10 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           expanded && "w-full",
         )}
       >
-        <MessageAuthorHeading>Automation</MessageAuthorHeading>
+        <MessageAuthorHeading>Routine</MessageAuthorHeading>
         <FoldedMessageHeader
           icon={CalendarClockIcon}
-          label="Automation"
+          label="Routine"
           summary={summary}
           expanded={expanded}
           onToggle={() => setExpanded((value) => !value)}
@@ -351,13 +344,13 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       {expanded ? (
         <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
           <div className="flex shrink-0 items-center gap-2">
-            {scheduledTaskId ? (
+            {routine ? (
               <Link
                 to="/settings/scheduled-tasks"
-                search={{ environmentId: ctx.activeThreadEnvironmentId, taskId: scheduledTaskId }}
+                search={{ environmentId: ctx.activeThreadEnvironmentId, taskId: routine.taskId }}
                 className="rounded-sm text-xs text-muted-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
               >
-                Open automation
+                Open routine
               </Link>
             ) : null}
             <TimelineRowTimestamp
@@ -384,16 +377,6 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       ) : null}
     </div>
   );
-}
-
-export function useScheduledTaskTitle(
-  environmentId: EnvironmentId,
-  scheduledTaskId: ScheduledTaskId | undefined,
-): string | undefined {
-  const tasksQuery = useEnvironmentQuery(
-    scheduledTaskId ? serverEnvironment.scheduledTasksLive({ environmentId, input: {} }) : null,
-  );
-  return tasksQuery.data?.tasks.find((task) => task.id === scheduledTaskId)?.title;
 }
 
 export function FoldedMessageHeader(props: {

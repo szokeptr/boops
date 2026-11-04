@@ -683,7 +683,7 @@ describe("V2 session presentation", () => {
       attachments: [],
       createdBy: "agent" as const,
       creationSource: "mcp" as const,
-      scheduledTaskId: ScheduledTaskId.make("task-queued"),
+      routine: { taskId: ScheduledTaskId.make("task-queued"), name: "Queued", trigger: "once" },
       senderThreadId: ThreadId.make("thread-agent-sender"),
     } satisfies OrchestrationV2TurnItem;
     for (const inputIntent of [
@@ -723,7 +723,7 @@ describe("V2 session presentation", () => {
     expect(promotedEntries[0]?.kind).toBe("message");
     if (promotedEntries[0]?.kind === "message") {
       expect(promotedEntries[0].message.inputIntent).toBe("turn_start");
-      expect(promotedEntries[0].message.scheduledTaskId).toBe("task-queued");
+      expect(promotedEntries[0].message.routine?.taskId).toBe("task-queued");
       expect(promotedEntries[0].message.senderThreadId).toBe("thread-agent-sender");
     }
   });

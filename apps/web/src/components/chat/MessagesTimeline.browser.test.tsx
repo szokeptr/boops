@@ -209,11 +209,12 @@ async function click(element: HTMLElement) {
   await act(async () => element.click());
 }
 
-function setup({ scheduledTasks = [] as ReadonlyArray<{ id: string; title: string }> } = {}) {
-  environmentQuery.data = { tasks: scheduledTasks };
+function setup() {
+  environmentQuery.data = { tasks: [] };
 }
 
 const TASK_ID = ScheduledTaskId.make("task-1");
+const ROUTINE = { taskId: TASK_ID, name: "Nightly triage", trigger: "fixed_time" } as const;
 const AUTOMATION_PROMPT = "Triage the inbox\n\nLabel every new issue and close duplicates.";
 
 describe("MessagesTimeline work rows", () => {
@@ -387,7 +388,7 @@ describe("MessagesTimeline messages", () => {
     // Folded messages at both ends: their headings must not live inside the fold.
     const entries = Array.from({ length: 120 }, (_, index) =>
       index === 0
-        ? message("First turn", { scheduledTaskId: TASK_ID }, "turn-0")
+        ? message("First turn", { routine: { ...ROUTINE, name: "First turn" } }, "turn-0")
         : index === 119
           ? message(
               "Last turn",
@@ -739,51 +740,41 @@ describe("MessagesTimeline citations", () => {
   });
 });
 
-describe("MessagesTimeline automation prompts", () => {
-  it("folds an automation prompt into a bubble titled by its task", async () => {
-    setup({ scheduledTasks: [{ id: TASK_ID, title: "Nightly triage" }] });
-    await using screen = await renderTimeline([
-      message(AUTOMATION_PROMPT, { scheduledTaskId: TASK_ID }),
-    ]);
-    const row = screen.button(/^Automation/);
-    expect(row.textContent).toContain("Nightly triage");
+describe("MessagesTimeline routine messages", () => {
+  it("folds a routine message into a bubble labelled with its routine and trigger", async () => {
+    setup();
+    await using screen = await renderTimeline([message(AUTOMATION_PROMPT, { routine: ROUTINE })]);
+    const row = screen.button(/^Routine/);
+    expect(row.textContent).toContain("Nightly triage · Scheduled time");
     expect(row.getAttribute("aria-expanded")).toBe("false");
     expect(screen.text()).not.toContain("close duplicates");
 
     await click(row);
     expect(screen.text()).toContain("Label every new issue and close duplicates.");
     const link = [...screen.container.querySelectorAll("a")].find(
-      (anchor) => anchor.textContent === "Open automation",
+      (anchor) => anchor.textContent === "Open routine",
     );
     expect(link?.getAttribute("href")).toContain(`taskId=${TASK_ID}`);
     expect(screen.buttons(/copy/i)).not.toHaveLength(0);
   });
 
-  it("falls back to the prompt's first line without a task title", async () => {
-    setup();
-    await using screen = await renderTimeline([
-      message(AUTOMATION_PROMPT, { scheduledTaskId: TASK_ID }),
-    ]);
-    expect(screen.button(/^Automation/).textContent).toContain("Triage the inbox");
-  });
-
   it("leaves ordinary user messages as full bubbles", async () => {
     setup();
     await using screen = await renderTimeline([message(AUTOMATION_PROMPT)]);
-    expect(screen.buttons(/^Automation/)).toHaveLength(0);
+    expect(screen.buttons(/^Routine/)).toHaveLength(0);
     expect(screen.text()).toContain("Label every new issue and close duplicates.");
   });
 
   it("reveals a find match beyond the folded automation prompt's initial viewport", async () => {
     setup();
     const prompt = `${"Inspect the next item.\n\n".repeat(16)}Close duplicates.`;
-    await using screen = await renderTimeline([message(prompt, { scheduledTaskId: TASK_ID })], {
+    await using screen = await renderTimeline([message(prompt, { routine: ROUTINE })], {
       findExpanded: true,
       findQuery: "duplicates",
       activeFindMatch: { entryId: "entry-message-1", runId: null, occurrence: 0 },
     });
     await vi.waitFor(() =>
-      expect(screen.button(/^Automation/).getAttribute("aria-expanded")).toBe("true"),
+      expect(screen.button(/^Routine/).getAttribute("aria-expanded")).toBe("true"),
     );
     const { range } = collectThreadFindRanges(screen.container, "duplicates")[0]!;
     const details = screen.container.querySelector("[data-thread-find-text]")!;
@@ -802,7 +793,7 @@ describe("MessagesTimeline automation prompts", () => {
       [
         message(
           AUTOMATION_PROMPT,
-          { scheduledTaskId: TASK_ID, runId, inputIntent: "turn_start" },
+          { routine: ROUTINE, runId, inputIntent: "turn_start" },
           "user-1",
         ),
         message("Done", { role: "assistant", runId }, "assistant-1"),
@@ -824,7 +815,7 @@ describe("MessagesTimeline automation prompts", () => {
       },
     );
     expect(screen.buttons("Edit from here")).toHaveLength(0);
-    await click(screen.button(/^Automation/));
+    await click(screen.button(/^Routine/));
     expect(screen.buttons("Edit from here")).toHaveLength(1);
   });
 });

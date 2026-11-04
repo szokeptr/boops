@@ -23,6 +23,7 @@ import * as Schema from "effect/Schema";
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 
 export class BotHomeFolderError extends Schema.TaggedError<BotHomeFolderError>()(
   "BotHomeFolderError",
@@ -52,8 +53,8 @@ export class Bots extends Context.Service<
   Bots,
   {
     /**
-     * Creates `~/pocks/<slug>/` with `memory/`, a project rooted there, and its main thread.
-     * Without a picked avatar, its look steps away from the environment's other bots.
+     * Creates `~/pocks/<slug>/` with `memory/`, a project rooted there, its main thread, and a
+     * heartbeat routine. Without a picked avatar, its look steps away from the environment's other bots.
      */
     readonly create: (
       input: BotCreateInput,
@@ -71,6 +72,7 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const projects = yield* ProjectService.ProjectService;
   const threads = yield* ThreadManagementService.ThreadManagementService;
+  const routines = yield* ScheduledTaskService.ScheduledTaskService;
   const random = yield* SecureRandom.SecureRandom;
 
   // Non-recursive mkdir atomically claims a slug; a taken one moves on to `<slug>-2`.
@@ -196,6 +198,14 @@ const make = Effect.gen(function* () {
         ),
         Effect.mapError(
           (cause) => new BotCreateError({ stage: "main-thread", workspaceRoot, cause }),
+        ),
+      );
+    // The bot works without it, and the user can add one, so a failure does not undo the bot.
+    yield* routines
+      .ensureDefaultHeartbeat({ projectId: project.id, threadId: mainThreadId })
+      .pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Could not add the bot's heartbeat", { projectId: project.id, cause }),
         ),
       );
     if (input.hatch ?? true) yield* hatch(id, mainThreadId);

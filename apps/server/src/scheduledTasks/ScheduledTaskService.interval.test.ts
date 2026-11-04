@@ -8,7 +8,6 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 import { afterEach, vi } from "vite-plus/test";
 
-import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
@@ -24,14 +23,13 @@ const dependencies = Layer.mergeAll(
   NodeCrypto.layer,
   Scheduler.layer,
   ManagedPolicy.layerTest(),
-  Layer.mock(ThreadLaunchService.ThreadLaunchService)({
-    launch: () => Effect.die("synthetic dispatch failure"),
+  Layer.mock(ThreadManagementService.ThreadManagementService)({
+    sendToThread: () => Effect.die("synthetic dispatch failure"),
   }),
   Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
     namedProjectsRoot: "/projects",
     isScratchProject: () => Effect.succeed(false),
   }),
-  Layer.mock(ThreadManagementService.ThreadManagementService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
 );
 const serviceLayer = ScheduledTaskService.layer.pipe(Layer.provide(dependencies));
@@ -42,6 +40,7 @@ const input = {
   prompt: "Review the open pull requests.",
   enabled: true,
   projectId: "project-interval-duration",
+  threadId: "thread-1",
   workspaceStrategy: { type: "root" },
   modelSelection: { instanceId: "codex", model: "gpt-5.4" },
   runtimeMode: "full-access",
@@ -138,8 +137,9 @@ const slowLaunchLayer = ScheduledTaskService.layer.pipe(
   Layer.provide(
     Layer.merge(
       dependencies,
-      Layer.mock(ThreadLaunchService.ThreadLaunchService)({
-        launch: () => TestClock.adjust("2 minutes").pipe(Effect.andThen(Effect.die("synthetic"))),
+      Layer.mock(ThreadManagementService.ThreadManagementService)({
+        sendToThread: () =>
+          TestClock.adjust("2 minutes").pipe(Effect.andThen(Effect.die("synthetic"))),
       }),
     ),
   ),
@@ -290,8 +290,8 @@ it.effect("reports the stored task when the row was replaced during the run", ()
     const replaceRowDuringLaunch = Layer.unwrap(
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        return Layer.mock(ThreadLaunchService.ThreadLaunchService)({
-          launch: () =>
+        return Layer.mock(ThreadManagementService.ThreadManagementService)({
+          sendToThread: () =>
             sql`UPDATE scheduled_tasks SET last_run_status = 'never', last_run_at = NULL, run_count = 0`.pipe(
               Effect.orDie,
               Effect.andThen(Effect.die("synthetic dispatch failure")),

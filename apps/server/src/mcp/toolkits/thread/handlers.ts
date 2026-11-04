@@ -14,6 +14,7 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import {
   dispatchFailure,
+  loadCaller,
   newCommandId,
   readCaller,
   readThread,
@@ -94,11 +95,18 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
   run_scheduled_task_now: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
       const scheduler = yield* ScheduledTasks.ScheduledTaskService;
+      const { caller } = yield* loadCaller();
       const { tasks } = yield* scheduler.list().pipe(Effect.mapError(unavailable));
-      if (!tasks.some((task) => task.id === input.taskId))
+      const target = tasks.find((task) => task.id === input.taskId);
+      if (target === undefined)
         return yield* new OrchestratorMcpFailure({
           code: "invalid_request",
-          message: "The scheduled task was not found.",
+          message: "The routine was not found.",
+        });
+      if (caller !== undefined && target.projectId !== caller.projectId)
+        return yield* new OrchestratorMcpFailure({
+          code: "capability_denied",
+          message: "A thread manages only its own project's routines.",
         });
       const { task, threadId } = yield* scheduler
         .runNow({ id: input.taskId })
