@@ -76,6 +76,7 @@ import { AddProjectLocalRoute } from "./features/projects/AddProjectLocalRoute";
 import { AddProjectNewRoute } from "./features/projects/AddProjectNewRoute";
 import { AddProjectRepositoryRoute } from "./features/projects/AddProjectRepositoryRoute";
 import { AddProjectSourceRoute } from "./features/projects/AddProjectSourceRoute";
+import { CreateBotScreen } from "./features/projects/CreateBotScreen";
 import {
   NewTaskBranchPickerRouteScreen,
   NewTaskEnvironmentPickerRouteScreen,
@@ -715,6 +716,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
       linking: "new/draft/branch",
       screen: NewTaskBranchPickerRouteScreen,
       options: { ...GLASS_HEADER_OPTIONS, title: "Branch" },
+    }),
+    CreateBot: createNativeStackScreen({
+      linking: "new/bot",
+      screen: CreateBotScreen,
+      options: { ...GLASS_HEADER_OPTIONS, title: "New bot" },
     }),
     AddProject: createNativeStackScreen({
       linking: "new/add-project",
