@@ -7,9 +7,8 @@ import { useSoftKeyboardShowing } from "../keyboard/useSoftKeyboardShowing";
 import { SafeAreaInsetsContext, useSafeAreaInsets } from "react-native-safe-area-context";
 import { AdaptiveWorkspaceContext, useAdaptiveWorkspaceLayout } from "./adaptive-workspace-context";
 import { threadSelectionDeferral } from "./deferred-navigation";
-import { uuidv4 } from "../../lib/uuid";
 import { useToolbarLayout } from "../../components/ui/useToolbarLayout";
-import { EnvironmentId, ThreadId, type SidebarProjectGroupingMode } from "@t3tools/contracts";
+import type { SidebarProjectGroupingMode } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { NavigationContext, NavigationRouteContext, useNavigation } from "@react-navigation/native";
 import {
@@ -55,9 +54,6 @@ import {
   nativeInspectorColumnWidth,
 } from "../../lib/layout";
 import type { ThreadListFilters } from "../../persistence/mobile-preferences";
-import { appAtomRegistry } from "../../state/atom-registry";
-import { useProjects } from "../../state/entities";
-import { environmentThreadShells } from "../../state/threads";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import {
   DEFAULT_MOBILE_PROJECT_GROUPING_SETTINGS,
@@ -82,7 +78,7 @@ import {
 import { startOpeningDetail } from "../workspace/useSelectWorkspaceDetail";
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 import { HomeListOptionsProvider } from "../home/home-list-options";
-import { newTaskDestination } from "../threads/new-task-project-selection";
+import { openAddBot } from "../bots/add-bot";
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
 import { PaneContext } from "../../components/ui/Pane";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
@@ -114,7 +110,7 @@ import {
 import type { WorkspaceTab } from "../workspace/workspace-tabs-state";
 import { workspaceRoutesOf } from "./workspace-overlay-routes";
 import { SettingsWorkspaceLayout } from "../settings/SettingsWorkspaceLayout";
-import { WorkspaceThreadSidebar } from "../workspace/WorkspaceThreadSidebar";
+import { WorkspaceBotSidebar } from "../workspace/WorkspaceBotSidebar";
 
 export { useAdaptiveWorkspaceLayout };
 
@@ -606,50 +602,12 @@ function AdaptiveWorkspaceLayoutContent(
       navigation.dispatch(selectWorkspaceDetail(detail));
     });
   }
-  const handleSelectThreadRoute = (params: ReactNavigation.RootParamList["Thread"]) =>
-    handleSelectDetail({ name: "Thread", params });
-
-  const projects = useProjects();
   const compactAndroidSettings =
     Platform.OS === "android" && androidSettingsOpen && !layout.usesSplitView;
-  // Reads the open page when pressed, so the layout context doesn't change on every navigation.
-  const handleStartNewTask = () => {
-    const state = rootStackState(navigation);
-    const currentRoute = workspaceRoutesOf(
-      state?.routes.slice(0, state.index + 1) ?? [],
-    ).workspace.at(-1);
-    const params =
-      currentRoute?.name === "Thread"
-        ? (currentRoute.params as ReactNavigation.RootParamList["Thread"])
-        : undefined;
-    const first = (value: string | string[] | undefined) =>
-      Array.isArray(value) ? value[0] : value;
-    const environmentId = first(params?.environmentId);
-    const threadId = first(params?.threadId);
-    // The full index, not the sidebar list: subagent and archived threads are current threads too.
-    const projectId =
-      environmentId && threadId
-        ? appAtomRegistry
-            .get(
-              environmentThreadShells.environmentThreadIndexAtom(EnvironmentId.make(environmentId)),
-            )
-            .get(ThreadId.make(threadId))?.projectId
-        : undefined;
-    const preferences = appAtomRegistry.get(mobilePreferencesAtom);
-    const saved = AsyncResult.isSuccess(preferences) ? preferences.value : undefined;
-    handleSelectThreadRoute(
-      newTaskDestination({
-        projects,
-        requestId: uuidv4(),
-        useLastProject: saved?.useLastProjectForNewThreads,
-        currentProject: environmentId && projectId ? { environmentId, projectId } : undefined,
-        lastProject: saved?.lastThreadProject,
-      }),
-    );
-  };
+  const handleAddBot = () => openAddBot(navigation);
 
   useHardwareKeyboardCommand("newTask", () => {
-    handleStartNewTask();
+    handleAddBot();
     return true;
   });
 
@@ -982,7 +940,7 @@ function AdaptiveWorkspaceLayoutContent(
     panes,
     fileInspector,
     primarySidebarSearchQuery,
-    startNewTask: handleStartNewTask,
+    addBot: handleAddBot,
     selectDetail: handleSelectDetail,
     registerWorkspaceInspector,
     setPrimarySidebarSearchQuery,
@@ -1080,15 +1038,15 @@ function AdaptiveWorkspaceLayoutContent(
                   />
                 )}
               >
-                {/* Without a sidebar route (iPadOS before 26) the columns draw the thread list. */}
-                {sidebar ?? <WorkspaceThreadSidebar />}
+                {/* Without a sidebar route (iPadOS before 26) the columns draw the bot list. */}
+                {sidebar ?? <WorkspaceBotSidebar />}
               </RenderErrorBoundary>
             </PaneContext>
             {/* Keep the pill under the content throughout the sidebar's clipping animation. */}
             {floatingTabsEnabled && !workspacePage ? (
               <FloatingWorkspaceTabs
                 paneWidth={layout.listPaneWidth}
-                onNewThread={handleStartNewTask}
+                onNewThread={handleAddBot}
                 onSelect={revealPrimarySidebar}
               />
             ) : null}
@@ -1157,10 +1115,10 @@ function AdaptiveWorkspaceLayoutContent(
                 <FloatingWorkspaceTabs
                   paneWidth={layout.usesSplitView ? (layout.listPaneWidth ?? undefined) : undefined}
                   fillWidth={compactAndroidSettings}
-                  onNewThread={handleStartNewTask}
+                  onNewThread={handleAddBot}
                 />
               ) : compactAndroidSettings ? (
-                <AndroidWorkspaceNavigation onNewThread={handleStartNewTask} />
+                <AndroidWorkspaceNavigation onNewThread={handleAddBot} />
               ) : null}
             </WorkspaceSettledContentWidthContext>
           </WorkspaceContentWidthContext>
@@ -1232,7 +1190,7 @@ function AdaptiveWorkspaceLayoutContent(
           ]}
         >
           <AndroidWorkspaceNavigation
-            onNewThread={handleStartNewTask}
+            onNewThread={handleAddBot}
             rail
             onSelect={revealPrimarySidebar}
             onOverlayChange={setRailOverlay}

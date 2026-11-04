@@ -356,7 +356,7 @@ class T3WorkspaceNavigationView(
         .height(FAB_SIZE)
         .width(lerp(FAB_SIZE, EXPANDED_RAIL_WIDTH - RAIL_INSET * 2, fraction))
         .alpha(if (newEnabled) 1f else DISABLED_ALPHA)
-        .semantics { contentDescription = "New thread" },
+        .semantics { contentDescription = "Add bot" },
     ) {
       Row(
         Modifier.padding(start = (FAB_SIZE - ICON_SIZE) / 2).clipToBounds(),
@@ -364,7 +364,7 @@ class T3WorkspaceNavigationView(
       ) {
         Icon(painterResource(R.drawable.t3_new_thread), contentDescription = null)
         Text(
-          "New thread",
+          "Add bot",
           Modifier.padding(start = 12.dp).alpha(labelAlpha(fraction)).clearAndSetSemantics {},
           style = MaterialTheme.typography.labelLarge,
           fontSize = (14 * textScale).sp,
@@ -413,7 +413,7 @@ class T3WorkspaceNavigationView(
   }
 
   private fun tabTitle(tab: String) = when (tab) {
-    "threads" -> "Chats"
+    "threads" -> "Bots"
     "pullRequests" -> "Pulls"
     "usage" -> "Usage"
     else -> "Settings"

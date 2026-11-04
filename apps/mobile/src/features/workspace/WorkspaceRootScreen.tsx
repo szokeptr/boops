@@ -74,7 +74,7 @@ function WorkspaceRootContent() {
   const navigation = useNavigation();
   const selectTab = useSelectWorkspaceTab();
   const { width: windowWidth } = useWindowDimensions();
-  const { layout, startNewTask } = useAdaptiveWorkspaceLayout();
+  const { layout, addBot } = useAdaptiveWorkspaceLayout();
   const primaryColumn = use(NativePrimaryColumnContext);
   const columnMetrics = useNativeColumnLayoutMetrics();
   const nativeMetrics = useNativeLayoutMetrics();
@@ -169,7 +169,7 @@ function WorkspaceRootContent() {
               ...(state.selectedTab === "threads"
                 ? [
                     {
-                      accessibilityLabel: "Search threads",
+                      accessibilityLabel: "Search bots",
                       icon: "magnifyingglass" as const,
                       onPress: () => {
                         dispatchHardwareKeyboardCommand("focusSearch");
@@ -203,9 +203,9 @@ function WorkspaceRootContent() {
         {enabled.length === 0 && !settingsOpen ? null : (
             settingsOpen ? Platform.OS === "ios" : state.selectedTab === "threads"
           ) ? (
-          <WorkspaceToolbar sidebar={sidebarNavigation} onNewTask={startNewTask} />
+          <WorkspaceToolbar sidebar={sidebarNavigation} onAddBot={addBot} />
         ) : (
-          <WorkspaceSectionToolbar onNewTask={startNewTask} showCompose={false} />
+          <WorkspaceSectionToolbar onAddBot={addBot} showCompose={false} />
         )}
       </View>
     </WorkspaceTabsContext>

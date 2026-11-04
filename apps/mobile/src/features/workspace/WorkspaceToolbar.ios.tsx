@@ -21,12 +21,12 @@ import { useFloatingWorkspaceTabs, useSidebarWorkspaceTabs } from "./useSystemWo
 import { WorkspaceTabToolbarButtons } from "./WorkspaceSectionToolbar";
 
 const SEARCH_LABELS = {
-  threads: "Search threads",
+  threads: "Search bots",
   settings: "Search settings",
 } as const;
 
 export function WorkspaceToolbar(props: {
-  readonly onNewTask: () => void;
+  readonly onAddBot: () => void;
   readonly sidebar?: boolean;
 }) {
   const workspace = useWorkspaceTabs()!;
@@ -119,10 +119,10 @@ export function WorkspaceToolbar(props: {
   }, [restoreSearch, tabActive, bottomSearch]);
   const composeButton = nativeToolbarCompose ? (
     <Toolbar.Button
-      identifier="workspace-compose"
-      accessibilityLabel="New chat"
-      icon="square.and.pencil"
-      onPress={props.onNewTask}
+      identifier="workspace-add-bot"
+      accessibilityLabel="Add bot"
+      icon="plus"
+      onPress={props.onAddBot}
       separateBackground
     />
   ) : null;
@@ -192,11 +192,7 @@ export function WorkspaceToolbar(props: {
           (deviceType === "pad" && layout.usesSplitView) ||
           sidebarTabs === "picker" ||
           floatingTabs ? null : (
-            <Toolbar.Button
-              accessibilityLabel="New chat"
-              icon="square.and.pencil"
-              onPress={props.onNewTask}
-            />
+            <Toolbar.Button accessibilityLabel="Add bot" icon="plus" onPress={props.onAddBot} />
           )}
           {NATIVE_LIQUID_GLASS_SUPPORTED ? null : (
             <Toolbar.Button

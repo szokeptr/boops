@@ -8,7 +8,7 @@ export function navigationCustomizationAvailable(
 }
 
 export const NAVIGATION_TAB_LABELS: Readonly<Record<NavigationTab, string>> = {
-  threads: "Threads",
+  threads: "Bots",
   usage: "Usage",
 };
 

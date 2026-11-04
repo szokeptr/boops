@@ -232,8 +232,8 @@ export function V5StackHeader(props: {
     const compose: HeaderItem = {
       type: "item",
       id: "workspace-compose",
-      title: "New task",
-      icon: { type: "sfSymbol", name: "square.and.pencil" },
+      title: "Add bot",
+      icon: { type: "sfSymbol", name: "plus" },
       onPress: props.onCompose,
     };
     if (trailing.length)

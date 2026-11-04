@@ -29,7 +29,7 @@ export function useThreadHeaderOptions(props: {
   const deviceType = useDeviceType();
   const usesDuoHeader = usesNativeWorkspaceColumns && isDuoDevice(deviceType);
   const navigation = useNavigation();
-  const { layout, startNewTask } = useAdaptiveWorkspaceLayout();
+  const { layout, addBot } = useAdaptiveWorkspaceLayout();
   const sidebarHeaderItem = useWorkspaceSidebarHeaderItem();
   const threadCenterHeaderItems = useThreadCenterHeaderItems(props.controls);
   const compactRightHeaderItems = useThreadRightHeaderItems(props.controls);
@@ -57,11 +57,11 @@ export function useThreadHeaderOptions(props: {
     ...(!usesDuoHeader && !props.draft
       ? [
           withNativeGlassHeaderItem({
-            accessibilityLabel: "New task",
-            icon: { name: "square.and.pencil", type: "sfSymbol" as const },
-            identifier: "thread-left-new-task",
-            label: "New task",
-            onPress: startNewTask,
+            accessibilityLabel: "Add bot",
+            icon: { name: "plus", type: "sfSymbol" as const },
+            identifier: "thread-left-add-bot",
+            label: "Add bot",
+            onPress: addBot,
             type: "button" as const,
           }),
         ]

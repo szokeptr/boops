@@ -48,10 +48,10 @@ export function WorkspaceTabToolbarButtons() {
 }
 
 export function WorkspaceSectionToolbar({
-  onNewTask,
+  onAddBot,
   showCompose = true,
 }: {
-  readonly onNewTask: () => void;
+  readonly onAddBot: () => void;
   readonly showCompose?: boolean;
 }) {
   const sidebarTabs = useSidebarWorkspaceTabs();
@@ -61,11 +61,7 @@ export function WorkspaceSectionToolbar({
     <>
       {showCompose && sidebarTabs !== "picker" && deviceType !== "duo-unfolded" && !compactTabs ? (
         <Toolbar placement="right">
-          <Toolbar.Button
-            accessibilityLabel="New chat"
-            icon="square.and.pencil"
-            onPress={onNewTask}
-          />
+          <Toolbar.Button accessibilityLabel="Add bot" icon="plus" onPress={onAddBot} />
         </Toolbar>
       ) : null}
       {sidebarTabs === "toolbar" ? (

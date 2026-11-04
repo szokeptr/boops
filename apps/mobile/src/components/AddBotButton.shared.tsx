@@ -4,7 +4,7 @@ import { cn } from "../lib/cn";
 import { AppText } from "./ui/AppText";
 import { SymbolView } from "./ui/AppSymbol";
 
-export function NewThreadButton(props: {
+export function AddBotButton(props: {
   readonly onPress: () => void;
   readonly extended?: boolean;
   readonly expanded?: boolean;
@@ -13,7 +13,7 @@ export function NewThreadButton(props: {
 }) {
   return (
     <Pressable
-      accessibilityLabel="New thread"
+      accessibilityLabel="Add bot"
       accessibilityRole="button"
       onPress={props.onPress}
       className={cn(
@@ -26,13 +26,13 @@ export function NewThreadButton(props: {
       style={props.style}
     >
       <SymbolView
-        name="square.and.pencil"
+        name="plus"
         size={props.extended ? 24 : 28}
         tintColorClassName="accent-primary-foreground"
         type="monochrome"
       />
       {props.extended && props.expanded !== false ? (
-        <AppText className="text-[16px] font-t3-medium text-primary-foreground">New thread</AppText>
+        <AppText className="text-[16px] font-t3-medium text-primary-foreground">Add bot</AppText>
       ) : null}
     </Pressable>
   );

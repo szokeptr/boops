@@ -16,7 +16,7 @@ interface AdaptiveWorkspaceContextValue {
   readonly panes: WorkspacePaneLayout;
   readonly fileInspector: FileInspectorPaneLayout;
   readonly primarySidebarSearchQuery: string;
-  readonly startNewTask: () => void;
+  readonly addBot: () => void;
   /** Use `useSelectWorkspaceDetail`, which also works outside the layout. */
   readonly selectDetail?: (detail: WorkspaceDetail) => void;
   readonly registerWorkspaceInspector: (
@@ -79,7 +79,7 @@ export const AdaptiveWorkspaceContext = createContext<AdaptiveWorkspaceContextVa
   panes: compactPanes,
   fileInspector: compactFileInspector,
   primarySidebarSearchQuery: "",
-  startNewTask: () => undefined,
+  addBot: () => undefined,
   registerWorkspaceInspector: () => () => undefined,
   setPrimarySidebarSearchQuery: () => undefined,
   showInspector: () => undefined,

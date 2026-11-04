@@ -56,7 +56,7 @@ export function AndroidHomeFabLayout(props: ComponentProps<typeof SharedAndroidH
   };
 
   // Remount only the FAB when its font or pane changes to clear the cached expanded width.
-  // Floating navigation shares this row; Material split views put New thread in the rail.
+  // Floating navigation shares this row; Material split views put Add bot in the rail.
   return (
     <View className="flex-1" onLayout={(event) => setLayoutWidth(event.nativeEvent.layout.width)}>
       <WorkspaceTabsContext value={context}>
@@ -70,7 +70,7 @@ export function AndroidHomeFabLayout(props: ComponentProps<typeof SharedAndroidH
           key={`${appearance.baseFontSize}:${fontScale}:${layoutWidth}`}
           size={size}
           expanded={floatingTabsEnabled ? false : expanded}
-          onPress={props.onStartNewTask}
+          onPress={props.onAddBot}
           className="absolute"
           style={
             floatingTabsEnabled
