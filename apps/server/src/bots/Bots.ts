@@ -7,6 +7,7 @@ import {
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
+import { familySpec, specFor } from "@t3tools/shared/botAvatar";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { newProjectFolderName } from "@t3tools/shared/path";
 import * as Context from "effect/Context";
@@ -49,7 +50,10 @@ export class BotCreateError extends Schema.TaggedError<BotCreateError>()("BotCre
 export class Bots extends Context.Service<
   Bots,
   {
-    /** Creates `~/pocks/<slug>/` with `memory/`, a project rooted there, and its main thread. */
+    /**
+     * Creates `~/pocks/<slug>/` with `memory/`, a project rooted there, and its main thread.
+     * Without a picked avatar, its look steps away from the environment's other bots.
+     */
     readonly create: (
       input: BotCreateInput,
     ) => Effect.Effect<BotCreateResult, BotHomeFolderError | BotCreateError>;
@@ -144,10 +148,25 @@ const make = Effect.gen(function* () {
       })
       .pipe(
         Effect.andThen(
+          input.avatar === undefined
+            ? projects.listShells().pipe(
+                Effect.map((shells) =>
+                  familySpec(
+                    input.name,
+                    shells
+                      .filter((shell) => shell.id !== project.id)
+                      .map((shell) => shell.avatar ?? specFor(shell.title)),
+                  ),
+                ),
+              )
+            : Effect.succeed(input.avatar),
+        ),
+        Effect.flatMap((avatar) =>
           projects.update({
             commandId: CommandId.make(`bot-main-thread-record:${id}`),
             projectId: project.id,
             mainThreadId,
+            avatar,
           }),
         ),
         Effect.mapError(

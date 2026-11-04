@@ -3,6 +3,7 @@ import {
   CommandId,
   EventId,
   ProjectId,
+  type ProjectAvatar,
   type ProjectScript,
   ProviderInstanceId,
   ThreadId,
@@ -133,7 +134,9 @@ describe("planProjectCommand", () => {
       }),
     );
     assert.deepEqual(created.defaultModelSelection, modelSelection);
-    const update = (change: { avatar?: string | null; mainThreadId?: ThreadId | null }) =>
+    const fox = { hue: "tangerine", accessory: "rabbit", glow: "mint" } as const;
+    const owl = { hue: "grape", accessory: "phones", glow: "white" } as const;
+    const update = (change: { avatar?: ProjectAvatar | null; mainThreadId?: ThreadId | null }) =>
       payloadOf(
         plan(
           {
@@ -142,11 +145,11 @@ describe("planProjectCommand", () => {
             projectId,
             ...change,
           },
-          { project: row({ avatar: "pixel-fox", mainThreadId: ThreadId.make("thread-main") }) },
+          { project: row({ avatar: fox, mainThreadId: ThreadId.make("thread-main") }) },
         ),
       );
-    assert.deepInclude(update({ avatar: "pixel-owl", mainThreadId: ThreadId.make("thread-new") }), {
-      avatar: "pixel-owl",
+    assert.deepInclude(update({ avatar: owl, mainThreadId: ThreadId.make("thread-new") }), {
+      avatar: owl,
       mainThreadId: "thread-new",
     });
     assert.deepInclude(update({ avatar: null, mainThreadId: null }), {

@@ -149,9 +149,52 @@ export const ReceivedProjectIcon = ForwardCompatibleUnion(projectIconMembers, "k
   ),
 );
 
-/** A bot's avatar id; the avatar catalog lives in the clients. */
-export const ProjectAvatar = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
+export const BOT_AVATAR_HUES = [
+  "tomato",
+  "tangerine",
+  "butter",
+  "lime",
+  "mint",
+  "teal",
+  "sky",
+  "periwinkle",
+  "lavender",
+  "grape",
+  "bubblegum",
+  "rose",
+] as const;
+export const BOT_AVATAR_ACCESSORIES = [
+  "none",
+  "rabbit",
+  "antenna",
+  "handle",
+  "sprout",
+  "bow",
+  "phones",
+  "crown",
+] as const;
+export const BOT_AVATAR_GLOWS = ["mint", "cyan", "white"] as const;
+
+/** A bot's resolved Screenie look, stored so a rename keeps it. */
+export const ProjectAvatar = Schema.Struct({
+  hue: Schema.Literals(BOT_AVATAR_HUES),
+  accessory: Schema.Literals(BOT_AVATAR_ACCESSORIES),
+  glow: Schema.Literals(BOT_AVATAR_GLOWS),
+});
 export type ProjectAvatar = typeof ProjectAvatar.Type;
+
+const isProjectAvatar = Schema.is(ProjectAvatar);
+
+/** Anything but a current avatar, such as a pre-Screenie avatar id, reads as no avatar. */
+export const ReceivedProjectAvatar = Schema.Unknown.pipe(
+  Schema.decodeTo(
+    Schema.NullOr(ProjectAvatar),
+    SchemaTransformation.transform<ProjectAvatar | null, unknown>({
+      decode: (avatar) => (isProjectAvatar(avatar) ? avatar : null),
+      encode: (avatar) => avatar,
+    }),
+  ),
+);
 
 export const Project = Schema.Struct({
   id: ProjectId,
@@ -167,7 +210,7 @@ export const Project = Schema.Struct({
   scripts: Schema.Array(ProjectScript),
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
-  avatar: Schema.optional(Schema.NullOr(ProjectAvatar)),
+  avatar: Schema.optional(ReceivedProjectAvatar),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

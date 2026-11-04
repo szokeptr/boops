@@ -3,10 +3,13 @@ import * as Schema from "effect/Schema";
 
 import { ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ModelSelection } from "./modelSelection.ts";
+import { ProjectAvatar } from "./project.ts";
 
 export const BotCreateInput = Schema.Struct({
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
   modelSelection: ModelSelection,
+  /** The look picked while hatching; absent lets the server step away from sibling bots' looks. */
+  avatar: Schema.optional(ProjectAvatar),
 });
 export type BotCreateInput = typeof BotCreateInput.Type;
 

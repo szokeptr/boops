@@ -16,6 +16,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
@@ -51,8 +52,22 @@ export const ProjectRow = Schema.Struct({
 });
 export type ProjectRow = typeof ProjectRow.Type;
 
+const decodeStoredAvatar = Schema.decodeUnknownOption(Schema.fromJsonString(ProjectAvatar));
+
+// JSON text; an unreadable value, such as a pre-Screenie avatar id, reads as no avatar.
+const StoredAvatar = Schema.NullOr(Schema.String).pipe(
+  Schema.decodeTo(
+    Schema.NullOr(ProjectAvatar),
+    SchemaTransformation.transform<ProjectAvatar | null, string | null>({
+      decode: (text) => (text === null ? null : Option.getOrNull(decodeStoredAvatar(text))),
+      encode: (avatar) => (avatar === null ? null : JSON.stringify(avatar)),
+    }),
+  ),
+);
+
 const ProjectDbRow = Schema.Struct({
   ...ProjectRow.fields,
+  avatar: StoredAvatar,
   defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
   autoPull: Schema.BooleanFromBit,
   projectIcon: Schema.NullOr(Schema.fromJsonString(StoredProjectIcon)),
