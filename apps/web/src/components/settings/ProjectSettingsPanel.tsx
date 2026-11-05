@@ -32,6 +32,7 @@ import { useThreadShells, waitForProjectRemoval } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { openDeleteBotDialog, useBotArchive } from "../bots/BotLifecycle";
+import { BotConnectorsSection } from "../connectors/BotConnectorsSection";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -694,6 +695,13 @@ function ProjectDetail({
             </>
           ) : null}
         </SettingsSection>
+        {group.memberProjects.map((member) => (
+          <BotConnectorsSection
+            key={`${member.environmentId}:${member.id}`}
+            bot={member}
+            environmentLabel={group.memberProjects.length > 1 ? member.environmentLabel : null}
+          />
+        ))}
         <ProjectDefaultsSettings category="project" />
         {checkoutChoices}
         <SettingsSection title="Danger">
