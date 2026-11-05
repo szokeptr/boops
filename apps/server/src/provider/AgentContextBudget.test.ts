@@ -44,6 +44,7 @@ import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
 import { buildCodexAdditionalContext } from "./CodexDeveloperInstructions.ts";
 import { DocumentText } from "./DocumentText.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
+import * as Connectors from "../connectors/Connectors.ts";
 import budget from "./agentContextBudget.json" with { type: "json" };
 
 // Registration only stores tool definitions, so the handlers' services are never called.
@@ -58,6 +59,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(OrchestratorV2)({}),
   Layer.mock(PeerForwarding)({}),
   Layer.mock(PeerLinkRequests)({}),
+  Layer.mock(Connectors.Connectors)({ catalog: [] }),
   Layer.mock(PeerLinks)({}),
   Layer.mock(PreviewAutomationBroker)({}),
   Layer.mock(PreviewBrowser)({}),

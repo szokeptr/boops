@@ -1,5 +1,6 @@
 import {
   BotAutonomy,
+  ConnectorConnectionId,
   DEFAULT_BOT_AUTONOMY,
   type ApplicationProjectEvent,
   IsoDateTime,
@@ -49,6 +50,7 @@ export const ProjectRow = Schema.Struct({
   avatar: Schema.NullOr(ProjectAvatar),
   mainThreadId: Schema.NullOr(ThreadId),
   autonomy: BotAutonomy,
+  connectionIds: Schema.Array(ConnectorConnectionId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -75,6 +77,7 @@ const ProjectDbRow = Schema.Struct({
   autoPull: Schema.BooleanFromBit,
   projectIcon: Schema.NullOr(Schema.fromJsonString(StoredProjectIcon)),
   scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
+  connectionIds: Schema.fromJsonString(Schema.Array(ConnectorConnectionId)),
 });
 
 function toShell(row: ProjectRow): OrchestrationProjectShell {
@@ -94,6 +97,7 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
     avatar: row.avatar,
     mainThreadId: row.mainThreadId,
     autonomy: row.autonomy,
+    connectionIds: row.connectionIds,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -154,6 +158,7 @@ export const make = Effect.gen(function* () {
         avatar,
         main_thread_id AS "mainThreadId",
         autonomy,
+        connection_ids AS "connectionIds",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
         deleted_at AS "deletedAt"
@@ -189,6 +194,7 @@ export const make = Effect.gen(function* () {
             avatar,
             main_thread_id,
             autonomy,
+            connection_ids,
             created_at,
             updated_at,
             deleted_at
@@ -208,6 +214,7 @@ export const make = Effect.gen(function* () {
             ${encoded.avatar},
             ${encoded.mainThreadId},
             ${encoded.autonomy},
+            ${encoded.connectionIds},
             ${encoded.createdAt},
             ${encoded.updatedAt},
             ${encoded.deletedAt}
@@ -227,6 +234,7 @@ export const make = Effect.gen(function* () {
             avatar = excluded.avatar,
             main_thread_id = excluded.main_thread_id,
             autonomy = excluded.autonomy,
+            connection_ids = excluded.connection_ids,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at,
             deleted_at = excluded.deleted_at
@@ -280,6 +288,7 @@ export const make = Effect.gen(function* () {
           avatar: null,
           mainThreadId: null,
           autonomy: DEFAULT_BOT_AUTONOMY,
+          connectionIds: [],
           createdAt: payload.createdAt,
           updatedAt: payload.updatedAt,
           deletedAt: null,
@@ -315,6 +324,7 @@ export const make = Effect.gen(function* () {
         ...(payload.avatar === undefined ? {} : { avatar: payload.avatar }),
         ...(payload.mainThreadId === undefined ? {} : { mainThreadId: payload.mainThreadId }),
         ...(payload.autonomy === undefined ? {} : { autonomy: payload.autonomy }),
+        ...(payload.connectionIds === undefined ? {} : { connectionIds: payload.connectionIds }),
         updatedAt: payload.updatedAt,
       }).pipe(mapError("apply"));
     },

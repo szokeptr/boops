@@ -614,6 +614,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
       return command.parentThreadId;
     case "secret_request.record":
     case "link_request.record":
+    case "connection_request.record":
       return command.threadId;
     case "thread.fork":
     case "thread.merge_back":
@@ -8972,6 +8973,138 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   );
 
   /**
+   * Records or updates the card for a connector a bot asked the user to connect. Credentials go
+   * straight to the Connectors service and never through orchestration.
+   */
+  const dispatchConnectionRequestRecord = Effect.fn(
+    "orchestrationV2.dispatch.connectionRequestRecord",
+  )(function* (
+    command: Extract<
+      OrchestrationV2InternalCommand,
+      { readonly type: "connection_request.record" }
+    >,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const projection = yield* projectionStore
+      .getThreadRecords(
+        command.threadId,
+        ["runs", "nodes", "turnItems", "attempts", "providerTurns"],
+        { turnItemTypes: ["connection_request"], messageRoles: [] },
+      )
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    const fail = (cause: string) =>
+      new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause,
+      });
+    const run = projection.runs.find((candidate) => candidate.id === command.runId);
+    if (run === undefined) return yield* fail(`Run ${command.runId} was not found.`);
+    const existing = projection.turnItems.find((item) => item.id === command.turnItemId);
+    if (existing !== undefined && existing.type !== "connection_request") {
+      return yield* fail(`Turn item ${command.turnItemId} is not a connection request.`);
+    }
+    if (existing !== undefined && existing.runId !== command.runId) {
+      return yield* fail(`Connection request ${command.turnItemId} belongs to another run.`);
+    }
+    // As with link cards, only a new card needs a live run; an answer may land much later.
+    if (existing === undefined && run.rootNodeId !== command.nodeId) {
+      return yield* fail(`Node ${command.nodeId} is not the root of run ${command.runId}.`);
+    }
+    if (
+      existing === undefined &&
+      (!isActiveRun(run) || (yield* stopReachedRun(command, command.threadId, run.id)))
+    ) {
+      return yield* fail(`Run ${command.runId} is not active.`);
+    }
+    const now = yield* DateTime.now;
+    // Answered once; a retry records the card unchanged.
+    const unchanged =
+      existing !== undefined &&
+      (existing.connectionStatus !== "pending" || command.connectionStatus === "pending");
+    const pending = command.connectionStatus === "pending";
+    const {
+      type: _type,
+      commandId: _commandId,
+      turnItemId: _turnItemId,
+      wake,
+      ...fields
+    } = command;
+    const turnItem: OrchestrationV2TurnItem = unchanged
+      ? existing
+      : {
+          ...fields,
+          id: command.turnItemId,
+          ...(existing === undefined
+            ? {
+                providerThreadId: run.providerThreadId,
+                providerTurnId: providerTurnForRun(projection, run)?.id ?? null,
+              }
+            : {
+                nodeId: existing.nodeId,
+                providerThreadId: existing.providerThreadId,
+                providerTurnId: existing.providerTurnId,
+              }),
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: existing?.ordinal ?? (yield* nextTurnItemOrdinal(projection)),
+          status: pending
+            ? "waiting"
+            : command.connectionStatus === "connected"
+              ? "completed"
+              : command.connectionStatus === "failed"
+                ? "failed"
+                : "cancelled",
+          title: `Connect ${command.label}`,
+          startedAt: existing?.startedAt ?? now,
+          completedAt: pending ? null : now,
+          updatedAt: now,
+          type: "connection_request",
+        };
+    yield* emit(
+      events,
+      command,
+    )({
+      type: "turn-item.updated",
+      threadId: command.threadId,
+      runId: command.runId,
+      nodeId: existing?.nodeId ?? command.nodeId,
+      providerInstanceId: run.providerInstanceId,
+      occurredAt: now,
+      payload: turnItem,
+    });
+    if (
+      wake === undefined ||
+      unchanged ||
+      projection.thread.archivedAt !== null ||
+      projection.thread.deletedAt !== null
+    ) {
+      return;
+    }
+    yield* dispatchMessage(
+      {
+        type: "message.dispatch",
+        commandId: command.commandId,
+        threadId: command.threadId,
+        messageId: wake.messageId,
+        text: wake.text,
+        notification: wake.notification,
+        attachments: [],
+        dispatchMode: { type: "queue_after_active" },
+        createdBy: "agent",
+        creationSource: "server",
+      },
+      events,
+      effects,
+    );
+  });
+
+  /**
    * Closes the link cards still waiting for the user. Their agent stopped
    * waiting long ago, so nobody is woken: stopping or archiving the thread
    * means the user is done with it.
@@ -8985,13 +9118,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }) {
       const { turnItems } = yield* projectionStore
         .getThreadRecords(input.threadId, ["turnItems"], {
-          turnItemTypes: ["link_request"],
+          turnItemTypes: ["link_request", "connection_request"],
           turnItemStatuses: ["waiting"],
           messageRoles: [],
         })
         .pipe(mapDispatchError(input.command));
       for (const item of turnItems) {
-        if (item.type !== "link_request" || item.linkStatus !== "pending") continue;
+        const payload =
+          item.type === "link_request" && item.linkStatus === "pending"
+            ? { ...item, linkStatus: "cancelled" as const }
+            : item.type === "connection_request" && item.connectionStatus === "pending"
+              ? { ...item, connectionStatus: "cancelled" as const }
+              : undefined;
+        if (payload === undefined) continue;
         yield* emit(
           input.events,
           input.command,
@@ -9002,9 +9141,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
           occurredAt: input.now,
           payload: {
-            ...item,
+            ...payload,
             status: "cancelled",
-            linkStatus: "cancelled",
             completedAt: input.now,
             updatedAt: input.now,
           },
@@ -13462,6 +13600,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "link_request.record":
         yield* dispatchLinkRequestRecord(command, events, effects);
+        break;
+      case "connection_request.record":
+        yield* dispatchConnectionRequestRecord(command, events, effects);
         break;
       default:
         return yield* dispatchUnsupported(command);

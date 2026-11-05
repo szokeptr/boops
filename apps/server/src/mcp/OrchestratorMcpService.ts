@@ -954,6 +954,8 @@ function turnItemText(item: OrchestrationV2TurnItem): string | null {
       return item.linkStatus === "linked"
         ? `Linked ${item.linkedLabel ?? item.label ?? item.url ?? "an environment"} (${item.linkedAccess}).`
         : `Asked the user to link ${item.label ?? item.url ?? "an environment"}: ${item.linkStatus}.`;
+    case "connection_request":
+      return `Asked the user to connect ${item.label}: ${item.connectionStatus}.`;
     case "subagent":
       return item.result ?? item.progress ?? item.prompt;
     case "dynamic_tool":

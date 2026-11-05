@@ -41,6 +41,7 @@ import * as PeerForwarding from "./PeerForwarding.ts";
 import * as PeerLinks from "./PeerLinks.ts";
 import * as PeerLinkRequests from "./PeerLinkRequests.ts";
 import { descriptorOf, layerLinkingEnvironment, linkTo, servePeer } from "./PeerLinks.testkit.ts";
+import * as Connectors from "../connectors/Connectors.ts";
 
 const laptop = descriptorOf("environment-laptop", "Laptop");
 const box = descriptorOf("environment-box", "Box");
@@ -235,7 +236,12 @@ const serveBox = (seen: Ref.Ref<Seen>, linkSession: Ref.Ref<string>) =>
       Layer.provide(ServerSettings.layerTest()),
       Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
       Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
-      Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
+          Layer.mock(Connectors.Connectors)({ catalog: [] }),
+        ),
+      ),
       Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
     ),
   );
@@ -316,6 +322,7 @@ const makeLaptop = Effect.gen(function* () {
         ServerSettings.layerTest(),
         Layer.mock(RemoteDelegation.RemoteDelegation)({}),
         Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
+        Layer.mock(Connectors.Connectors)({ catalog: [] }),
       ),
     ),
     Layer.fresh,

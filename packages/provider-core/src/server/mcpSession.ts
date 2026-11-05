@@ -1,5 +1,16 @@
 import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 
+/**
+ * A remote MCP server the bot turned on (a Pocks connector). `url` is the T3 server's proxy for
+ * it, so `headers` carry the thread's T3 credential, never the third-party token.
+ */
+export interface McpConnectorServer {
+  /** Stable per connection and safe as a provider config key: `[a-z0-9_]`, at most 24 chars. */
+  readonly name: string;
+  readonly url: string;
+  readonly headers: Readonly<Record<string, string>>;
+}
+
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -11,7 +22,15 @@ export interface McpProviderSessionConfig {
   readonly browserToolsAvailable: boolean;
   readonly capabilities?: ReadonlySet<string>;
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
+  /** Refreshed at every turn start; adapters read it where they add `t3-code`. */
+  readonly connectors?: ReadonlyArray<McpConnectorServer>;
 }
+
+/** Changes when the connector set does, so adapters can tell a session needs it re-registered. */
+export const connectorServersKey = (
+  config: Pick<McpProviderSessionConfig, "connectors"> | undefined,
+): string =>
+  JSON.stringify((config?.connectors ?? []).map((server) => [server.name, server.url]).toSorted());
 
 export function withAgentDeviceEnvironment(
   base: NodeJS.ProcessEnv,

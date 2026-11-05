@@ -5,6 +5,7 @@ import {
   type Project,
   type ProjectCreatePayload,
   type ProjectUpdatePayload,
+  type ConnectorConnectionId,
   type ProjectSnapshot,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -43,6 +44,8 @@ export interface ProjectCreateInput extends ProjectCreatePayload {
 export interface ProjectUpdateInput extends ProjectUpdatePayload {
   readonly commandId: CommandId;
   readonly projectId: ProjectId;
+  /** Server-only: the Connectors service is the one writer, so agents and clients can't set it. */
+  readonly connectionIds?: ReadonlyArray<ConnectorConnectionId>;
 }
 
 export interface ProjectBootstrapInput extends ProjectCreateInput {}
@@ -184,6 +187,7 @@ export const make = Effect.gen(function* () {
     avatar: row.avatar,
     mainThreadId: row.mainThreadId,
     autonomy: row.autonomy,
+    connectionIds: row.connectionIds,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -399,6 +403,7 @@ export const make = Effect.gen(function* () {
         ...(input.avatar === undefined ? {} : { avatar: input.avatar }),
         ...(input.mainThreadId === undefined ? {} : { mainThreadId: input.mainThreadId }),
         ...(input.autonomy === undefined ? {} : { autonomy: input.autonomy }),
+        ...(input.connectionIds === undefined ? {} : { connectionIds: input.connectionIds }),
       });
       if (workspaceRoot !== previousRoot) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);

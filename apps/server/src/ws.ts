@@ -3,6 +3,7 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
+import * as Connectors from "./connectors/Connectors.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 
 import * as DateTime from "effect/DateTime";
@@ -1467,6 +1468,7 @@ export const layerWsRpc = (
       const secretResolver = yield* SecretResolver.SecretResolver;
       const peerLinks = yield* PeerLinks.PeerLinks;
       const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
+      const connectors = yield* Connectors.Connectors;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -2628,6 +2630,24 @@ export const layerWsRpc = (
           Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
             Effect.andThen(peerLinkRequests.answer(input)),
           ),
+        [WS_METHODS.connectorsListCatalog]: () => Effect.succeed({ entries: connectors.catalog }),
+        [WS_METHODS.connectorsList]: () => connectors.list,
+        [WS_METHODS.connectorsSubscribe]: () => connectors.subscribe,
+        [WS_METHODS.connectorsDetectAuth]: ({ url }) => connectors.detectAuth(url),
+        [WS_METHODS.connectorsStartOAuth]: (input) => connectors.startOAuth(input),
+        [WS_METHODS.connectorsAddConnection]: (input) => connectors.addConnection(input),
+        [WS_METHODS.connectorsRename]: (input) => connectors.rename(input),
+        [WS_METHODS.connectorsReauthenticate]: (input) => connectors.reauthenticate(input),
+        [WS_METHODS.connectorsDisconnect]: ({ connectionId }) =>
+          connectors.disconnect(connectionId),
+        [WS_METHODS.connectorsRemove]: ({ connectionId }) => connectors.remove(connectionId),
+        [WS_METHODS.connectorsTest]: ({ connectionId }) =>
+          connectors.test(connectionId).pipe(Effect.map((toolCount) => ({ toolCount }))),
+        [WS_METHODS.connectorsSetBotConnection]: (input) => connectors.setBotConnection(input),
+        [WS_METHODS.connectorsAnswerRequest]: (input) =>
+          Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+            Effect.andThen(connectors.answerRequest(input)),
+          ),
         [WS_METHODS.serverUpdateSettings]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(function* ({ patch, providerInstanceMutation }) {
@@ -3433,6 +3453,7 @@ export const layer = Layer.unwrap(
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
+    const connectors = yield* Connectors.Connectors;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -3522,6 +3543,7 @@ export const layer = Layer.unwrap(
               ),
               Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
               Layer.provide(Layer.succeed(PeerLinkRequests.PeerLinkRequests, peerLinkRequests)),
+              Layer.provide(Layer.succeed(Connectors.Connectors, connectors)),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(
                   Layer.provide(

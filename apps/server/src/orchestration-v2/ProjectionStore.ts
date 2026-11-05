@@ -1493,7 +1493,12 @@ function pendingRuntimeRequestSummary(
 function secretRequestAsPendingInput(
   item: OrchestrationV2TurnItem | null,
 ): OrchestrationV2PendingRuntimeRequestSummary | null {
-  if ((item?.type !== "secret_request" && item?.type !== "link_request") || item.nodeId === null)
+  if (
+    (item?.type !== "secret_request" &&
+      item?.type !== "link_request" &&
+      item?.type !== "connection_request") ||
+    item.nodeId === null
+  )
     return null;
   return {
     id: RuntimeRequestId.make(item.id),
@@ -1513,8 +1518,12 @@ const waitsOnUser = (
   liveRunIds: ReadonlySet<RunId>,
   latestUserAuthoredMessageAt: DateTime.Utc | null,
 ) =>
-  (item.type === "link_request" && linkCardStillAsks(item, latestUserAuthoredMessageAt)) ||
+  (isAskWithoutWaitCard(item) && linkCardStillAsks(item, latestUserAuthoredMessageAt)) ||
   (item.type === "secret_request" && item.runId !== null && liveRunIds.has(item.runId));
+
+/** Link and connection cards: the agent asked without waiting. */
+const isAskWithoutWaitCard = (item: OrchestrationV2TurnItem) =>
+  item.type === "link_request" || item.type === "connection_request";
 
 const linkCardStillAsks = (
   item: OrchestrationV2TurnItem,
@@ -6235,7 +6244,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 FROM orchestration_v2_projection_turn_items link
                   INDEXED BY orchestration_v2_projection_turn_items_waiting_link_idx
                 WHERE link.thread_id = t.thread_id
-                  AND link.type = 'link_request' AND link.status = 'waiting'
+                  AND link.type IN ('link_request', 'connection_request') AND link.status = 'waiting'
                 ORDER BY link.updated_at DESC, link.turn_item_id DESC
                 LIMIT 1
               ) AS pending_link_request_payload_json,
@@ -6544,7 +6553,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 SELECT 1 FROM orchestration_v2_projection_turn_items link
                   INDEXED BY orchestration_v2_projection_turn_items_waiting_link_idx
                 WHERE link.thread_id = t.thread_id
-                  AND link.type = 'link_request' AND link.status = 'waiting'
+                  AND link.type IN ('link_request', 'connection_request') AND link.status = 'waiting'
                   -- linkCardStillAsks: once the user writes after the card, it stops asking.
                   AND NOT EXISTS (
                     SELECT 1 FROM orchestration_v2_projection_messages message
@@ -6735,7 +6744,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           .filter((item) => item !== null)
           .filter(
             (item) =>
-              item.type !== "link_request" || linkCardStillAsks(item, latestUserAuthoredMessageAt),
+              !isAskWithoutWaitCard(item) || linkCardStillAsks(item, latestUserAuthoredMessageAt),
           );
         let pendingRuntimeRequest =
           row.pending_request_payload_json !== null
@@ -7179,7 +7188,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             OR EXISTS (
               SELECT 1 FROM orchestration_v2_projection_turn_items link_request
               WHERE link_request.thread_id = t.thread_id
-                AND link_request.type = 'link_request' AND link_request.status = 'waiting'
+                AND link_request.type IN ('link_request', 'connection_request')
+                AND link_request.status = 'waiting'
             )
             OR EXISTS (
               SELECT 1 FROM orchestration_v2_projection_provider_threads provider_thread

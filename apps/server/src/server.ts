@@ -145,6 +145,8 @@ import * as RelayDeliveryProof from "./scheduledTasks/RelayDeliveryProof.ts";
 import * as HeldHooksWaker from "./relay/HeldHooksWaker.ts";
 import * as McpOAuth from "./auth/McpOAuth.ts";
 import * as McpOAuthHttp from "./auth/mcpOAuthHttp.ts";
+import * as Connectors from "./connectors/Connectors.ts";
+import * as ConnectorHttp from "./connectors/ConnectorHttp.ts";
 import {
   relayHookBaseUrl,
   ScheduledTaskWebhookOrigin,
@@ -773,6 +775,8 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerHttp.layerOtlpTracesProxyRoute,
     ServerHttp.layerAssetRoute,
     ServerHttp.layerAttachmentUploadRoute,
+    ConnectorHttp.layerCallbackRoute,
+    ConnectorHttp.layerProxyRoute,
     GuestHttp.layer,
     DeviceHubProxy.layer,
     ServerBrowserStream.routeLayer,
@@ -795,6 +799,8 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(RemoteDelegation.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
   // Links agents ask for: shown in a thread from /mcp, answered over WebSocket.
   Layer.provide(PeerLinkRequests.layer),
+  // Connectors: from /mcp (cards, the proxy), WebSocket (the user) and the OAuth callback.
+  Layer.provide(Connectors.layer),
   // Share the service so HTTP/WS clients single-flight reads and invalidate each other's cached patches.
   Layer.provide(layerPullRequestService),
   // The same activity instance RunExecutionService reports to, by layer memoization.
