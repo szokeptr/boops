@@ -19,6 +19,7 @@ export type ThreadActionMenuId =
   | "unsnooze"
   | "rename"
   | "regenerate-title"
+  | "fresh-session"
   | "mark-unread"
   | "share-guest"
   | "copy"
@@ -64,6 +65,8 @@ export interface ThreadActionMenuState {
   readonly canShareWithGuest?: boolean;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
+  /** The thread holds a provider session to save from and end. */
+  readonly hasSession?: boolean;
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
@@ -145,6 +148,9 @@ export function buildThreadActionMenuItems(
             disabled: state.isRegeneratingTitle,
           },
         ]
+      : []),
+    ...(state.hasSession
+      ? [{ id: "fresh-session" as const, label: "Start a fresh session", icon: "refresh-cw" }]
       : []),
     { id: "mark-unread", label: "Mark unread", icon: "mail-open" },
     ...(state.canShareWithGuest

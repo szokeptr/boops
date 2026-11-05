@@ -926,7 +926,8 @@ export function applyToProjection(
         ...base,
         thread:
           event.payload.appThreadId === base.thread.id &&
-          !isQueuedProviderThreadPlaceholder(event.payload)
+          !isQueuedProviderThreadPlaceholder(event.payload) &&
+          !(base.thread.retiredProviderThreadIds ?? []).includes(event.payload.id)
             ? {
                 ...base.thread,
                 activeProviderThreadId: event.payload.id,
@@ -2402,8 +2403,15 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 LIMIT 1
               `;
                 const threadRow = threadRows[0];
-                if (threadRow !== undefined) {
-                  const thread = yield* decodeThreadPayload(threadRow.payload_json);
+                const thread =
+                  threadRow === undefined
+                    ? undefined
+                    : yield* decodeThreadPayload(threadRow.payload_json);
+                // A late update from a rolled-over session must not make it current again.
+                if (
+                  thread !== undefined &&
+                  !(thread.retiredProviderThreadIds ?? []).includes(event.payload.id)
+                ) {
                   const updatedThread = {
                     ...thread,
                     activeProviderThreadId: event.payload.id,

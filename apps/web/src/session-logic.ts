@@ -302,6 +302,7 @@ const STANDALONE_V2_ITEM_TYPES = new Set<OrchestrationV2ProjectedTurnItem["item"
   "secret_request",
   "link_request",
   "subagent",
+  "session_rollover",
 ]);
 
 const PERSISTENT_RESOURCE_V2_ITEM_TYPES = new Set<OrchestrationV2TurnItem["type"]>([

@@ -17,6 +17,12 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { type SetStateAction } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toastManager } from "../ui/toast";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import { threadEnvironment } from "../../state/threads";
+import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { resolveAppModelSelectionForInstance } from "../../modelSelection";
 import { resolveNewDraftStartFromOrigin } from "../../lib/chatThreadActions";
 import { type DraftThreadEnvMode, useComposerDraftStore } from "../../composerDraftStore";
@@ -51,6 +57,8 @@ interface ComposerSelectionInput {
     SetStateAction<Record<string, boolean>>
   >;
   readonly scheduleComposerFocus: () => void;
+  /** A bot's conversation switches model through a fresh session, on any provider. */
+  readonly isBotConversation: boolean;
 }
 
 /**
@@ -68,7 +76,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     settings,
     providerStatuses,
     lockedProvider,
-    supportsProviderSwitchingViaHandoff,
+    supportsProviderSwitchingViaHandoff: supportsHandoff,
     multipleModelSelections,
     runtimeMode,
     interactionMode,
@@ -78,7 +86,13 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     setPendingServerThreadEnvModeEntry,
     setPendingServerThreadStartFromOriginByThreadId,
     scheduleComposerFocus,
+    isBotConversation,
   } = input;
+  // A bot's switch starts a fresh session, so it needs no handoff support.
+  const supportsProviderSwitchingViaHandoff = supportsHandoff || isBotConversation;
+  const startFreshSession = useOrchestrationCommand(threadEnvironment.startFreshSession, {
+    reportFailure: false,
+  });
   const navigate = useNavigate();
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
@@ -211,6 +225,26 @@ export function useComposerSelection(input: ComposerSelectionInput) {
       { explicit: true, replaceOptions: true },
     );
     setStickyComposerModelSelection(nextModelSelection);
+    if (
+      isBotConversation &&
+      activeThread.activeProviderThreadId !== null &&
+      (nextModelSelection.instanceId !== activeThread.modelSelection.instanceId ||
+        nextModelSelection.model !== activeThread.modelSelection.model)
+    ) {
+      void startFreshSession({
+        environmentId: activeThread.environmentId,
+        input: { threadId: activeThread.id, modelSelection: nextModelSelection },
+      }).then((result) => {
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add({
+            type: "error",
+            title: "Could not switch the bot's model",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          });
+        }
+      });
+    }
     if (options?.focusComposer !== false) scheduleComposerFocus();
   };
   const onProviderModelSelectStable = useStableCallback(onProviderModelSelect);
