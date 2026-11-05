@@ -85,7 +85,9 @@ import { ChatGptSharingStatus } from "./ChatGptSharingStatus";
 import { environmentCatalog } from "../../connection/catalog";
 import { useEnvironmentQuery } from "../../state/query";
 import { scopedThreadKey } from "../../lib/scopedEntities";
-import { useThreadReportedModelSelection } from "../../state/entities";
+import { useProject, useThreadReportedModelSelection } from "../../state/entities";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { botAccessLimitLabel } from "@t3tools/client-runtime/state/bot-list";
 import {
   setComposerDraftText,
   updateComposerDraftSettings,
@@ -307,6 +309,8 @@ type ThreadSettingsSessionValue = {
   readonly setManageHidden: (value: boolean) => void;
   readonly runtimeMode: RuntimeMode;
   readonly runtimeModeChoices: ReadonlyArray<RuntimeModeChoice>;
+  /** The bot's own limit, which the Runtime row names instead of the mode when it is narrower. */
+  readonly accessLimitLabel: string | null;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
   readonly displayedDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
   readonly promptTraits: ReturnType<typeof getPromptControlledTraits>;
@@ -521,6 +525,11 @@ function ThreadSettingsSessionProvider(
     props.runtimeMode,
     runtimeModeChoices,
   );
+  const project = useProject(
+    props.environmentId && props.projectId
+      ? scopeProjectRef(props.environmentId, props.projectId)
+      : null,
+  );
 
   const hasLegacyModels = props.providerGroups.some((group) =>
     group.models.some((model) => model.isLegacy),
@@ -616,6 +625,7 @@ function ThreadSettingsSessionProvider(
     pendingHiddenKeys,
     runtimeMode: compatibleRuntimeMode,
     runtimeModeChoices,
+    accessLimitLabel: botAccessLimitLabel(project?.autonomy, compatibleRuntimeMode),
     onUpdateRuntimeMode: props.onUpdateRuntimeMode,
     displayedDescriptors,
     promptTraits,
@@ -898,6 +908,7 @@ function ThreadSettingsOptionsItem(props: {
             isLast
             label="Runtime"
             value={
+              session.accessLimitLabel ??
               session.runtimeModeChoices.find((choice) => choice.mode === session.runtimeMode)
                 ?.label
             }

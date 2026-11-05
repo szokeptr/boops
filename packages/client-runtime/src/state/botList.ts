@@ -1,8 +1,10 @@
 import {
   botMainThreadId,
+  type BotAutonomy,
   type EnvironmentId,
   type ProjectAvatar,
   type ProjectId,
+  type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -248,4 +250,15 @@ export function resolveBotMainThreadId(
   threads: ReadonlyArray<EnvironmentThreadShell>,
 ): ThreadId | null {
   return botMainThreadId(project, botThreads(project, threads));
+}
+
+/**
+ * The limit a home-folder bot really runs under, which the thread's runtime mode alone
+ * overstates. Supervised threads keep asking either way, so their label stays true.
+ */
+export function botAccessLimitLabel(
+  autonomy: BotAutonomy | undefined,
+  runtimeMode: RuntimeMode,
+): string | null {
+  return autonomy === "home-folder" && runtimeMode !== "approval-required" ? "Home folder" : null;
 }
