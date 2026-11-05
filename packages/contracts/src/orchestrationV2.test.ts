@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 
 import { NodeId, RunAttemptId, TrimmedNonEmptyString } from "./index.ts";
 import {
+  isEditableSentMessage,
   latestProviderTurnForAttempt,
   OrchestrationV2ProviderCapabilities,
   OrchestrationV2ProviderThread,
@@ -637,5 +638,28 @@ describe("latestProviderTurnForAttempt", () => {
     ];
     expect(latestProviderTurnForAttempt(turns, RunAttemptId.make("goal-attempt"))?.id).toBe("last");
     expect(latestProviderTurnForAttempt(turns, null)).toBeUndefined();
+  });
+});
+
+describe("isEditableSentMessage", () => {
+  const typed = {
+    role: "user",
+    runId: "run:1",
+    createdBy: "user",
+    creationSource: "web",
+  } as const;
+  it.each([
+    ["a message typed on web", typed, true],
+    ["a message typed on mobile", { ...typed, creationSource: "mobile" }, true],
+    ["a message not sent yet", { ...typed, runId: null }, false],
+    ["an assistant reply", { ...typed, role: "assistant" }, false],
+    ["a hatching kickoff", { ...typed, createdBy: "system", creationSource: "server" }, false],
+    ["a routine prompt", { ...typed, routine: { name: "Daily" } }, false],
+    ["another bot's message", { ...typed, senderThreadId: "thread:2" }, false],
+    ["a parent bot's brief", { ...typed, context: { bot: { name: "Parent" } } }, false],
+    ["a guest's message", { ...typed, context: { guest: { name: "Ann" } } }, false],
+    ["a message sent through MCP", { ...typed, creationSource: "mcp" }, false],
+  ] as const)("%s → %s", (_name, message, editable) => {
+    expect(isEditableSentMessage(message)).toBe(editable);
   });
 });

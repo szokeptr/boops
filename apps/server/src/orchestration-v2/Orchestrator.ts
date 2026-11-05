@@ -24,7 +24,7 @@ import {
   CommandId,
   type GuestMessageId,
   isCompactionCommandMessage,
-  isUserTypedMessage,
+  isEditableSentMessage,
   isOrchestrationV2WorkActive,
   isProviderNativeSubagentThread,
   MessageId,
@@ -4571,7 +4571,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       message === undefined ||
       editedRun === undefined ||
       editedRun.status === "rolled_back" ||
-      !isUserTypedMessage(message)
+      !isEditableSentMessage(message)
     ) {
       return yield* refuse("Only messages you sent can be edited.");
     }

@@ -1782,6 +1782,29 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
   const sendAppMessageStable = useStableCallback(sendAppMessage);
+  const editSentMessage = useOrchestrationCommand(threadEnvironment.editSentMessage, {
+    reportFailure: false,
+  });
+  const editMessage = async (messageId: MessageId, text: string) => {
+    if (!isServerThread || activeThreadId === null) return false;
+    setThreadError(activeThreadId, null);
+    const result = await editSentMessage({
+      environmentId,
+      input: { threadId: activeThreadId, messageId, text },
+    });
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThreadId,
+          error instanceof Error ? error.message : "Could not send the edited message.",
+        );
+      }
+      return false;
+    }
+    return true;
+  };
+  const editMessageStable = useStableCallback(editMessage);
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
 
   const {
@@ -3212,6 +3235,9 @@ export default function ChatView(props: ChatViewProps) {
                   announceTurnStatus={!isProviderSubagent}
                   // A fork would promote the side chat.
                   {...(embedded ? {} : { onForkFromRun: onForkFromRunStable })}
+                  {...(embedded || isProviderSubagent || !canOperateThread
+                    ? {}
+                    : { onEditMessage: editMessageStable })}
                   onOpenThread={onOpenRelatedThreadStable}
                   parentThreadLink={parentThreadLink}
                   workflowOpening={workflowOpening}

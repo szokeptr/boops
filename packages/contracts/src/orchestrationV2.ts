@@ -592,6 +592,7 @@ export function idleCompactionOf(
 
 interface EditableMessageFields {
   readonly role: string;
+  readonly runId: string | null;
   readonly createdBy?: OrchestrationV2Actor | undefined;
   readonly creationSource?: OrchestrationV2CreationSource | undefined;
   readonly routine?: unknown;
@@ -599,10 +600,11 @@ interface EditableMessageFields {
   readonly context?: { readonly guest?: unknown; readonly bot?: unknown } | undefined;
 }
 
-/** A message the user typed here; routines, kickoffs, other bots and guests keep their words. */
-export function isUserTypedMessage(message: EditableMessageFields): boolean {
+/** A sent message the user typed; routines, kickoffs, other bots and guests keep their words. */
+export function isEditableSentMessage(message: EditableMessageFields): boolean {
   return (
     message.role === "user" &&
+    message.runId !== null &&
     message.createdBy === "user" &&
     (message.creationSource === "web" || message.creationSource === "mobile") &&
     message.routine === undefined &&
