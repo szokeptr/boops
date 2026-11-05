@@ -62,7 +62,8 @@ export const CONNECTOR_CATALOG: ReadonlyArray<ConnectorCatalogEntry> = [
     docsUrl: workspaceDocs("gmail"),
     icon: "gmail_2020q4",
     apis: "Gmail API and Gmail MCP API",
-    scopes: ["gmail.readonly", "gmail.compose"],
+    // Google suggests gmail.readonly; the label, trash and spam tools need gmail.modify.
+    scopes: ["gmail.modify", "gmail.compose"],
   }),
   google({
     id: "google-calendar",
