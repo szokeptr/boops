@@ -30,7 +30,7 @@ const bot = {
 };
 
 describe("DeleteBotDialog", () => {
-  it("deletes only once the bot's name is typed, keeping its folder unless asked", async () => {
+  it("deletes only once the bot's name is typed, keeping its folder by default", async () => {
     state.setup();
     await using screen = await render(<DeleteBotDialogHost />);
 
@@ -47,13 +47,18 @@ describe("DeleteBotDialog", () => {
       environmentId: bot.environmentId,
       input: { projectId: bot.projectId },
     });
+  });
+
+  it("removes the home folder only when its checkbox is ticked", async () => {
+    state.setup();
+    await using screen = await render(<DeleteBotDialogHost />);
 
     await act(() => openDeleteBotDialog(bot));
     await userEvent.fill(screen.getByLabelText("Type Ledger to confirm"), "Ledger");
-    await userEvent.click(screen.getByRole("checkbox"));
+    await userEvent.click(screen.getByText("Also delete its home folder"));
     await userEvent.type(screen.getByLabelText("Type Ledger to confirm"), "{Enter}");
-    await vi.waitFor(() => expect(state.deleteBot).toHaveBeenCalledTimes(2));
-    expect(state.deleteBot).toHaveBeenLastCalledWith({
+    await vi.waitFor(() => expect(state.deleteBot).toHaveBeenCalledOnce());
+    expect(state.deleteBot).toHaveBeenCalledWith({
       environmentId: bot.environmentId,
       input: { projectId: bot.projectId, removeHomeFolder: true },
     });
