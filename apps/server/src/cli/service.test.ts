@@ -130,7 +130,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
     }),
   );
 
-  it.effect("protect refuses root before creating any T3 directories", () =>
+  it.effect("protect refuses root before creating any Boops directories", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const parent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-cli-test-" });
@@ -193,7 +193,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
             ),
           ),
         );
-        expect(output).toContain(`t3@${packageJson.version}`);
+        expect(output).toContain(`boops@${packageJson.version}`);
         expect(output).toContain(script);
         expect(installOptions).toEqual([]);
       }),
@@ -239,7 +239,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
         ),
       );
       expect(uninstalls).toEqual(input.removed);
-      expect(output).toContain(input.otherHome ? "another T3 home" : "Removed");
+      expect(output).toContain(input.otherHome ? "another Boops home" : "Removed");
     }),
   );
 });

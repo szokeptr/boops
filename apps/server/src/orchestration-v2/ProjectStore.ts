@@ -49,6 +49,8 @@ export const ProjectRow = Schema.Struct({
   avatar: Schema.NullOr(ProjectAvatar),
   mainThreadId: Schema.NullOr(ThreadId),
   autonomy: BotAutonomy,
+  parentBotProjectId: Schema.NullOr(ProjectId),
+  canCreateBotsWithoutAsking: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -73,6 +75,7 @@ const ProjectDbRow = Schema.Struct({
   avatar: StoredAvatar,
   defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
   autoPull: Schema.BooleanFromBit,
+  canCreateBotsWithoutAsking: Schema.BooleanFromBit,
   projectIcon: Schema.NullOr(Schema.fromJsonString(StoredProjectIcon)),
   scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
 });
@@ -94,6 +97,8 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
     avatar: row.avatar,
     mainThreadId: row.mainThreadId,
     autonomy: row.autonomy,
+    parentBotProjectId: row.parentBotProjectId,
+    canCreateBotsWithoutAsking: row.canCreateBotsWithoutAsking,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -123,7 +128,7 @@ export class ProjectStoreV2 extends Context.Service<
       readonly projectIds?: ReadonlyArray<ProjectId>;
     }) => Effect.Effect<ReadonlyArray<OrchestrationProjectShell>, ProjectStoreV2Error>;
   }
->()("t3/orchestration-v2/ProjectStore/ProjectStoreV2") {}
+>()("boops/orchestration-v2/ProjectStore/ProjectStoreV2") {}
 
 /** @public */
 export const make = Effect.gen(function* () {
@@ -154,6 +159,8 @@ export const make = Effect.gen(function* () {
         avatar,
         main_thread_id AS "mainThreadId",
         autonomy,
+        parent_bot_project_id AS "parentBotProjectId",
+        can_create_bots_without_asking AS "canCreateBotsWithoutAsking",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
         deleted_at AS "deletedAt"
@@ -189,6 +196,8 @@ export const make = Effect.gen(function* () {
             avatar,
             main_thread_id,
             autonomy,
+            parent_bot_project_id,
+            can_create_bots_without_asking,
             created_at,
             updated_at,
             deleted_at
@@ -208,6 +217,8 @@ export const make = Effect.gen(function* () {
             ${encoded.avatar},
             ${encoded.mainThreadId},
             ${encoded.autonomy},
+            ${encoded.parentBotProjectId},
+            ${encoded.canCreateBotsWithoutAsking},
             ${encoded.createdAt},
             ${encoded.updatedAt},
             ${encoded.deletedAt}
@@ -227,6 +238,8 @@ export const make = Effect.gen(function* () {
             avatar = excluded.avatar,
             main_thread_id = excluded.main_thread_id,
             autonomy = excluded.autonomy,
+            parent_bot_project_id = excluded.parent_bot_project_id,
+            can_create_bots_without_asking = excluded.can_create_bots_without_asking,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at,
             deleted_at = excluded.deleted_at
@@ -280,6 +293,8 @@ export const make = Effect.gen(function* () {
           avatar: null,
           mainThreadId: null,
           autonomy: DEFAULT_BOT_AUTONOMY,
+          parentBotProjectId: null,
+          canCreateBotsWithoutAsking: false,
           createdAt: payload.createdAt,
           updatedAt: payload.updatedAt,
           deletedAt: null,
@@ -315,6 +330,12 @@ export const make = Effect.gen(function* () {
         ...(payload.avatar === undefined ? {} : { avatar: payload.avatar }),
         ...(payload.mainThreadId === undefined ? {} : { mainThreadId: payload.mainThreadId }),
         ...(payload.autonomy === undefined ? {} : { autonomy: payload.autonomy }),
+        ...(payload.parentBotProjectId === undefined
+          ? {}
+          : { parentBotProjectId: payload.parentBotProjectId }),
+        ...(payload.canCreateBotsWithoutAsking === undefined
+          ? {}
+          : { canCreateBotsWithoutAsking: payload.canCreateBotsWithoutAsking }),
         updatedAt: payload.updatedAt,
       }).pipe(mapError("apply"));
     },

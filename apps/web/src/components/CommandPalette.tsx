@@ -65,6 +65,7 @@ import {
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
+  RefreshCwIcon,
   RotateCcwIcon,
   SettingsIcon,
   MonitorIcon,
@@ -441,6 +442,9 @@ function OpenCommandPaletteDialog(props: {
     reportDefect: false,
   });
   const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone, {
+    reportFailure: false,
+  });
+  const startFreshSession = useAtomCommand(threadEnvironment.startFreshSession, {
     reportFailure: false,
   });
   const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, {
@@ -1363,6 +1367,25 @@ function OpenCommandPaletteDialog(props: {
       icon: <UserPlusIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
         openGuestShareDialog(threadRef);
+      },
+    });
+  }
+
+  if (activeThread !== null && activeThread.activeProviderThreadId !== null) {
+    const thread = activeThread;
+    actionItems.push({
+      kind: "action",
+      value: "action:start-fresh-session",
+      searchTerms: ["fresh", "new", "session", "rollover", "context", "memory", "notes"],
+      title: "Start a fresh session",
+      description: "Saves the bot's notes, then the next turn starts clean",
+      icon: <RefreshCwIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        const result = await startFreshSession({
+          environmentId: thread.environmentId,
+          input: { threadId: thread.id },
+        });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       },
     });
   }

@@ -220,7 +220,7 @@ export interface OrchestratorMcpServiceShape {
 export class OrchestratorMcpService extends Context.Service<
   OrchestratorMcpService,
   OrchestratorMcpServiceShape
->()("t3/mcp/OrchestratorMcpService") {}
+>()("boops/mcp/OrchestratorMcpService") {}
 
 const isThreadManagementError = Schema.is(ThreadManagementService.ThreadManagementError);
 
@@ -940,6 +940,8 @@ function turnItemText(item: OrchestrationV2TurnItem): string | null {
       return item.message;
     case "error":
       return item.failure.message;
+    case "session_rollover":
+      return "Started a fresh provider session.";
     case "compaction":
       return item.summary ?? null;
     case "handoff":
@@ -1166,7 +1168,7 @@ const make = Effect.gen(function* () {
         : Effect.fail(
             failure(
               "target_required",
-              "Pass projectId: this MCP client is not running inside a T3 thread.",
+              "Pass projectId: this MCP client is not running inside a Boops thread.",
             ),
           );
 
@@ -1858,7 +1860,7 @@ const make = Effect.gen(function* () {
       if (parent === undefined) {
         return yield* failure(
           "target_required",
-          "Pass threadId: this MCP client is not running inside a T3 thread.",
+          "Pass threadId: this MCP client is not running inside a Boops thread.",
         );
       }
       return parent.thread;

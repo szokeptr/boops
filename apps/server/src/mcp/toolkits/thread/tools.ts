@@ -237,6 +237,15 @@ const ScheduledTaskRunTool = Tool.make("run_scheduled_task_now", {
   .annotate(Tool.Destructive, true)
   .annotate(Tool.OpenWorld, true);
 
+const StartFreshSessionTool = Tool.make("start_fresh_session", {
+  description:
+    "End your provider session when this turn ends; your next turn starts a fresh one that re-reads PERSONA.md and memory/. Save what your notes are missing first. For a cluttered or confused context, or when the user asks.",
+  parameters: Tool.EmptyParams,
+  ...commandTool,
+})
+  .annotate(Tool.Title, "Start a fresh session")
+  .annotate(Tool.Destructive, false);
+
 export const ThreadToolkit = Toolkit.make(
   ScheduledTaskRunTool,
   ThreadSearchTool,
@@ -245,4 +254,5 @@ export const ThreadToolkit = Toolkit.make(
   ThreadOrganizeTool,
   PendingRequestTool,
   QueueTool,
+  StartFreshSessionTool,
 );

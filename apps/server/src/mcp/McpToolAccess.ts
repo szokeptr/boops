@@ -20,7 +20,9 @@ import {
   DispatchModeLimit,
   type DispatchModeRefusal,
 } from "../orchestration-v2/DispatchModeLimit.ts";
+import { assertBotsMayTalk, type BotFamilyError } from "../bots/botFamily.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
+import * as ProjectService from "../project/ProjectService.ts";
 import { assertNotLinked, assertSameLink, callerLinkOrigin } from "./linkOrigin.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
@@ -181,6 +183,8 @@ export const writesThreads = <P, A, E, R>(
     (params: P) =>
       Effect.gen(function* () {
         const caller = yield* writingCaller;
+        // Optional so tool tests build without it; the server has it, as the project toolkit needs it.
+        const projects = yield* Effect.serviceOption(ProjectService.ProjectService);
         for (const threadId of threads(params)) {
           if (threadId === undefined || threadId === caller.scope.thread?.threadId) continue;
           const target = yield* caller.threads
@@ -189,6 +193,12 @@ export const writesThreads = <P, A, E, R>(
           if (target !== null && target.deletedAt === null) {
             yield* assertTargetWithinLimits(caller.limits, target);
             yield* assertSameLink(caller, target);
+            if (caller.caller !== undefined && Option.isSome(projects)) {
+              yield* assertBotsMayTalk(caller.caller.projectId, target.projectId).pipe(
+                Effect.provideService(ProjectService.ProjectService, projects.value),
+                Effect.mapError(botFamilyFailure),
+              );
+            }
           }
         }
         // Modes can rise after this check; the orchestrator rechecks under lock and records refusal before handlers wrap errors.
@@ -206,6 +216,12 @@ export const writesThreads = <P, A, E, R>(
       }),
     () => writingCaller,
   );
+
+export const botFamilyFailure = (error: BotFamilyError) =>
+  new OrchestratorMcpFailure({
+    code: error.reason === "unrelated" ? "capability_denied" : "orchestration_error",
+    message: error.message,
+  });
 
 const escalationDenied = (refusal: DispatchModeRefusal) =>
   new OrchestratorMcpFailure({

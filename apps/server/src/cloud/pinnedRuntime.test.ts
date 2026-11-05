@@ -208,7 +208,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
         validate: () => Effect.die("must not validate an unverified archive"),
       }).pipe(Effect.flip);
       assert.instanceOf(error, PinnedRuntimeInstallError);
-      assert.equal(error.step, "verifying the t3 release archive checksum");
+      assert.equal(error.step, "verifying the boops release archive checksum");
       assert.deepEqual(commands, []);
       assert.deepEqual(yield* fs.readDirectory(path.join(baseDir, "runtime", "versions")), []);
     }),
@@ -328,7 +328,7 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
         });
 
       const withdrawn = yield* install("", []).pipe(Effect.flip);
-      assert.include(withdrawn.message, `finding ${archiveName} in the t3 release checksums`);
+      assert.include(withdrawn.message, `finding ${archiveName} in the boops release checksums`);
       const requests: string[] = [];
       assert.equal((yield* install(yield* validChecksums, requests)).entryPath, cached.entryPath);
       // Listed, so the cached runtime is used without downloading it again.
@@ -445,11 +445,11 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       yield* fs.makeDirectory(customBinDir);
       // Chained: the launcher reaches its runtime through a second link.
       yield* fs.symlink(path.join(versionsDir, "1.2.0", "t3"), path.join(baseDir, "alias-t3"));
-      yield* fs.symlink(path.join(baseDir, "alias-t3"), path.join(binDir, "t3"));
-      yield* fs.symlink(path.join(versionsDir, "1.2.5", "t3"), path.join(customBinDir, "t3"));
+      yield* fs.symlink(path.join(baseDir, "alias-t3"), path.join(binDir, "boops"));
+      yield* fs.symlink(path.join(versionsDir, "1.2.5", "t3"), path.join(customBinDir, "boops"));
       yield* fs.writeFileString(
         path.join(baseDir, "runtime", "launchers"),
-        `${path.join(customBinDir, "t3")}\n`,
+        `${path.join(customBinDir, "boops")}\n`,
       );
       yield* fs.writeFileString(
         path.join(baseDir, "runtime", "service-state.json"),
@@ -480,7 +480,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       // The launcher found on PATH is remembered for a service that cannot see it.
       assert.equal(
         yield* fs.readFileString(path.join(baseDir, "runtime", "launchers")),
-        `${path.join(customBinDir, "t3")}\n\n${path.join(binDir, "t3")}\n`,
+        `${path.join(customBinDir, "boops")}\n\n${path.join(binDir, "boops")}\n`,
       );
       assert.deepEqual((yield* fs.readDirectory(versionsDir)).toSorted(), [
         ".staging-abc",
@@ -511,7 +511,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       const { baseDir, versionsDir } = yield* setup(["1.0.0", "1.1.0"]);
       const binDir = path.join(baseDir, "custom-bin");
       yield* fs.makeDirectory(binDir);
-      yield* fs.symlink(path.join(versionsDir, "1.0.0", "t3"), path.join(binDir, "t3"));
+      yield* fs.symlink(path.join(versionsDir, "1.0.0", "t3"), path.join(binDir, "boops"));
       const launchersFile = path.join(baseDir, "runtime", "launchers");
       yield* fs.writeFileString(launchersFile, recorded);
       const prune = (environment: Record<string, string>) =>

@@ -47,6 +47,8 @@ export interface ProjectMetaUpdateCommand {
   readonly avatar?: ProjectAvatar | null;
   readonly mainThreadId?: ThreadId | null;
   readonly autonomy?: BotAutonomy | null;
+  readonly parentBotProjectId?: ProjectId | null;
+  readonly canCreateBotsWithoutAsking?: boolean;
 }
 
 export interface ProjectDeleteCommand {
@@ -230,6 +232,12 @@ export function planProjectCommand(input: {
           ...(command.autonomy === undefined
             ? {}
             : { autonomy: command.autonomy ?? DEFAULT_BOT_AUTONOMY }),
+          ...(command.parentBotProjectId === undefined
+            ? {}
+            : { parentBotProjectId: command.parentBotProjectId }),
+          ...(command.canCreateBotsWithoutAsking === undefined
+            ? {}
+            : { canCreateBotsWithoutAsking: command.canCreateBotsWithoutAsking }),
           updatedAt: occurredAt,
         },
       });

@@ -1960,7 +1960,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("gives a resumed session T3's rules when it was made with others", () =>
+  it.effect("gives a resumed session Boops' rules when it was made with others", () =>
     Effect.gen(function* () {
       const runtime = yield* openCode2ReplayRuntimeWithInstructions([
         ...opening,
@@ -2007,7 +2007,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("breaks the thread and forgets it when the session was deleted outside T3", () =>
+  it.effect("breaks the thread and forgets it when the session was deleted outside Boops", () =>
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed([
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
@@ -2031,7 +2031,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("stops the requests a session still waits on when a restarted T3 loads it", () =>
+  it.effect("stops the requests a session still waits on when a restarted Boops loads it", () =>
     Effect.gen(function* () {
       const runtime = yield* openCode2ReplayRuntimeWithInstructions(
         [
@@ -2106,7 +2106,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       assert.equal(ended?.status, "failed");
       assert.equal(
         ended?.status === "failed" ? ended.failure.message : undefined,
-        "OpenCode is waiting on a request T3 Code couldn't answer.",
+        "OpenCode is waiting on a request Boops couldn't answer.",
       );
     }).pipe(Effect.scoped),
   );
@@ -2144,7 +2144,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("declines a form T3 cannot show with the reason, instead of leaving it open", () =>
+  it.effect("declines a form Boops cannot show with the reason, instead of leaving it open", () =>
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed([
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
@@ -2829,7 +2829,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("re-registers T3 MCP each turn and drops its instructions when adding fails", () =>
+  it.effect("re-registers Boops MCP each turn and drops its instructions when adding fails", () =>
     Effect.gen(function* () {
       const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
       yield* mcpSessions.set({

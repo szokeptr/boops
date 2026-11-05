@@ -6,6 +6,7 @@ import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/tu
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
 import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
+import { sessionRolloverDetail } from "@t3tools/client-runtime/handoff";
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
 import {
   turnItemDetailRevision,
@@ -555,6 +556,7 @@ function itemIcon(item: OrchestrationV2TurnItem): ThreadFeedActivity["icon"] {
     case "handoff":
     case "fork":
     case "thread_created":
+    case "session_rollover":
       return "zap";
     case "secret_request":
       return "lock";
@@ -580,6 +582,7 @@ function itemSummary(
   if (item.type === "notification") return item.summary;
   if (item.type === "system_notice") return item.message;
   if (item.type === "compaction") return contextCompactionLabel(item);
+  if (item.type === "session_rollover") return "New session";
   const title =
     (item.type === "dynamic_tool"
       ? dynamicToolTitle(item.toolName, item.input, item.title)
@@ -675,6 +678,8 @@ function itemPreview(item: OrchestrationV2TurnItem): string | null {
     case "compaction":
     case "handoff":
       return item.summary ?? null;
+    case "session_rollover":
+      return sessionRolloverDetail(item);
     case "fork":
     case "thread_created":
       return item.targetThreadId;

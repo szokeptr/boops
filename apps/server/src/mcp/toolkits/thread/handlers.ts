@@ -340,6 +340,21 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       }),
     ),
   ),
+  start_fresh_session: McpToolAccess.actsAsCaller(() =>
+    Effect.gen(function* () {
+      const { caller, threads } = yield* readCaller();
+      if (caller === undefined) return yield* unavailable();
+      const result = yield* threads
+        .dispatch({
+          type: "thread.session.rollover",
+          commandId: yield* newCommandId(),
+          threadId: caller.id,
+          reason: "agent",
+        })
+        .pipe(Effect.mapError(dispatchFailure));
+      return { sequence: result.sequence };
+    }),
+  ),
   t3_thread_organize: writesThread((input) =>
     Effect.gen(function* () {
       const { threads, projection, caller } = yield* readThread(input.threadId);

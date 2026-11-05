@@ -30,7 +30,7 @@ export class SourceControlSignIn extends Context.Service<
     readonly starred: (input: SourceControlStarredInput) => Effect.Effect<boolean>;
     readonly star: (input: SourceControlStarredInput) => Effect.Effect<boolean>;
   }
->()("t3/sourceControl/SourceControlSignIn") {}
+>()("boops/sourceControl/SourceControlSignIn") {}
 
 const make = Effect.gen(function* () {
   const drivers = yield* SourceControlBuiltInDrivers.SourceControlDrivers;

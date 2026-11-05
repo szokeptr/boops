@@ -22,7 +22,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home
     const home = NodePath.join(root, homeName);
     const version = "1.2.3";
     const target = NodePath.join(home, "runtime/versions", version);
-    const launcher = NodePath.join(root, "bin/t3");
+    const launcher = NodePath.join(root, "bin/boops");
     try {
       await NodeFSP.mkdir(target, { recursive: true });
       await NodeFSP.writeFile(NodePath.join(target, ".install-complete"), `${version}\n`);
@@ -46,7 +46,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home
         },
       );
       expect(status, stdout + stderr).toBe(0);
-      expect(stderr).toContain(`Installed T3 Code ${version}`);
+      expect(stderr).toContain(`Installed Boops ${version}`);
       expect(await NodeFSP.readlink(launcher)).toBe(NodePath.join(target, "t3"));
       expect(
         NodeChildProcess.execFileSync(launcher, ["--version"], {
@@ -119,7 +119,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
         },
       );
       expect(code, output).toBe(0);
-      expect(output).toContain(`Installed T3 Code ${version}`);
+      expect(output).toContain(`Installed Boops ${version}`);
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -224,14 +224,14 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chec
               await NodeFSP.readFile(NodePath.join(versions, version, ".install-complete"), "utf8"),
             ).toBe("1.2.3\n");
             expect(
-              NodeChildProcess.execFileSync(NodePath.join(root, "bin/t3"), ["--version"], {
+              NodeChildProcess.execFileSync(NodePath.join(root, "bin/boops"), ["--version"], {
                 encoding: "utf8",
               }).trim(),
             ).toBe("t3 v1.2.3");
           } else {
             expect(code).not.toBe(0);
             expect(output).toContain("checksum mismatch");
-            expect(output).not.toContain("Installed T3 Code");
+            expect(output).not.toContain("Installed Boops");
             expect(await NodeFSP.readdir(versions)).toEqual([]);
           }
         } finally {

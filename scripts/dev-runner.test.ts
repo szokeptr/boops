@@ -412,7 +412,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
-    it.effect("expands a home-relative T3 home the way the server does", () =>
+    it.effect("expands a home-relative Boops home the way the server does", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
         const homeFor = (t3Home: string) =>
@@ -832,7 +832,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             );
             assert.deepStrictEqual(spawned.at(-1), [
               "run",
-              "--filter=t3",
+              "--filter=boops",
               "dev",
               ...devServerInput.runArgs,
             ]);

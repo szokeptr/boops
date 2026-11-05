@@ -196,7 +196,7 @@ export class GuestShareService extends Context.Service<
       path: string,
     ) => Effect.Effect<{ readonly path: string; readonly mimeType: string }, GuestShareAccessError>;
   }
->()("t3/guest/GuestShareService") {}
+>()("boops/guest/GuestShareService") {}
 
 /** A reply a guest's stream sent, with its image sources once a media request parsed them. */
 interface SentReply {

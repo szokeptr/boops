@@ -622,6 +622,25 @@ function ProjectDetail({
               />
             }
           />
+          <SettingsRow
+            title="Can create bots without asking"
+            description="Lets this bot create new bots without showing you an approval card first."
+            control={
+              <Switch
+                checked={group.memberProjects.every(
+                  (member) => member.canCreateBotsWithoutAsking === true,
+                )}
+                disabled={!canEditGroup}
+                onCheckedChange={(checked) =>
+                  void updateAllMembers(
+                    { canCreateBotsWithoutAsking: checked },
+                    "Failed to change whether the bot can create bots",
+                  )
+                }
+                aria-label="Can create bots without asking"
+              />
+            }
+          />
           {canOrganize ? (
             <>
               <SettingsRow

@@ -840,7 +840,7 @@ describe("AntigravityAdapterV2 html_render pages", () => {
 });
 
 describe("AntigravityAdapterV2 subagent reads", () => {
-  it.effect("completes a read T3 served when the agent later fails it with a step error", () =>
+  it.effect("completes a read Boops served when the agent later fails it with a step error", () =>
     Effect.gen(function* () {
       const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const fileSystem = yield* FileSystem.FileSystem;

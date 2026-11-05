@@ -150,7 +150,7 @@ export class ProjectService extends Context.Service<
       readonly projectIds?: ReadonlyArray<ProjectId>;
     }) => Effect.Effect<ReadonlyArray<OrchestrationProjectShell>, ProjectOperationError>;
   }
->()("t3/project/ProjectService") {}
+>()("boops/project/ProjectService") {}
 
 export const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
@@ -184,6 +184,8 @@ export const make = Effect.gen(function* () {
     avatar: row.avatar,
     mainThreadId: row.mainThreadId,
     autonomy: row.autonomy,
+    parentBotProjectId: row.parentBotProjectId,
+    canCreateBotsWithoutAsking: row.canCreateBotsWithoutAsking,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -399,6 +401,12 @@ export const make = Effect.gen(function* () {
         ...(input.avatar === undefined ? {} : { avatar: input.avatar }),
         ...(input.mainThreadId === undefined ? {} : { mainThreadId: input.mainThreadId }),
         ...(input.autonomy === undefined ? {} : { autonomy: input.autonomy }),
+        ...(input.parentBotProjectId === undefined
+          ? {}
+          : { parentBotProjectId: input.parentBotProjectId }),
+        ...(input.canCreateBotsWithoutAsking === undefined
+          ? {}
+          : { canCreateBotsWithoutAsking: input.canCreateBotsWithoutAsking }),
       });
       if (workspaceRoot !== previousRoot) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);

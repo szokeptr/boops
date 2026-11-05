@@ -72,7 +72,7 @@ export class ServerSelfUpdate extends Context.Service<
       onHandoffAccepted?: () => Effect.Effect<void>,
     ) => Effect.Effect<never, ServerSelfUpdateError>;
   }
->()("t3/cloud/selfUpdate/ServerSelfUpdate") {}
+>()("boops/cloud/selfUpdate/ServerSelfUpdate") {}
 
 /**
  * A server starting from the runtime its launcher settled on means runtimes left by earlier
@@ -115,10 +115,10 @@ export function trackSwitchBlockReason(input: {
   if (!crossesReleaseTrack(input.serverVersion, input.targetVersion)) return null;
   const databaseMigration = input.databaseMigration();
   if (input.targetDatabaseMigration === undefined || databaseMigration === undefined) {
-    return `Cannot confirm this database works with t3@${input.targetVersion}. Switch tracks from Settings → About → Update track, which checks it first.`;
+    return `Cannot confirm this database works with boops@${input.targetVersion}. Switch tracks from Settings → About → Update track, which checks it first.`;
   }
   return input.targetDatabaseMigration < databaseMigration
-    ? `This database has changes t3@${input.targetVersion} does not support yet; it stays on this release.`
+    ? `This database has changes boops@${input.targetVersion} does not support yet; it stays on this release.`
     : null;
 }
 
@@ -180,12 +180,12 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
         );
       }
       return yield* failWith(
-        "This server is managed by the T3 Code desktop app on its machine; update the desktop app to update it.",
+        "This server is managed by the Boops desktop app on its machine; update the desktop app to update it.",
       );
     }
     if (capability === null) {
       return yield* failWith(
-        "Remote updates require the T3 Code background service. Run `t3 service install` on the server machine.",
+        "Remote updates require the Boops background service. Run `boops service install` on the server machine.",
       );
     }
 
@@ -193,7 +193,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
     if (unsafeCrossing !== null) return yield* failWith(unsafeCrossing);
     const targetVersion = input.targetVersion.trim();
     if (!isExactServiceVersion(targetVersion)) {
-      return yield* failWith(`'${targetVersion}' is not an exact t3 version.`);
+      return yield* failWith(`'${targetVersion}' is not an exact boops version.`);
     }
     if (yield* Ref.getAndSet(inFlight, true)) {
       return yield* failWith("A server update is already in progress.");
@@ -287,10 +287,10 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
             ? failWith(error.reason, error)
             : mirror !== undefined && isUnpublishedRelease(error)
               ? failWith(
-                  `${mirror.organization}'s update mirror has no t3@${targetVersion} for this machine.`,
+                  `${mirror.organization}'s update mirror has no boops@${targetVersion} for this machine.`,
                   error,
                 )
-              : failWith(`Could not prepare t3@${targetVersion}.`, error),
+              : failWith(`Could not prepare boops@${targetVersion}.`, error),
         ),
       );
 

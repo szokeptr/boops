@@ -1118,7 +1118,7 @@ describe("AcpRegistryAdapterV2", () => {
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
-  it.effect("gives Copilot T3's MCP server over HTTP when it advertises HTTP", () =>
+  it.effect("gives Copilot Boops' MCP server over HTTP when it advertises HTTP", () =>
     Effect.gen(function* () {
       const selfInvocation = yield* resolveSelfInvocation();
       const mockAgentPath = yield* (yield* Path.Path).fromFileUrl(
