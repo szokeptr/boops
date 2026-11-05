@@ -331,6 +331,13 @@ export function CommandPalette(props: {
         run: () => openSettings(navigation, "SettingsScheduledTasks"),
       },
       {
+        key: "connectors",
+        kind: "action",
+        title: "Connectors",
+        searchTerms: ["mcp", "linear", "notion", "integrations"],
+        run: () => openSettings(navigation, "SettingsConnectors"),
+      },
+      {
         key: "usage",
         kind: "action",
         title: "Usage",

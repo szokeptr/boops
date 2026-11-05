@@ -35,6 +35,7 @@ import {
   useEnvironmentsWithScope,
 } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { BotConnectorsSection } from "../connectors/BotConnectorsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
@@ -436,6 +437,20 @@ function ProjectOverviewContent(props: {
           />
         ) : null}
       </SettingsSection>
+
+      {allMembers.map((member) => (
+        <BotConnectorsSection
+          key={`${member.environmentId}:${member.id}`}
+          bot={member}
+          environmentLabel={
+            allMembers.length > 1
+              ? props.environments.find(
+                  (environment) => environment.environmentId === member.environmentId,
+                )?.label
+              : null
+          }
+        />
+      ))}
 
       {canOrganize ? (
         <SettingsSection title="Organize">

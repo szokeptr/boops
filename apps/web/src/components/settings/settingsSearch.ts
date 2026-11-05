@@ -33,6 +33,7 @@ export type SettingsPath =
   | "/settings/worktrees"
   | "/settings/connections"
   | "/settings/access"
+  | "/settings/connectors"
   | "/settings/secrets"
   | "/settings/maintenance"
   | "/settings/labs"
@@ -103,6 +104,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/worktrees": "Worktrees",
   "/settings/connections": "Environments",
   "/settings/access": "Sharing & access",
+  "/settings/connectors": "Connectors",
   "/settings/secrets": "Secrets",
   "/settings/maintenance": "Maintenance",
   "/settings/labs": "Labs",
@@ -144,6 +146,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     paths: [
       "/settings/connections",
       "/settings/access",
+      "/settings/connectors",
       ...(isSecretsFeatureEnabled ? (["/settings/secrets"] as const) : []),
     ],
   },
@@ -1140,6 +1143,26 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "connectors",
+    title: "Connected",
+    to: "/settings/connectors",
+    searchTerms: [
+      "connectors connections mcp servers tools linear notion sign in again disconnect remove rename test",
+    ],
+  },
+  {
+    id: "connector-gallery",
+    title: "Gallery",
+    to: "/settings/connectors",
+    searchTerms: ["connect a connector catalog mcp service add integration api key oauth"],
+  },
+  {
+    id: "connector-custom",
+    title: "Add custom",
+    to: "/settings/connectors",
+    searchTerms: ["remote mcp server url streamable http custom connector"],
+  },
+  {
     id: "secret-providers",
     title: "Secret providers",
     to: "/settings/secrets",
@@ -1183,6 +1206,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/worktrees": "project-defaults",
   "/settings/connections": "connections",
   "/settings/access": "connections",
+  "/settings/connectors": null,
   "/settings/secrets": null,
   "/settings/scheduled-tasks": null,
   "/settings/maintenance": null,

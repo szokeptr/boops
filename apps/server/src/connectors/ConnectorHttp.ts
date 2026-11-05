@@ -138,7 +138,7 @@ const proxy = Effect.fn("ConnectorHttp.proxy")(function* (services: {
   const token = parseBearerToken(request);
   const scope = token === null ? undefined : yield* registry.resolve(token);
   if (scope === undefined) {
-    return jsonError(401, "invalid_mcp_credential", "A valid T3 Code MCP credential is required.");
+    return jsonError(401, "invalid_mcp_credential", "A valid Boops MCP credential is required.");
   }
   const serverName = Option.match(requestUrl(request), {
     onNone: () => "",
