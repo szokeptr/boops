@@ -55,6 +55,7 @@ import {
   resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { claudeHomeFolderSandboxUnavailableReason } from "../claudeHomeFolderSandbox.ts";
 import { makeClaudeMaintenanceResolution } from "./ClaudeMaintenance.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
@@ -254,6 +255,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
             provider.auth.status === "unauthenticated"
               ? Cache.invalidateAll(capabilitiesProbeCache)
               : Effect.void,
+          ),
+          Effect.flatMap((provider) =>
+            claudeHomeFolderSandboxUnavailableReason(processEnv).pipe(
+              Effect.map((reason) =>
+                reason === undefined
+                  ? provider
+                  : { ...provider, homeFolderUnavailableReason: reason },
+              ),
+            ),
           ),
           Effect.map(stampIdentity),
         ),

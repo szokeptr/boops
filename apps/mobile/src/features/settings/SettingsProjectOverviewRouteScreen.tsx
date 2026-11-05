@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/Button";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import * as Dialog from "../../components/ui/Dialog";
 import { AuthOrchestrationOperateScope, type BotAutonomy } from "@t3tools/contracts";
+import { botHomeFolderUnavailableReason } from "@t3tools/client-runtime/state/bot-home-folder";
 import { liveBotDescendants } from "@t3tools/client-runtime/state/bot-list";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
 import {
@@ -16,6 +17,7 @@ import {
 } from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useNavigation } from "@react-navigation/native";
+import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,6 +25,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { projectEnvironment } from "../../state/projects";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { appAtomRegistry } from "../../state/atom-registry";
+import { environmentPresentations } from "../../state/presentation";
 import {
   clearComposerDraft,
   composerDraftsAtom,
@@ -147,6 +150,11 @@ function ProjectOverviewContent(props: {
   const [isSaving, setIsSaving] = useState(false);
   const threads = useThreadShells();
   const allMembers = props.group.members.map((member) => member.project);
+  const homeFolderUnavailableReason = botHomeFolderUnavailableReason(
+    allMembers,
+    threads,
+    useAtomValue(environmentPresentations.providersByEnvironmentAtom),
+  );
   const removableEnvironments = useEnvironmentsWithScope(allMembers, AuthOrchestrationOperateScope);
   const canRemoveGroup = props.members.every((member) =>
     removableEnvironments.has(member.environmentId),
@@ -414,7 +422,7 @@ function ProjectOverviewContent(props: {
             subtitle={
               offline
                 ? "Connect every machine with this project to change this."
-                : "Limits the bot's file changes and commands to its home folder. Applies from its next session."
+                : `Limits the bot's file changes and commands to its home folder. Applies from its next session.${homeFolderUnavailableReason === undefined ? "" : `\n${homeFolderUnavailableReason}`}`
             }
             value={allMembers.every((member) => member.autonomy === "home-folder")}
             disabled={isOrganizing || offline}

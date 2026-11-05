@@ -158,6 +158,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
+import { claudeSandboxFailureMessage } from "../../provider/claudeHomeFolderSandbox.ts";
 import {
   planClaudeSkillDispatch,
   type ClaudeSkillTarget,
@@ -4218,6 +4219,13 @@ function providerFailureFromResult(
   });
 }
 
+function withClaudeSandboxGuidance(
+  failure: OrchestrationV2ProviderFailure,
+): OrchestrationV2ProviderFailure {
+  const message = claudeSandboxFailureMessage(failure.message);
+  return message === undefined ? failure : { ...failure, message };
+}
+
 function providerFailureFromApiRetry(message: SDKAPIRetryMessage): OrchestrationV2ProviderFailure {
   const errorName = message.error.replaceAll("_", " ");
   return makeProviderFailure({
@@ -8089,7 +8097,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     `terminal-failure:${input.context.providerTurnId}`,
                   ),
                   status: input.status,
-                  failure: input.failure ?? makeProviderFailure({ class: "provider_error" }),
+                  failure: withClaudeSandboxGuidance(
+                    input.failure ?? makeProviderFailure({ class: "provider_error" }),
+                  ),
                   ...(providerRetry === undefined
                     ? {}
                     : {

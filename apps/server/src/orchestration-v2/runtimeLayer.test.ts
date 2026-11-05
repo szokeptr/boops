@@ -389,7 +389,7 @@ const layerProjectDeletionTest = Layer.mergeAll(
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStoreTest),
   Layer.provide(layerServerConfig),
-  Layer.provide(ServerSettings.layerTest()),
+  Layer.provideMerge(ServerSettings.layerTest()),
   Layer.provide(layerTestProviderInstanceRegistry),
   Layer.provide(layerGitWorkflowTest),
   Layer.provide(layerPlatformTest),
@@ -8701,6 +8701,7 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
       const projects = yield* ProjectService.ProjectService;
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const tasks = yield* ScheduledTaskService.ScheduledTaskService;
+      const settings = yield* ServerSettings.ServerSettingsService;
       const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
       const create = (name: string, avatar?: ProjectAvatar) =>
         bots
@@ -8723,6 +8724,12 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
         const project = Option.getOrUndefined(yield* projects.getById(bot.projectId));
         assert.equal(project?.workspaceRoot, root);
         assert.deepEqual(project?.defaultModelSelection, modelSelection);
+        // Folded settings read only the override, as a rollover's model switch writes it.
+        assert.deepEqual(
+          (yield* settings.getSettings).projectSettingsOverrides[bot.projectId]
+            ?.defaultModelSelection,
+          modelSelection,
+        );
         assert.equal(project?.mainThreadId, bot.mainThreadId);
         assert.isNotNull(project?.avatar);
         const thread = yield* orchestrator.getThreadShell(bot.mainThreadId);
