@@ -388,7 +388,7 @@ export const make = Effect.gen(function* () {
           : { defaultModelSelection: input.defaultModelSelection }),
         ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
       });
-      if (input.defaultModelSelection !== undefined) {
+      if (input.defaultModelSelection != null) {
         yield* writeDefaultModelOverride(input.projectId, input.defaultModelSelection);
       }
       yield* projectEnrichment.invalidate([workspaceRoot]);
