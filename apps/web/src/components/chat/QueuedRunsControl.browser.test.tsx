@@ -170,7 +170,7 @@ it("shows who sent a queued message and folds routine and agent prompts", async 
   await page.getByRole("button", { name: "Open thread" }).click({ force: true });
   expect(onOpenThread).toHaveBeenCalledExactlyOnceWith("thread:lead");
 
-  await expect.element(page.getByText("Sent by T3 Code")).toBeVisible();
+  await expect.element(page.getByText("Sent by Boops")).toBeVisible();
   await expect.element(page.getByText("Continue where you left off.")).toBeVisible();
 });
 
