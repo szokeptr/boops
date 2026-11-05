@@ -590,6 +590,28 @@ export function idleCompactionOf(
     : undefined;
 }
 
+interface EditableMessageFields {
+  readonly role: string;
+  readonly createdBy?: OrchestrationV2Actor | undefined;
+  readonly creationSource?: OrchestrationV2CreationSource | undefined;
+  readonly routine?: unknown;
+  readonly senderThreadId?: unknown;
+  readonly context?: { readonly guest?: unknown; readonly bot?: unknown } | undefined;
+}
+
+/** A message the user typed here; routines, kickoffs, other bots and guests keep their words. */
+export function isUserTypedMessage(message: EditableMessageFields): boolean {
+  return (
+    message.role === "user" &&
+    message.createdBy === "user" &&
+    (message.creationSource === "web" || message.creationSource === "mobile") &&
+    message.routine === undefined &&
+    message.senderThreadId === undefined &&
+    message.context?.guest === undefined &&
+    message.context?.bot === undefined
+  );
+}
+
 export const OrchestrationV2RunStatus = Schema.Literals([
   "preparing",
   "queued",
@@ -3375,6 +3397,17 @@ export const OrchestrationV2Command = Schema.Union([
     text: Schema.String,
     // Replaces all attachments; absent preserves them for older clients editing text.
     attachments: Schema.optional(Schema.Array(ChatAttachment)),
+  }),
+  /**
+   * Drops a sent user message's turn and every later one, then sends `text` with the message's
+   * attachments in a fresh provider session. Files are left as they are.
+   */
+  Schema.Struct({
+    type: Schema.Literal("message.edit"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    messageId: MessageId,
+    text: Schema.String,
   }),
   Schema.Struct({
     type: Schema.Literal("runtime-request.respond"),

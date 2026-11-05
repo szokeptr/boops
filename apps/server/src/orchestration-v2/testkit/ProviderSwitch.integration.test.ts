@@ -1,3 +1,5 @@
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 import { vi } from "vite-plus/test";
 import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
 import { assert, describe, it } from "@effect/vitest";
@@ -3618,8 +3620,20 @@ describe("orchestration v2 session rollover", () => {
           ...(modelSelection === undefined ? {} : { modelSelection }),
         });
       });
+    const edit = (sentText: string, text: string) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        return yield* orchestrator.dispatch({
+          type: "message.edit",
+          commandId: CommandId.make(`command:session-rollover:${key}:edit:${text}`),
+          threadId: scenarioThreadId,
+          messageId: MessageId.make(`message:session-rollover:${key}:${sentText}`),
+          text,
+        });
+      });
     return {
       threadId: scenarioThreadId,
+      cwd,
       capturedTurns,
       injectedHistory,
       holdFirstTurn,
@@ -3628,6 +3642,7 @@ describe("orchestration v2 session rollover", () => {
       send,
       create,
       rollover,
+      edit,
     };
   });
 
@@ -3776,6 +3791,89 @@ describe("orchestration v2 session rollover", () => {
         assert.notEqual(turns[1]?.providerThreadId, turns[0]?.providerThreadId);
         const marker = projection.turnItems.find((item) => item.type === "session_rollover");
         assert.equal(marker?.runId, projection.runs[0]?.id);
+      }),
+    ),
+  );
+
+  it.live("edits a sent message: drops it and later turns, keeps files, starts fresh", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* rolloverHarness("edit");
+        const notes = NodePath.join(harness.cwd, "notes.md");
+        const projection = yield* Effect.gen(function* () {
+          yield* harness.create;
+          yield* Deferred.succeed(harness.releaseFirstTurn, undefined);
+          yield* harness.send("first", "start_immediately");
+          yield* waitForIdle(harness.threadId);
+          yield* harness.send("second", "start_immediately");
+          yield* waitForIdle(harness.threadId);
+          yield* harness.send("third", "start_immediately");
+          yield* waitForIdle(harness.threadId);
+          // The bot's memory, written during a turn the edit drops.
+          yield* Effect.sync(() => NodeFS.writeFileSync(notes, "remembered in third\n"));
+          yield* harness.edit("second", "second, edited");
+          return yield* waitForIdle(harness.threadId);
+        }).pipe(Effect.provide(harness.layer));
+
+        assert.equal(NodeFS.readFileSync(notes, "utf8"), "remembered in third\n");
+        const turns = yield* Ref.get(harness.capturedTurns);
+        assert.deepEqual(
+          turns.map((turn) => turn.text),
+          ["first", "second", "third", "second, edited"],
+        );
+        assert.notEqual(turns[3]?.providerThreadId, turns[0]?.providerThreadId);
+        assert.notEqual(turns[3]?.nativeThreadId, turns[0]?.nativeThreadId);
+        assert.deepEqual(yield* Ref.get(harness.injectedHistory), []);
+        assert.deepEqual(projection.thread.retiredProviderThreadIds, [turns[0]!.providerThreadId]);
+        assert.deepEqual(
+          projection.runs.map((run) => run.status),
+          ["completed", "rolled_back", "rolled_back", "completed"],
+        );
+        const edited = projection.messages.find(
+          (message) => message.runId === projection.runs[3]?.id,
+        );
+        assert.equal(edited?.text, "second, edited");
+        assert.equal(edited?.createdBy, "user");
+      }),
+    ),
+  );
+
+  it.live("refuses to edit while a turn runs, or a message the user did not send", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* rolloverHarness("edit-refused");
+        const refusals = yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          yield* harness.create;
+          yield* harness.send("first", "start_immediately");
+          yield* Deferred.await(harness.holdFirstTurn);
+          const whileRunning = yield* Effect.flip(harness.edit("first", "first, edited"));
+          yield* Deferred.succeed(harness.releaseFirstTurn, undefined);
+          yield* waitForIdle(harness.threadId);
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            createdBy: "system",
+            creationSource: "server",
+            commandId: CommandId.make("command:session-rollover:edit-refused:kickoff"),
+            threadId: harness.threadId,
+            messageId: MessageId.make("message:session-rollover:edit-refused:kickoff"),
+            text: "kickoff",
+            attachments: [],
+            dispatchMode: { type: "start_immediately" },
+          });
+          yield* waitForIdle(harness.threadId);
+          const kickoff = yield* Effect.flip(harness.edit("kickoff", "kickoff, edited"));
+          return { whileRunning, kickoff };
+        }).pipe(Effect.provide(harness.layer));
+
+        const causeOf = (error: (typeof refusals)["kickoff"]) =>
+          error._tag === "OrchestratorDispatchError" ? String(error.cause) : String(error);
+        assert.include(causeOf(refusals.whileRunning), "Stop the current turn");
+        assert.include(causeOf(refusals.kickoff), "Only messages you sent");
+        assert.deepEqual(
+          (yield* Ref.get(harness.capturedTurns)).map((turn) => turn.text),
+          ["first", "kickoff"],
+        );
       }),
     ),
   );

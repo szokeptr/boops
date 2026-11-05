@@ -24,6 +24,7 @@ import {
   CommandId,
   type GuestMessageId,
   isCompactionCommandMessage,
+  isUserTypedMessage,
   isOrchestrationV2WorkActive,
   isProviderNativeSubagentThread,
   MessageId,
@@ -596,6 +597,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "queued-run.reorder":
     case "queued-run.cancel":
     case "queued-run.edit":
+    case "message.edit":
     case "runtime-request.respond":
     case "runtime-request.delivery.fail":
     case "thread.user-input.dismiss":
@@ -1021,6 +1023,37 @@ function rootProviderThreadsForProvider(
         (right.lastRunOrdinal ?? 0) - (left.lastRunOrdinal ?? 0) ||
         DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt),
     );
+}
+
+/** What ending a thread's provider sessions for good retires, so the next turn opens a fresh one. */
+function providerSessionsToRetire(
+  projection: Pick<
+    OrchestrationV2ThreadProjection,
+    "thread" | "providerThreads" | "providerSessions"
+  >,
+) {
+  const { thread } = projection;
+  const retiring = projection.providerThreads.filter(
+    (providerThread) =>
+      providerThread.appThreadId === thread.id &&
+      providerThread.ownerNodeId === null &&
+      !isRetiredProviderThread(thread, providerThread.id) &&
+      // A queued message's placeholder belongs to the next session.
+      !(
+        providerThread.firstRunOrdinal === null &&
+        providerThread.nativeThreadRef === null &&
+        providerThread.providerSessionId === null
+      ),
+  );
+  return {
+    retiredProviderThreadIds: [
+      ...(thread.retiredProviderThreadIds ?? []),
+      ...retiring.map((providerThread) => providerThread.id),
+    ],
+    liveSessions: projection.providerSessions.filter(
+      (session) => session.status !== "stopped" && session.status !== "error",
+    ),
+  };
 }
 
 function isHandoffSourceRun(run: OrchestrationV2Run): boolean {
@@ -4437,22 +4470,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     // A repeated run update finds the session already retired.
     if (rollover === undefined || isRetiredProviderThread(thread, run.providerThreadId)) return;
     const now = yield* DateTime.now;
-    const retiring = projection.providerThreads.filter(
-      (providerThread) =>
-        providerThread.appThreadId === threadId &&
-        providerThread.ownerNodeId === null &&
-        !isRetiredProviderThread(thread, providerThread.id) &&
-        // A queued message's placeholder belongs to the next session.
-        !(
-          providerThread.firstRunOrdinal === null &&
-          providerThread.nativeThreadRef === null &&
-          providerThread.providerSessionId === null
-        ),
-    );
+    const { retiredProviderThreadIds, liveSessions } = providerSessionsToRetire(projection);
     const selection = rollover.modelSelection ?? thread.modelSelection;
-    const liveSessions = projection.providerSessions.filter(
-      (session) => session.status !== "stopped" && session.status !== "error",
-    );
     const detail = "Started a fresh session.";
     const item: OrchestrationV2TurnItem = {
       id: TurnItemId.make(`session-rollover:${run.id}`),
@@ -4489,10 +4508,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             providerInstanceId: selection.instanceId,
             modelSelection: selection,
             activeProviderThreadId: null,
-            retiredProviderThreadIds: [
-              ...(thread.retiredProviderThreadIds ?? []),
-              ...retiring.map((providerThread) => providerThread.id),
-            ],
+            retiredProviderThreadIds,
             updatedAt: now,
           },
         },
@@ -4524,6 +4540,133 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           detail,
         },
       })),
+    );
+  });
+
+  /**
+   * Rolls the conversation back to before a sent message and sends its edited text as the next
+   * turn. Native rollback needs a checkpoint, which a bot's home folder never has, so the dropped
+   * turns leave the provider's context the way a rollover ends a session: the next turn opens a
+   * fresh one. Unlike a rollover there is no save-notes turn, which would remember the dropped turns.
+   */
+  const dispatchMessageEdit = Effect.fn("Orchestrator.dispatchMessageEdit")(function* (
+    command: Extract<OrchestrationV2Command, { readonly type: "message.edit" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const refuse = (cause: string) =>
+      new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause,
+      });
+    const projection = yield* getProjectionWithPendingEvents(command.threadId, events);
+    const { thread } = projection;
+    if (thread.archivedAt !== null || thread.deletedAt !== null) {
+      return yield* refuse("Unarchive the thread before editing a message.");
+    }
+    const message = projection.messages.find((candidate) => candidate.id === command.messageId);
+    const editedRun = projection.runs.find((candidate) => candidate.id === message?.runId);
+    if (
+      message === undefined ||
+      editedRun === undefined ||
+      editedRun.status === "rolled_back" ||
+      !isUserTypedMessage(message)
+    ) {
+      return yield* refuse("Only messages you sent can be edited.");
+    }
+    if (projection.runs.some((run) => isActiveRun(run) || run.status === "queued")) {
+      return yield* refuse("Stop the current turn before editing a message.");
+    }
+    if (command.text.trim().length === 0 && message.attachments.length === 0) {
+      return yield* refuse("An edited message needs text.");
+    }
+
+    const now = yield* DateTime.now;
+    const emitEvent = emit(events, command);
+    const dropped = projection.runs.filter(
+      (run) => run.ordinal >= editedRun.ordinal && run.status !== "rolled_back",
+    );
+    for (const run of dropped) {
+      const rootNode = projection.nodes.find((candidate) => candidate.id === run.rootNodeId);
+      yield* emitEvent({
+        type: "run.updated",
+        threadId: command.threadId,
+        runId: run.id,
+        ...(rootNode === undefined ? {} : { nodeId: rootNode.id }),
+        providerInstanceId: run.providerInstanceId,
+        occurredAt: now,
+        payload: { ...run, status: "rolled_back", completedAt: now },
+      });
+      if (rootNode !== undefined) {
+        yield* emitEvent({
+          type: "node.updated",
+          threadId: command.threadId,
+          runId: run.id,
+          nodeId: rootNode.id,
+          providerInstanceId: run.providerInstanceId,
+          occurredAt: now,
+          payload: { ...rootNode, status: "rolled_back", completedAt: now },
+        });
+      }
+    }
+
+    const { retiredProviderThreadIds, liveSessions } = providerSessionsToRetire(projection);
+    const detail = "Started a fresh session for an edited message.";
+    yield* emitEvent({
+      type: "thread.metadata-updated",
+      threadId: command.threadId,
+      providerInstanceId: thread.providerInstanceId,
+      occurredAt: now,
+      payload: {
+        ...thread,
+        activeProviderThreadId: null,
+        retiredProviderThreadIds,
+        updatedAt: now,
+      },
+    });
+    for (const session of liveSessions) {
+      yield* emitEvent({
+        type: "provider-session.detached",
+        threadId: command.threadId,
+        driver: session.driver,
+        providerInstanceId: session.providerInstanceId,
+        occurredAt: now,
+        payload: { providerSessionId: session.id, detachedAt: now, reason: detail },
+      });
+    }
+    yield* Ref.update(effects, (existing) => [
+      ...existing,
+      ...liveSessions.map(
+        (session) =>
+          ({
+            id: `effect:${command.commandId}:provider-session.detach:${session.id}`,
+            commandId: command.commandId,
+            threadId: command.threadId,
+            request: {
+              type: "provider-session.detach",
+              providerSessionId: session.id,
+              detail,
+            },
+          }) satisfies PendingOrchestrationEffectV2,
+      ),
+    ]);
+
+    yield* dispatchMessage(
+      {
+        type: "message.dispatch",
+        commandId: command.commandId,
+        threadId: command.threadId,
+        messageId: MessageId.make(`edit:${command.commandId}`),
+        text: command.text,
+        attachments: message.attachments,
+        ...(message.context === undefined ? {} : { context: message.context }),
+        createdBy: message.createdBy,
+        creationSource: message.creationSource,
+        dispatchMode: { type: "start_immediately" },
+      },
+      events,
+      effects,
     );
   });
 
@@ -13617,6 +13760,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "thread.session.rollover":
         yield* dispatchSessionRollover(command, events, effects);
+        break;
+      case "message.edit":
+        yield* dispatchMessageEdit(command, events, effects);
         break;
       case "thread.project.adopt-folder":
         yield* dispatchThreadProjectAdoptFolder(command, events);
