@@ -54,6 +54,16 @@ const workspaceDocs = (product: string) =>
  * `clientSetup`; others that need one (GitHub, Asana, HubSpot, Box) are not added yet.
  */
 export const CONNECTOR_CATALOG: ReadonlyArray<ConnectorCatalogEntry> = [
+  {
+    id: "composio",
+    name: "Composio",
+    description:
+      "Gmail, Google Calendar, Slack and 1000+ other apps through your Composio account.",
+    url: "https://connect.composio.dev/mcp",
+    auth: { kind: "oauth" },
+    docsUrl: "https://docs.composio.dev/docs/composio-connect",
+    iconUrl: icon("composio.dev"),
+  },
   google({
     id: "gmail",
     name: "Gmail",

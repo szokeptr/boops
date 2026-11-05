@@ -29,6 +29,11 @@ doesn't let apps register themselves for sign-in, so you create an OAuth client 
 Cloud project once, and every Google connection uses it. The servers are a Google Workspace
 Developer Preview, which your account must be part of.
 
+For a one-click setup instead, connect **Composio** from the gallery. You sign in with a Composio
+account, and the first time a bot needs Gmail, Calendar or another app, it sends you a sign-in link
+from Composio. Your mail and calendar data then passes through Composio's servers, and its free
+plan limits how many tool calls you can make.
+
 1. In a [Google Cloud](https://console.cloud.google.com/) project, enable the API and the MCP API
    for each product, for example **Gmail API** and **Gmail MCP API**. Contacts needs only the
    **People API**. Chat also needs a Chat app set up under **Google Chat API → Configuration**.
