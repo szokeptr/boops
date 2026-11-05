@@ -18,8 +18,8 @@ export function BoopsWordmark(props: SVGProps<SVGSVGElement>) {
       xmlns="http://www.w3.org/2000/svg"
     >
       <path d={INK} fill="currentColor" />
-      <path d={GLOW} fill="#86FFCF" />
-      <path d={SHINE} fill="#FFFFFF" />
+      <path d={GLOW} fill="var(--color-boops-glow)" />
+      <path d={SHINE} fill="var(--color-white)" />
     </svg>
   );
 }
