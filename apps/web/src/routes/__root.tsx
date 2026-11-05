@@ -17,7 +17,7 @@ import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { GuestShareDialogHost } from "../components/chat/GuestShareControls";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
 import { CreateBotDialogHost } from "../components/CreateBotDialog";
-import { DeleteBotDialogHost } from "../components/bots/BotLifecycle";
+import { ArchiveBotDialogHost, DeleteBotDialogHost } from "../components/bots/BotLifecycle";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
@@ -200,6 +200,7 @@ function RootRouteBranch() {
         <ProjectCloneToastCoordinator />
         <AddProjectToMachineDialogHost />
         <CreateBotDialogHost />
+        <ArchiveBotDialogHost />
         <DeleteBotDialogHost />
         {import.meta.env.DEV && primaryEnvironmentAuthenticated ? <DevReplayHost /> : null}
         {appShell}

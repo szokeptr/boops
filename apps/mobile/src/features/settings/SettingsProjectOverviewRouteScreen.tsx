@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/Button";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import * as Dialog from "../../components/ui/Dialog";
 import { AuthOrchestrationOperateScope, type BotAutonomy } from "@t3tools/contracts";
+import { liveBotDescendants } from "@t3tools/client-runtime/state/bot-list";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
 import {
   isAtomCommandInterrupted,
@@ -20,7 +21,7 @@ import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { projectEnvironment } from "../../state/projects";
-import { useThreadShells } from "../../state/entities";
+import { useProjects, useThreadShells } from "../../state/entities";
 import { appAtomRegistry } from "../../state/atom-registry";
 import {
   clearComposerDraft,
@@ -210,18 +211,23 @@ function ProjectOverviewContent(props: {
   };
   const archiveBot = useAtomCommand(projectEnvironment.archiveBot, { reportFailure: false });
   const unarchiveBot = useAtomCommand(projectEnvironment.unarchiveBot, { reportFailure: false });
-  const setArchived = async (archived: boolean) => {
+  const projects = useProjects();
+  const setArchived = async (archived: boolean, includeChildren = false) => {
     setIsOrganizing(true);
     for (const member of allMembers) {
       if (!readEnvironmentScope(member.environmentId, AuthOrchestrationOperateScope)) {
         Dialog.alert("Failed to update the bot", "This connection can no longer change it.");
         break;
       }
-      const command = archived ? archiveBot : unarchiveBot;
-      const result = await command({
-        environmentId: member.environmentId,
-        input: { projectId: member.id },
-      });
+      const result = archived
+        ? await archiveBot({
+            environmentId: member.environmentId,
+            input: { projectId: member.id, ...(includeChildren ? { includeChildren } : {}) },
+          })
+        : await unarchiveBot({
+            environmentId: member.environmentId,
+            input: { projectId: member.id },
+          });
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
@@ -234,6 +240,26 @@ function ProjectOverviewContent(props: {
       }
     }
     setIsOrganizing(false);
+  };
+  // A bot with live child bots asks whether they go too; one without archives at once.
+  const archive = () => {
+    const children = allMembers.reduce(
+      (count, member) =>
+        count +
+        liveBotDescendants(projects, { environmentId: member.environmentId, projectId: member.id })
+          .length,
+      0,
+    );
+    if (children === 0) return void setArchived(true);
+    Dialog.alert(
+      `Archive ${displayName}?`,
+      `It created ${children === 1 ? "a bot" : `${children} bots`} that ${children === 1 ? "is" : "are"} still running. Archive ${children === 1 ? "it" : "them"} too, or leave ${children === 1 ? "it" : "them"} running on ${children === 1 ? "its" : "their"} own.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: `Only ${displayName}`, onPress: () => void setArchived(true) },
+        { text: "Archive all", onPress: () => void setArchived(true, true) },
+      ],
+    );
   };
   const nextName = (draftName ?? displayName).trim();
   const canSave = !isSaving && nextName.length > 0 && nextName !== displayName;
@@ -434,7 +460,7 @@ function ProjectOverviewContent(props: {
                 : "Pauses its routines and heartbeat and moves it out of the bot list. Its conversation and home folder are kept."
             }
             disabled={isOrganizing || offline}
-            onPress={() => void setArchived(!props.group.archived)}
+            onPress={() => (props.group.archived ? void setArchived(false) : archive())}
           />
         </SettingsSection>
       ) : null}

@@ -9,6 +9,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { create } from "zustand";
 
+import { liveBotDescendants } from "@t3tools/client-runtime/state/bot-list";
+import { useProjects } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
@@ -53,20 +55,39 @@ export function useCanManageBot(environmentId: EnvironmentId | null): boolean {
 export function useBotArchive() {
   const archive = useAtomCommand(projectEnvironment.archiveBot, { reportFailure: false });
   const unarchive = useAtomCommand(projectEnvironment.unarchiveBot, { reportFailure: false });
-  return {
-    archiveBot: async (bot: BotTarget) => {
-      const result = await archive({
-        environmentId: bot.environmentId,
-        input: { projectId: bot.projectId },
+  const projects = useProjects();
+  const runArchive = async (bot: BotTarget, includeChildren: boolean) => {
+    const result = await archive({
+      environmentId: bot.environmentId,
+      input: { projectId: bot.projectId, ...(includeChildren ? { includeChildren } : {}) },
+    });
+    reportFailure(`Could not archive ${bot.name}`, result);
+    if (result._tag === "Success") {
+      const others = result.value.projectIds.length - 1;
+      toastManager.add({
+        type: "success",
+        title:
+          others === 0
+            ? `Archived ${bot.name}`
+            : `Archived ${bot.name} and ${others} ${others === 1 ? "bot" : "bots"} it created`,
+        description: "Routines are paused. Find archived bots under Archived in the bot list.",
       });
-      reportFailure(`Could not archive ${bot.name}`, result);
-      if (result._tag === "Success") {
-        toastManager.add({
-          type: "success",
-          title: `Archived ${bot.name}`,
-          description: "Its routines are paused. Find it under Archived in the bot list.",
-        });
+    }
+    return result._tag === "Success";
+  };
+  return {
+    runArchive,
+    /** A bot with live child bots asks whether they go too; one without archives at once. */
+    archiveBot: async (bot: BotTarget) => {
+      const children = liveBotDescendants(projects, bot).length;
+      if (children > 0) {
+        useArchiveDialog.setState((state) => ({
+          request: { bot, children },
+          session: state.session + 1,
+        }));
+        return;
       }
+      await runArchive(bot, false);
     },
     unarchiveBot: async (bot: BotTarget) => {
       const result = await unarchive({
@@ -76,6 +97,91 @@ export function useBotArchive() {
       reportFailure(`Could not unarchive ${bot.name}`, result);
     },
   };
+}
+
+const useArchiveDialog = create<{
+  request: { readonly bot: BotTarget; readonly children: number } | null;
+  session: number;
+}>(() => ({ request: null, session: 0 }));
+
+function closeArchiveDialog() {
+  useArchiveDialog.setState({ request: null });
+}
+
+export function ArchiveBotDialogHost() {
+  const request = useArchiveDialog((state) => state.request);
+  const session = useArchiveDialog((state) => state.session);
+  return request ? (
+    <ArchiveBotDialog key={session} bot={request.bot} childCount={request.children} />
+  ) : null;
+}
+
+function ArchiveBotDialog({
+  bot,
+  childCount,
+}: {
+  readonly bot: BotTarget;
+  readonly childCount: number;
+}) {
+  const { runArchive } = useBotArchive();
+  const [includeChildren, setIncludeChildren] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const submit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    if (await runArchive(bot, includeChildren)) closeArchiveDialog();
+    else setSubmitting(false);
+  };
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) closeArchiveDialog();
+      }}
+    >
+      <DialogPopup className="sm:max-w-md">
+        <form
+          className="flex min-h-0 flex-col"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Archive {bot.name}?</DialogTitle>
+            <DialogDescription>
+              Pauses its routines and heartbeat and moves it out of the bot list. Its conversation
+              and home folder are kept, and you can unarchive it any time.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel>
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <Checkbox
+                checked={includeChildren}
+                onCheckedChange={(checked) => setIncludeChildren(checked === true)}
+              />
+              <span className="flex flex-col gap-0.5">
+                <span>
+                  Also archive the {childCount === 1 ? "bot" : `${childCount} bots`} it created
+                </span>
+                <span className="text-muted-foreground text-xs">
+                  Off leaves them running on their own.
+                </span>
+              </span>
+            </label>
+          </DialogPanel>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeArchiveDialog}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              Archive
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogPopup>
+    </Dialog>
+  );
 }
 
 const useDeleteDialog = create<{ bot: BotTarget | null; session: number }>(() => ({
