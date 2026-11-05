@@ -10,7 +10,6 @@ import type {
   ConnectorRequestRef,
   EnvironmentId,
 } from "@t3tools/contracts";
-import * as WebBrowser from "expo-web-browser";
 import { useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 
@@ -35,10 +34,13 @@ export type ConnectorKeyPrompt =
   | { readonly kind: "new"; readonly choice: ConnectorChoice }
   | { readonly kind: "reauthenticate"; readonly connection: ConnectorConnection };
 
+// Loaded on first sign-in, so the thread feed doesn't load the native browser module up front.
+const webBrowser = () => import("expo-web-browser");
+
 /** The system's auth browser, else the default browser. */
 const openAuthPage = async (url: string) => {
   try {
-    await WebBrowser.openBrowserAsync(url, { createTask: false });
+    await (await webBrowser()).openBrowserAsync(url, { createTask: false });
   } catch {
     await tryOpenExternalUrl(url, "provider-auth");
   }
@@ -88,7 +90,9 @@ export function useConnectorSignIn(
     );
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the native auth browser once the server reports the sign-in
   useEffect(() => {
-    if (finished && Platform.OS === "ios") WebBrowser.dismissBrowser();
+    if (finished && Platform.OS === "ios") {
+      void webBrowser().then((browser) => browser.dismissBrowser());
+    }
   }, [finished]);
 
   const run = async (work: () => Promise<string | null>) => {
