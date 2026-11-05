@@ -1161,7 +1161,11 @@ export default function ChatView(props: ChatViewProps) {
     threadProvider,
     providers: providerStatuses,
   });
-  const modelPickerLockedProvider = supportsProviderSwitchingViaHandoff ? null : lockedProvider;
+  // A bot's conversation switches provider through a fresh session instead of a handoff.
+  const isBotConversation =
+    activeThread !== undefined && activeProject?.mainThreadId === activeThread.id;
+  const modelPickerLockedProvider =
+    supportsProviderSwitchingViaHandoff || isBotConversation ? null : lockedProvider;
   const supportsPullRequests = serverConfig !== null;
   const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
   const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
@@ -2620,6 +2624,7 @@ export default function ChatView(props: ChatViewProps) {
     setPendingServerThreadEnvModeEntry,
     setPendingServerThreadStartFromOriginByThreadId,
     scheduleComposerFocus,
+    isBotConversation,
   });
   const { onResume, isResuming } = useComposerResume({
     environmentId,
@@ -3418,6 +3423,7 @@ export default function ChatView(props: ChatViewProps) {
                               }
                               runtimeMode={runtimeMode}
                               defaultRuntimeMode={defaultRuntimeMode}
+                              autonomy={activeProject?.autonomy}
                               interactionMode={interactionMode}
                               lockedProvider={modelPickerLockedProvider}
                               providerStatuses={providerStatuses as ServerProvider[]}
@@ -3502,6 +3508,7 @@ export default function ChatView(props: ChatViewProps) {
                                 <ComposerContextPermissions
                                   environmentId={environmentId}
                                   runtimeMode={runtimeMode}
+                                  autonomy={activeProject?.autonomy}
                                   supportedRuntimeModes={
                                     activeProviderStatus?.supportedRuntimeModes
                                   }
@@ -3546,17 +3553,6 @@ export default function ChatView(props: ChatViewProps) {
                 environmentId={activeThread.environmentId}
                 threadId={activeThread.id}
                 {...(draftId ? { draftId } : {})}
-                keybindings={keybindings}
-                availableEditors={availableEditors}
-                showOpenInPicker={showOpenInPicker}
-                openInShortcutEnabled={
-                  !(
-                    rightPanelOpen &&
-                    renderedRightPanelSurface?.kind === "file" &&
-                    renderedRightPanelSurface.attachment === undefined
-                  )
-                }
-                openInCwd={gitCwd}
                 usage={{
                   providerInstanceId: activeProviderInstanceId,
                   providers: providerStatuses,

@@ -67,6 +67,9 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   avatar: Schema.optional(ReceivedProjectAvatar),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   autonomy: Schema.optional(BotAutonomy),
+  parentBotProjectId: Schema.optional(Schema.NullOr(ProjectId)),
+  canCreateBotsWithoutAsking: Schema.optional(Schema.Boolean),
+  personaReady: Schema.optional(Schema.Boolean),
   connectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
   updatedAt: IsoDateTime,
 });

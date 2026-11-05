@@ -2,6 +2,7 @@ import type {
   ModelSelection,
   OrchestrationV2ModelSwitch,
   OrchestrationV2Run,
+  OrchestrationV2SessionRolloverReason,
   OrchestrationV2TurnItem,
   ProviderInstanceId,
   ServerProvider,
@@ -135,4 +136,22 @@ function resolveEffort(
     getProviderOptionCurrentValue(descriptor, selection);
   if (typeof value !== "string") return undefined;
   return { value, label: descriptor.options.find((option) => option.id === value)?.label ?? value };
+}
+
+const SESSION_ROLLOVER_REASONS: Record<OrchestrationV2SessionRolloverReason, string> = {
+  context_full: "The context was full",
+  idle: "After a long pause",
+  user: "You asked",
+  model_switch: "Switched model",
+  agent: "The bot asked",
+};
+
+/** The divider under the turn that ended a provider session; the bot re-reads its notes next. */
+export function sessionRolloverDetail(
+  item: Extract<OrchestrationV2TurnItem, { type: "session_rollover" }>,
+): string {
+  const reason = SESSION_ROLLOVER_REASONS[item.reason];
+  return item.modelSelection === undefined
+    ? reason
+    : `${reason} · now on ${item.modelSelection.model}`;
 }

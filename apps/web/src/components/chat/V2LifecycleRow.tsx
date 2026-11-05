@@ -19,6 +19,7 @@ import {
   type HandoffEndpoints,
   type HandoffTimelineRun,
   resolveModelSwitchChange,
+  sessionRolloverDetail,
 } from "@t3tools/client-runtime/handoff";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
 import {
@@ -45,6 +46,7 @@ import {
   ArrowRightIcon,
   GitForkIcon,
   MessageSquareIcon,
+  RotateCwIcon,
 } from "lucide-react";
 
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
@@ -81,6 +83,15 @@ export function V2LifecycleRow(props: {
         detail={item.message}
         icon={CircleStopIcon}
         wrapDetail
+      />
+    );
+  }
+  if (item.type === "session_rollover") {
+    return (
+      <TimelineSystemDivider
+        label="New session"
+        detail={sessionRolloverDetail(item)}
+        icon={RotateCwIcon}
       />
     );
   }

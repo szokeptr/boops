@@ -48,6 +48,9 @@ export interface ProjectMetaUpdateCommand {
   readonly avatar?: ProjectAvatar | null;
   readonly mainThreadId?: ThreadId | null;
   readonly autonomy?: BotAutonomy | null;
+  readonly parentBotProjectId?: ProjectId | null;
+  readonly canCreateBotsWithoutAsking?: boolean;
+  readonly personaReady?: boolean;
   readonly connectionIds?: ReadonlyArray<ConnectorConnectionId>;
 }
 
@@ -232,6 +235,13 @@ export function planProjectCommand(input: {
           ...(command.autonomy === undefined
             ? {}
             : { autonomy: command.autonomy ?? DEFAULT_BOT_AUTONOMY }),
+          ...(command.parentBotProjectId === undefined
+            ? {}
+            : { parentBotProjectId: command.parentBotProjectId }),
+          ...(command.canCreateBotsWithoutAsking === undefined
+            ? {}
+            : { canCreateBotsWithoutAsking: command.canCreateBotsWithoutAsking }),
+          ...(command.personaReady === undefined ? {} : { personaReady: command.personaReady }),
           ...(command.connectionIds === undefined ? {} : { connectionIds: command.connectionIds }),
           updatedAt: occurredAt,
         },

@@ -67,6 +67,7 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly avatar?: ProjectAvatar | null;
   readonly mainThreadId?: ThreadId | null;
   readonly autonomy?: BotAutonomy | null;
+  readonly canCreateBotsWithoutAsking?: boolean;
 }
 
 export interface DeleteProjectInput extends CommandMetadata {
@@ -130,6 +131,11 @@ export interface VisitThreadInput extends ThreadCommandInput {
 }
 
 export type MarkThreadUnreadInput = ThreadCommandInput;
+
+export interface StartFreshSessionInput extends ThreadCommandInput {
+  /** The next session's selection; switching a bot's model goes through a fresh session. */
+  readonly modelSelection?: ModelSelection;
+}
 
 export interface UpdateThreadMetadataInput extends ThreadCommandInput {
   readonly limitRecovery?: import("@t3tools/contracts").OrchestrationV2LimitRecoveryUpdate | null;
@@ -387,6 +393,9 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
     ...(input.avatar === undefined ? {} : { avatar: input.avatar }),
     ...(input.mainThreadId === undefined ? {} : { mainThreadId: input.mainThreadId }),
     ...(input.autonomy === undefined ? {} : { autonomy: input.autonomy }),
+    ...(input.canCreateBotsWithoutAsking === undefined
+      ? {}
+      : { canCreateBotsWithoutAsking: input.canCreateBotsWithoutAsking }),
   });
 });
 
@@ -611,6 +620,19 @@ export const markThreadUnread = Effect.fn("EnvironmentCommands.markThreadUnread"
     type: "thread.mark-unread",
     commandId: yield* allocateCommandId(input),
     threadId: input.threadId,
+  });
+});
+
+export const startFreshSession = Effect.fn("EnvironmentCommands.startFreshSession")(function* (
+  input: StartFreshSessionInput,
+) {
+  return yield* dispatch({
+    type: "thread.session.rollover",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    ...(input.modelSelection === undefined
+      ? { reason: "user" as const }
+      : { reason: "model_switch" as const, modelSelection: input.modelSelection }),
   });
 });
 

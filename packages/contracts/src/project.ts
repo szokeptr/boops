@@ -222,6 +222,10 @@ export const Project = Schema.Struct({
   avatar: Schema.optional(ReceivedProjectAvatar),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   autonomy: Schema.optional(BotAutonomy),
+  parentBotProjectId: Schema.optional(Schema.NullOr(ProjectId)),
+  canCreateBotsWithoutAsking: Schema.optional(Schema.Boolean),
+  /** Server-kept: the bot's home folder has a PERSONA.md, so it has hatched. Absent from older servers. */
+  personaReady: Schema.optional(Schema.Boolean),
   connectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -267,7 +271,10 @@ export const ProjectUpdatePayload = Schema.Struct({
       description:
         "full: the bot acts as you anywhere on this machine. home-folder: writes and commands stay in its home folder. Null resets to full. Takes effect at the bot's next session start.",
     }),
-  ),
+  ) /** The bot that created this one. Null detaches it. */,
+  parentBotProjectId: Schema.optional(Schema.NullOr(ProjectId)),
+  /** Lets this bot create child bots without an approval card. */
+  canCreateBotsWithoutAsking: Schema.optional(Schema.Boolean),
 });
 export type ProjectUpdatePayload = typeof ProjectUpdatePayload.Type;
 

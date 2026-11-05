@@ -61,7 +61,9 @@ describe("V2 preview upgrade", () => {
         [79, "DelegatedRecoveryIndexes"],
         [80, "ProjectionProjectsBotIdentity"],
         [81, "ProjectionProjectsBotAutonomy"],
-        [82, "Connectors"],
+        [82, "ProjectionProjectsBotFamily"],
+        [83, "ProjectionProjectsPersonaReady"],
+        [84, "Connectors"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -166,7 +168,9 @@ describe("V2 preview upgrade", () => {
         [79, "DelegatedRecoveryIndexes"],
         [80, "ProjectionProjectsBotIdentity"],
         [81, "ProjectionProjectsBotAutonomy"],
-        [82, "Connectors"],
+        [82, "ProjectionProjectsBotFamily"],
+        [83, "ProjectionProjectsPersonaReady"],
+        [84, "Connectors"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

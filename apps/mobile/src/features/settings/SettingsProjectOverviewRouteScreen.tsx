@@ -184,6 +184,7 @@ function ProjectOverviewContent(props: {
     readonly pinned?: boolean;
     readonly archived?: boolean;
     readonly autonomy?: BotAutonomy;
+    readonly canCreateBotsWithoutAsking?: boolean;
   }) => {
     setIsOrganizing(true);
     for (const member of allMembers) {
@@ -366,6 +367,20 @@ function ProjectOverviewContent(props: {
             onValueChange={(confined) =>
               void organize({ autonomy: confined ? "home-folder" : "full" })
             }
+          />
+        ) : null}
+        {canOrganize ? (
+          <SettingsSwitchRow
+            icon="sparkles"
+            label="Can create bots without asking"
+            subtitle={
+              offline
+                ? "Connect every machine with this project to change this."
+                : "Lets this bot create new bots without showing you an approval card first."
+            }
+            value={allMembers.every((member) => member.canCreateBotsWithoutAsking === true)}
+            disabled={isOrganizing || offline}
+            onValueChange={(allowed) => void organize({ canCreateBotsWithoutAsking: allowed })}
           />
         ) : null}
       </SettingsSection>

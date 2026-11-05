@@ -113,6 +113,9 @@ describe("deriveBotList", () => {
       project(laptop, "new"),
       project(laptop, "empty"),
       project(laptop, "dozing"),
+      // Servers that record the persona: replies alone do not finish hatching.
+      { ...project(laptop, "interviewing"), personaReady: false },
+      { ...project(laptop, "hatched"), personaReady: true },
     ];
     const lastWord = message("see you", "2026-06-10T00:00:00.000Z");
     const threads = [
@@ -135,6 +138,12 @@ describe("deriveBotList", () => {
       thread(laptop, "approval", "approval-main", pendingRequest("command")),
       thread(laptop, "input", "input-main", pendingRequest("user_input")),
       thread(laptop, "background", "background-main", { latestRunId: runId, status: "completed" }),
+      thread(laptop, "interviewing", "interviewing-main", {
+        latestRunId: runId,
+        status: "completed",
+        ...message("what should I call myself?", "2026-06-11T00:00:00.000Z"),
+      }),
+      thread(laptop, "hatched", "hatched-main", message("hi", "2026-06-11T00:00:00.000Z")),
       thread(laptop, "background", "background-run", {
         createdAt: at("2026-06-05T00:00:00.000Z"),
         ...pendingRequest("command"),
@@ -159,7 +168,33 @@ describe("deriveBotList", () => {
       new: "hatching",
       empty: "hatching",
       dozing: "dozing",
+      interviewing: "hatching",
+      hatched: "idle",
     });
+  });
+
+  it("badges a child with its maker, and its pending approval stays on the child", () => {
+    const childOf = (id: string, title: string, parent: string) => ({
+      ...project(laptop, id, title),
+      parentBotProjectId: ProjectId.make(parent),
+    });
+    const rows = deriveBotList({
+      projects: [
+        project(laptop, "wren", "Wren"),
+        childOf("pace", "Pace", "wren"),
+        childOf("orphan", "Orphan", "deleted-parent"),
+        // Project ids are per environment: the VPS's "wren" is another bot.
+        childOf("stride", "Stride", "wren-on-vps"),
+        project(vps, "wren-on-vps", "VPS Wren"),
+      ],
+      threads: [thread(laptop, "pace", "pace-main", pendingRequest("command"))],
+      machineLabels,
+    });
+    const byId = Object.fromEntries(rows.map((row) => [row.projectId, row]));
+    expect(byId.wren).toMatchObject({ madeBy: null, status: "hatching" });
+    expect(byId.pace).toMatchObject({ madeBy: "Wren", status: "needs-you" });
+    expect(byId.orphan?.madeBy).toBeNull();
+    expect(byId.stride?.madeBy).toBeNull();
   });
 
   it("orders bots by their main thread's latest message across environments", () => {

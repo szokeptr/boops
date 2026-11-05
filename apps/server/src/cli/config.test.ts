@@ -45,7 +45,6 @@ const minimalDesktopFlags = (baseDir: string) => ({
   devUrl: Option.none<URL>(),
   noBrowser: Option.none<boolean>(),
   bootstrapFd: Option.none<number>(),
-  autoBootstrapProjectFromCwd: Option.none<boolean>(),
   logWebSocketEvents: Option.none<boolean>(),
   tailscaleServeEnabled: Option.none<boolean>(),
   tailscaleServePort: Option.none<number>(),
@@ -228,7 +227,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         devUrl: Option.some(new URL("http://127.0.0.1:5173")),
         noBrowser: Option.none<boolean>(),
         bootstrapFd: Option.none<number>(),
-        autoBootstrapProjectFromCwd: Option.none<boolean>(),
         logWebSocketEvents: Option.none<boolean>(),
         tailscaleServeEnabled: Option.none<boolean>(),
         tailscaleServePort: Option.none<number>(),
@@ -273,7 +271,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         devUrl: Option.some(new URL("http://127.0.0.1:5173")),
         noBrowser: Option.none<boolean>(),
         bootstrapFd: Option.none<number>(),
-        autoBootstrapProjectFromCwd: Option.none<boolean>(),
         logWebSocketEvents: Option.none<boolean>(),
         tailscaleServeEnabled: Option.none<boolean>(),
         tailscaleServePort: Option.none<number>(),
@@ -329,7 +326,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           devUrl: Option.some(new URL("http://127.0.0.1:4173")),
           noBrowser: Option.some(false),
           bootstrapFd: Option.none(),
-          autoBootstrapProjectFromCwd: Option.some(false),
           logWebSocketEvents: Option.some(false),
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
@@ -344,7 +340,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
                 env: {
                   T3CODE_BOOTSTRAP_FD: String(fd),
                   T3CODE_NO_BROWSER: "true",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
                   T3CODE_LOG_WS_EVENTS: "true",
                 },
               }),
@@ -368,7 +363,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         noBrowser: false,
         startupPresentation: "browser",
         desktopBootstrapToken: "desktop-bootstrap-token",
-        autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
@@ -406,7 +400,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           devUrl: Option.some(new URL("http://127.0.0.1:4173")),
           noBrowser: Option.none(),
           bootstrapFd: Option.none(),
-          autoBootstrapProjectFromCwd: Option.none(),
           logWebSocketEvents: Option.none(),
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
@@ -423,7 +416,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
                   T3CODE_BOOTSTRAP_FD: String(fd),
                   T3CODE_HOME: baseDir,
                   T3CODE_NO_BROWSER: "true",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
                   T3CODE_LOG_WS_EVENTS: "true",
                 },
               }),
@@ -447,7 +439,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         noBrowser: true,
         startupPresentation: "browser",
         desktopBootstrapToken: "desktop-token",
-        autoBootstrapProjectFromCwd: true,
         logWebSocketEvents: true,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
@@ -554,7 +545,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           devUrl: Option.none(),
           noBrowser: Option.none(),
           bootstrapFd: Option.none(),
-          autoBootstrapProjectFromCwd: Option.none(),
           logWebSocketEvents: Option.none(),
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
@@ -603,7 +593,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           devUrl: Option.none(),
           noBrowser: Option.none(),
           bootstrapFd: Option.none(),
-          autoBootstrapProjectFromCwd: Option.none(),
           logWebSocketEvents: Option.none(),
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
@@ -628,7 +617,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     }),
   );
 
-  it.effect("forces noBrowser and disables auto-bootstrap for headless startup presentation", () =>
+  it.effect("forces noBrowser for headless startup presentation", () =>
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
       const baseDir = join(NodeOS.tmpdir(), "t3-cli-config-headless-base");
@@ -644,7 +633,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           devUrl: Option.none(),
           noBrowser: Option.none(),
           bootstrapFd: Option.none(),
-          autoBootstrapProjectFromCwd: Option.none(),
           logWebSocketEvents: Option.none(),
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
@@ -661,7 +649,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
               ConfigProvider.fromEnv({
                 env: {
                   T3CODE_NO_BROWSER: "false",
-                  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
                 },
               }),
             ),
@@ -684,7 +671,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         noBrowser: true,
         startupPresentation: "headless",
         desktopBootstrapToken: undefined,
-        autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
@@ -707,7 +693,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           devUrl: Option.none(),
           noBrowser: Option.none(),
           bootstrapFd: Option.none(),
-          autoBootstrapProjectFromCwd: Option.none(),
           logWebSocketEvents: Option.none(),
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
@@ -747,7 +732,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     devUrl: Option.none<URL>(),
     noBrowser: Option.none<boolean>(),
     bootstrapFd: Option.none<number>(),
-    autoBootstrapProjectFromCwd: Option.none<boolean>(),
     logWebSocketEvents: Option.none<boolean>(),
     tailscaleServeEnabled: Option.none<boolean>(),
     tailscaleServePort: Option.none<number>(),

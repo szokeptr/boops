@@ -165,6 +165,7 @@ function commandThreadIds(command: OrchestrationV2Command): ReadonlyArray<Thread
     case "thread.interaction-mode.set":
     case "thread.model-selection.set":
     case "provider-session.detach":
+    case "thread.session.rollover":
     case "message.dispatch":
     case "notification.delivery.accept":
     case "prepared-run.release":

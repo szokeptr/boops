@@ -44,6 +44,8 @@ export interface ProjectCreateInput extends ProjectCreatePayload {
 export interface ProjectUpdateInput extends ProjectUpdatePayload {
   readonly commandId: CommandId;
   readonly projectId: ProjectId;
+  /** Server-only: clients and agents cannot claim a bot has hatched. */
+  readonly personaReady?: boolean;
   /** Server-only: the Connectors service is the one writer, so agents and clients can't set it. */
   readonly connectionIds?: ReadonlyArray<ConnectorConnectionId>;
 }
@@ -187,6 +189,9 @@ export const make = Effect.gen(function* () {
     avatar: row.avatar,
     mainThreadId: row.mainThreadId,
     autonomy: row.autonomy,
+    parentBotProjectId: row.parentBotProjectId,
+    canCreateBotsWithoutAsking: row.canCreateBotsWithoutAsking,
+    personaReady: row.personaReady,
     connectionIds: row.connectionIds,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -403,6 +408,13 @@ export const make = Effect.gen(function* () {
         ...(input.avatar === undefined ? {} : { avatar: input.avatar }),
         ...(input.mainThreadId === undefined ? {} : { mainThreadId: input.mainThreadId }),
         ...(input.autonomy === undefined ? {} : { autonomy: input.autonomy }),
+        ...(input.parentBotProjectId === undefined
+          ? {}
+          : { parentBotProjectId: input.parentBotProjectId }),
+        ...(input.canCreateBotsWithoutAsking === undefined
+          ? {}
+          : { canCreateBotsWithoutAsking: input.canCreateBotsWithoutAsking }),
+        ...(input.personaReady === undefined ? {} : { personaReady: input.personaReady }),
         ...(input.connectionIds === undefined ? {} : { connectionIds: input.connectionIds }),
       });
       if (workspaceRoot !== previousRoot) {

@@ -47,6 +47,12 @@ export const projectMutationOperation = Effect.fn("projectMutationOperation")(fu
         ...(mutation.avatar === undefined ? {} : { avatar: mutation.avatar }),
         ...(mutation.mainThreadId === undefined ? {} : { mainThreadId: mutation.mainThreadId }),
         ...(mutation.autonomy === undefined ? {} : { autonomy: mutation.autonomy }),
+        ...(mutation.parentBotProjectId === undefined
+          ? {}
+          : { parentBotProjectId: mutation.parentBotProjectId }),
+        ...(mutation.canCreateBotsWithoutAsking === undefined
+          ? {}
+          : { canCreateBotsWithoutAsking: mutation.canCreateBotsWithoutAsking }),
       });
 
     case "project.delete":

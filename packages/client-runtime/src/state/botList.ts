@@ -1,8 +1,10 @@
 import {
   botMainThreadId,
+  type BotAutonomy,
   type EnvironmentId,
   type ProjectAvatar,
   type ProjectId,
+  type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -21,8 +23,8 @@ import { toSortableTimestamp } from "./threadSort.ts";
 export type BotThreadStatus = "working" | "needs-you" | "idle";
 
 /**
- * What the bot is doing, as its avatar shows it. Hatching: its conversation has
- * not had a turn yet. Dozing: idle and quiet for a while.
+ * What the bot is doing, as its avatar shows it. Hatching: it has not written its
+ * PERSONA.md yet. Dozing: idle and quiet for a while.
  */
 export type BotStatus = BotThreadStatus | "dozing" | "hatching";
 
@@ -52,6 +54,8 @@ export interface BotRow {
   readonly lastActivityAt: string;
   /** Live threads besides the main one, which the bot's activity view lists. */
   readonly activityThreadCount: number;
+  /** Name of the bot that created this one, for the "made by" badge. */
+  readonly madeBy: string | null;
 }
 
 export interface BotListInput {
@@ -161,6 +165,14 @@ function compareByActivity(
   return difference !== 0 ? difference : tieBreak.localeCompare(otherTieBreak);
 }
 
+// Servers without persona tracking leave `personaReady` out; there, a first turn is the best sign.
+function hasHatched(
+  project: Pick<EnvironmentProject, "personaReady">,
+  main: EnvironmentThreadShell | null,
+): boolean {
+  return project.personaReady ?? (main !== null && main.latestRun !== null);
+}
+
 /**
  * One row per bot across every linked environment, most recently active
  * first. A bot needs you or works when any of its threads does, so a
@@ -175,6 +187,14 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
     if (bucket) bucket.push(thread);
     else threadsByProjectKey.set(key, [thread]);
   }
+
+  // Archived parents still name their children; a deleted one leaves no badge.
+  const titlesByProjectKey = new Map(
+    input.projects.map((project) => [
+      scopedProjectKey({ environmentId: project.environmentId, projectId: project.id }),
+      project.title,
+    ]),
+  );
 
   const rows: BotRow[] = [];
   for (const project of input.projects) {
@@ -195,7 +215,7 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
     const status: BotStatus =
       threadStatus !== "idle"
         ? threadStatus
-        : main === null || main.latestRun === null
+        : !hasHatched(project, main)
           ? "hatching"
           : input.now !== undefined &&
               input.now - (toSortableTimestamp(lastActivityAt) ?? input.now) > BOT_DOZE_AFTER_MS
@@ -216,6 +236,15 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
       unread: main !== null && isThreadUnread(main, input.localLastVisitedAt),
       lastActivityAt,
       activityThreadCount: threads.filter((thread) => thread.id !== mainThreadId).length,
+      madeBy:
+        project.parentBotProjectId == null
+          ? null
+          : (titlesByProjectKey.get(
+              scopedProjectKey({
+                environmentId: project.environmentId,
+                projectId: project.parentBotProjectId,
+              }),
+            ) ?? null),
     });
   }
   return rows.sort((a, b) => compareByActivity(a, b, a.key, b.key));
@@ -248,4 +277,15 @@ export function resolveBotMainThreadId(
   threads: ReadonlyArray<EnvironmentThreadShell>,
 ): ThreadId | null {
   return botMainThreadId(project, botThreads(project, threads));
+}
+
+/**
+ * The limit a home-folder bot really runs under, which the thread's runtime mode alone
+ * overstates. Supervised threads keep asking either way, so their label stays true.
+ */
+export function botAccessLimitLabel(
+  autonomy: BotAutonomy | undefined,
+  runtimeMode: RuntimeMode,
+): string | null {
+  return autonomy === "home-folder" && runtimeMode !== "approval-required" ? "Home folder" : null;
 }

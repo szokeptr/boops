@@ -5,8 +5,6 @@ import type {
   PullRequestCheckStatus,
   PullRequestChecksState,
   PullRequestLabel,
-  PullRequestMergeability,
-  PullRequestReviewDecision,
   PullRequestState,
 } from "@t3tools/contracts";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
@@ -16,9 +14,6 @@ import {
   CircleDotIcon,
   CircleSlashIcon,
   CircleXIcon,
-  UserCheckIcon,
-  UserRoundIcon,
-  UserRoundXIcon,
 } from "lucide-react";
 import { Children, type CSSProperties, isValidElement, type ReactNode, useState } from "react";
 
@@ -31,7 +26,6 @@ import type { PullRequestReviewOutcome } from "./pullRequestDetail.logic";
 import { pullRequestLabelColor } from "./pullRequestList.logic";
 import {
   PULL_REQUEST_STATE_PRESENTATION,
-  PullRequestGlyph,
   type PullRequestStatePresentation,
   type PullRequestGlyphIcon,
 } from "./pullRequestIcons";
@@ -61,46 +55,6 @@ export function PullRequestLabelChip({
   );
 }
 
-function reviewDecisionPresentation(decision: PullRequestReviewDecision) {
-  switch (decision) {
-    case "approved":
-      return {
-        Icon: UserCheckIcon,
-        label: "Approved",
-        toneClassName: CHECK_STATUS_PRESENTATION.success.toneClassName,
-      };
-    case "changes-requested":
-      return {
-        Icon: UserRoundXIcon,
-        label: "Changes requested",
-        toneClassName: "text-amber-600/90 dark:text-amber-400/80",
-      };
-    case "review-required":
-      return {
-        Icon: UserRoundIcon,
-        label: "Awaiting review",
-        toneClassName: "text-muted-foreground/60",
-      };
-  }
-}
-
-export function PullRequestReviewDecisionGlyph({
-  decision,
-}: {
-  decision: PullRequestReviewDecision;
-}) {
-  const presentation = reviewDecisionPresentation(decision);
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
-        <presentation.Icon aria-hidden className={cn("size-3.5", presentation.toneClassName)} />
-        <span className="sr-only">{presentation.label}</span>
-      </TooltipTrigger>
-      <TooltipPopup>{presentation.label}</TooltipPopup>
-    </Tooltip>
-  );
-}
-
 export function resolvePullRequestState(input: {
   readonly state: PullRequestState;
   readonly isDraft: boolean;
@@ -113,80 +67,6 @@ export interface PullRequestConflictPresentation {
   readonly label: string;
   readonly toneClassName: string;
   readonly Icon: PullRequestGlyphIcon;
-}
-
-function resolvePullRequestConflict(input: {
-  readonly state: PullRequestState;
-  readonly isDraft: boolean;
-  readonly mergeability?: PullRequestMergeability;
-  readonly baseBranch?: string;
-}): PullRequestConflictPresentation | null {
-  if (input.state !== "open" || input.isDraft || input.mergeability !== "conflicting") {
-    return null;
-  }
-  return {
-    label: input.baseBranch ? `Conflicts with ${input.baseBranch}` : "Has conflicts",
-    toneClassName: "text-destructive",
-    Icon: PullRequestGlyph.conflicting,
-  };
-}
-
-export function PullRequestStateGlyph({
-  state,
-  isDraft,
-  className,
-}: {
-  state: PullRequestState;
-  isDraft: boolean;
-  className?: string;
-}) {
-  const presentation = resolvePullRequestState({ state, isDraft });
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
-        <presentation.Icon
-          role="img"
-          aria-label={presentation.label}
-          className={cn("size-4 shrink-0", presentation.toneClassName, className)}
-        />
-      </TooltipTrigger>
-      <TooltipPopup>{presentation.label}</TooltipPopup>
-    </Tooltip>
-  );
-}
-
-export function PullRequestConflictGlyph({
-  state,
-  isDraft,
-  mergeability,
-  baseBranch,
-  className,
-}: {
-  state: PullRequestState;
-  isDraft: boolean;
-  mergeability?: PullRequestMergeability;
-  baseBranch?: string;
-  className?: string;
-}) {
-  const presentation = resolvePullRequestConflict({
-    state,
-    isDraft,
-    ...(mergeability === undefined ? {} : { mergeability }),
-    ...(baseBranch === undefined ? {} : { baseBranch }),
-  });
-  if (presentation === null) return null;
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
-        <presentation.Icon
-          role="img"
-          aria-label={presentation.label}
-          className={cn("size-4 shrink-0", presentation.toneClassName, className)}
-        />
-      </TooltipTrigger>
-      <TooltipPopup>{presentation.label}</TooltipPopup>
-    </Tooltip>
-  );
 }
 
 const CHECK_STATUS_PRESENTATION = {

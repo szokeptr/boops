@@ -27,6 +27,7 @@ export type ProjectGroupUpdate = Partial<{
   pinned: boolean;
   archived: boolean;
   autonomy: BotAutonomy;
+  canCreateBotsWithoutAsking: boolean;
 }>;
 
 type ProjectGroupMember = Pick<

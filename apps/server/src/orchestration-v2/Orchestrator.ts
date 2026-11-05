@@ -50,6 +50,8 @@ import {
   type OrchestrationV2RemoteTaskChild,
   type OrchestrationV2ModelSwitch,
   type OrchestrationV2Run,
+  type OrchestrationV2SessionRollover,
+  SESSION_ROLLOVER_SAVE_NOTES_TEXT,
   type OrchestrationV2RunAttempt,
   type OrchestrationV2ThreadShell,
   type OrchestrationV2ThreadShellSnapshot,
@@ -579,6 +581,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.interaction-mode.set":
     case "thread.model-selection.set":
     case "provider-session.detach":
+    case "thread.session.rollover":
     case "message.dispatch":
     case "notification.delivery.accept":
     case "prepared-run.release":
@@ -991,6 +994,16 @@ function appendContextHandoffId(
   return handoffId === null ? handoffIds : Array.from(new Set([...handoffIds, handoffId]));
 }
 
+/** A session rollover ended this provider thread; the bot's notes carry what it held. */
+function isRetiredProviderThread(
+  thread: Pick<OrchestrationV2AppThread, "retiredProviderThreadIds">,
+  providerThreadId: OrchestrationV2ProviderThread["id"] | null,
+): boolean {
+  return (
+    providerThreadId !== null && (thread.retiredProviderThreadIds ?? []).includes(providerThreadId)
+  );
+}
+
 function rootProviderThreadsForProvider(
   projection: Pick<OrchestrationV2ThreadProjection, "providerThreads" | "thread">,
   providerInstanceId: ModelSelection["instanceId"],
@@ -1000,7 +1013,8 @@ function rootProviderThreadsForProvider(
       (providerThread) =>
         providerThread.providerInstanceId === providerInstanceId &&
         providerThread.appThreadId === projection.thread.id &&
-        providerThread.ownerNodeId === null,
+        providerThread.ownerNodeId === null &&
+        !isRetiredProviderThread(projection.thread, providerThread.id),
     )
     .toSorted(
       (left, right) =>
@@ -1012,6 +1026,12 @@ function rootProviderThreadsForProvider(
 function isHandoffSourceRun(run: OrchestrationV2Run): boolean {
   return run.status === "completed" || run.status === "failed" || run.status === "interrupted";
 }
+
+/** Runs a handoff may carry: a rolled-over session's runs stay behind. */
+const currentSessionHandoffSource =
+  (thread: Pick<OrchestrationV2AppThread, "retiredProviderThreadIds">) =>
+  (run: OrchestrationV2Run): boolean =>
+    isHandoffSourceRun(run) && !isRetiredProviderThread(thread, run.providerThreadId);
 
 function lastDeliveredRunForProviderThread(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "providerTurns">,
@@ -1804,7 +1824,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? activeProviderThread?.providerInstanceId === queuedRun.providerInstanceId
           ? activeProviderThread
           : rootProviderThreadsForProvider(projection, queuedRun.providerInstanceId)[0]
-        : storedProviderThread;
+        : isRetiredProviderThread(projection.thread, storedProviderThread.id)
+          ? undefined
+          : storedProviderThread;
       const queuedProviderThread: OrchestrationV2ProviderThread = targetProviderThread ?? {
         id: idAllocator.derive.providerThread({
           driver: targetAdapter.driver,
@@ -1923,7 +1945,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
       );
       const latestCompletedRun = projection.runs.findLast((run) => run.status === "completed");
-      const latestHandoffRun = projection.runs.findLast(isHandoffSourceRun);
+      const handoffSource = currentSessionHandoffSource(projection.thread);
+      const latestHandoffRun = projection.runs.findLast(handoffSource);
       const targetLastCompletedRun = lastDeliveredRunForProviderThread(
         projection,
         queuedProviderThread.id,
@@ -1935,7 +1958,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ? []
           : projection.runs.filter(
               (run) =>
-                isHandoffSourceRun(run) &&
+                handoffSource(run) &&
                 run.ordinal > (targetLastCompletedRun?.ordinal ?? 0) &&
                 run.ordinal <= latestHandoffRun.ordinal,
             );
@@ -4276,6 +4299,234 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
   });
 
+  /**
+   * Marks the message whose run ends the current provider session: the agent's own turn when it
+   * asked, else a save-notes turn queued behind any active work. `completeSessionRollover` does
+   * the rest when that run ends.
+   */
+  const dispatchSessionRollover = Effect.fn("orchestrationV2.dispatch.sessionRollover")(function* (
+    command: Extract<OrchestrationV2Command, { readonly type: "thread.session.rollover" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const projection = yield* getProjectionWithPendingEvents(command.threadId, events);
+    const { thread } = projection;
+    if (thread.archivedAt !== null || thread.deletedAt !== null) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "Unarchive the thread before starting a fresh session.",
+      });
+    }
+    const now = yield* DateTime.now;
+    const emitEvent = emit(events, command);
+    const rollover: OrchestrationV2SessionRollover = {
+      reason: command.reason,
+      ...(command.modelSelection === undefined ? {} : { modelSelection: command.modelSelection }),
+    };
+    const markMessage = (message: OrchestrationV2ConversationMessage) =>
+      emitEvent({
+        type: "message.updated",
+        threadId: command.threadId,
+        runId: message.runId ?? undefined,
+        nodeId: message.nodeId ?? undefined,
+        providerInstanceId: thread.providerInstanceId,
+        occurredAt: now,
+        payload: { ...message, sessionRollover: rollover, updatedAt: now },
+      });
+    const openRunIds = new Set(
+      projection.runs
+        .filter((run) => isActiveRun(run) || run.status === "queued")
+        .map((run) => run.id),
+    );
+    const pending = projection.messages.find(
+      (message) =>
+        message.sessionRollover !== undefined &&
+        message.runId !== null &&
+        openRunIds.has(message.runId),
+    );
+    // One rollover at a time; a later request only updates where the next session starts.
+    if (pending !== undefined) {
+      if (command.modelSelection !== undefined) yield* markMessage(pending);
+      return;
+    }
+    if (thread.activeProviderThreadId === null) {
+      // No session holds anything to save, so a switch applies to the next turn directly.
+      if (
+        command.modelSelection === undefined ||
+        modelSelectionsEqual(thread.modelSelection, command.modelSelection)
+      )
+        return;
+      yield* emitEvent({
+        type:
+          thread.providerInstanceId === command.modelSelection.instanceId
+            ? "thread.model-selection-updated"
+            : "thread.provider-switched",
+        threadId: command.threadId,
+        providerInstanceId: command.modelSelection.instanceId,
+        occurredAt: now,
+        payload: {
+          ...thread,
+          providerInstanceId: command.modelSelection.instanceId,
+          modelSelection: command.modelSelection,
+          updatedAt: now,
+        },
+      });
+      return;
+    }
+    const activeRun = projection.runs.find(isActiveRun);
+    const activeMessage = projection.messages.find(
+      (message) => message.id === activeRun?.userMessageId,
+    );
+    // The agent saved its notes before asking, so its own turn is the last of the session.
+    if (command.reason === "agent" && activeMessage !== undefined) {
+      yield* markMessage(activeMessage);
+      return;
+    }
+    const messageId = MessageId.make(`session-rollover:${command.commandId}`);
+    yield* dispatchMessage(
+      {
+        type: "message.dispatch",
+        commandId: command.commandId,
+        threadId: command.threadId,
+        messageId,
+        text: SESSION_ROLLOVER_SAVE_NOTES_TEXT,
+        attachments: [],
+        // The session that is ending answers, even if the picker has moved on.
+        modelSelection: latestExecutedRun(projection.runs)?.modelSelection ?? thread.modelSelection,
+        createdBy: "system",
+        creationSource: "server",
+        dispatchMode:
+          activeRun !== undefined || openRunIds.size > 0
+            ? { type: "queue_after_active" }
+            : { type: "start_immediately" },
+      },
+      events,
+      effects,
+    );
+    const saveMessage = (yield* getProjectionWithPendingEvents(
+      command.threadId,
+      events,
+    )).messages.find((message) => message.id === messageId);
+    if (saveMessage === undefined) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "The save-notes turn was not created.",
+      });
+    }
+    yield* markMessage(saveMessage);
+  });
+
+  /**
+   * After a rollover run completes or fails: retires the thread's provider threads, detaches their
+   * sessions, applies a requested selection, and records where the new session starts. The next
+   * turn opens a fresh session that reads the bot's notes; a stopped run cancels the rollover.
+   */
+  const completeSessionRollover = Effect.fn("Orchestrator.completeSessionRollover")(function* (
+    threadId: ThreadId,
+    runId: RunId,
+  ) {
+    const projection = yield* readCommandProjection(threadId);
+    const { thread } = projection;
+    const run = projection.runs.find((candidate) => candidate.id === runId);
+    if (run === undefined || (run.status !== "completed" && run.status !== "failed")) return;
+    const rollover = projection.messages.find(
+      (message) => message.id === run.userMessageId,
+    )?.sessionRollover;
+    // A repeated run update finds the session already retired.
+    if (rollover === undefined || isRetiredProviderThread(thread, run.providerThreadId)) return;
+    const now = yield* DateTime.now;
+    const retiring = projection.providerThreads.filter(
+      (providerThread) =>
+        providerThread.appThreadId === threadId &&
+        providerThread.ownerNodeId === null &&
+        !isRetiredProviderThread(thread, providerThread.id) &&
+        // A queued message's placeholder belongs to the next session.
+        !(
+          providerThread.firstRunOrdinal === null &&
+          providerThread.nativeThreadRef === null &&
+          providerThread.providerSessionId === null
+        ),
+    );
+    const selection = rollover.modelSelection ?? thread.modelSelection;
+    const liveSessions = projection.providerSessions.filter(
+      (session) => session.status !== "stopped" && session.status !== "error",
+    );
+    const detail = "Started a fresh session.";
+    const item: OrchestrationV2TurnItem = {
+      id: TurnItemId.make(`session-rollover:${run.id}`),
+      threadId,
+      runId: run.id,
+      nodeId: run.rootNodeId,
+      providerThreadId: run.providerThreadId,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: yield* nextTurnItemOrdinal(projection),
+      status: "completed",
+      title: null,
+      startedAt: now,
+      completedAt: now,
+      updatedAt: now,
+      type: "session_rollover",
+      reason: rollover.reason,
+      ...(rollover.modelSelection === undefined ? {} : { modelSelection: rollover.modelSelection }),
+    };
+    yield* writeSystemEvents(
+      [
+        {
+          type: modelSelectionsEqual(selection, thread.modelSelection)
+            ? "thread.metadata-updated"
+            : selection.instanceId === thread.providerInstanceId
+              ? "thread.model-selection-updated"
+              : "thread.provider-switched",
+          threadId,
+          providerInstanceId: selection.instanceId,
+          occurredAt: now,
+          payload: {
+            ...thread,
+            providerInstanceId: selection.instanceId,
+            modelSelection: selection,
+            activeProviderThreadId: null,
+            retiredProviderThreadIds: [
+              ...(thread.retiredProviderThreadIds ?? []),
+              ...retiring.map((providerThread) => providerThread.id),
+            ],
+            updatedAt: now,
+          },
+        },
+        ...liveSessions.map((session) => ({
+          type: "provider-session.detached" as const,
+          threadId,
+          driver: session.driver,
+          providerInstanceId: session.providerInstanceId,
+          occurredAt: now,
+          payload: { providerSessionId: session.id, detachedAt: now, reason: detail },
+        })),
+        {
+          type: "turn-item.updated",
+          threadId,
+          runId: run.id,
+          nodeId: run.rootNodeId ?? undefined,
+          providerInstanceId: run.providerInstanceId,
+          occurredAt: now,
+          payload: item,
+        },
+      ],
+      liveSessions.map((session) => ({
+        id: `effect:session-rollover:${run.id}:provider-session.detach:${session.id}`,
+        commandId: CommandId.make(`command:system:session-rollover:${run.id}`),
+        threadId,
+        request: {
+          type: "provider-session.detach" as const,
+          providerSessionId: session.id,
+          detail,
+        },
+      })),
+    );
+  });
+
   const dispatchProviderSessionDetach = Effect.fn("orchestrationV2.dispatch.providerSessionDetach")(
     function* (
       command: Extract<OrchestrationV2Command, { readonly type: "provider-session.detach" }>,
@@ -6307,7 +6558,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const ordinal = nextRunOrdinal(projection);
     const runId = idAllocator.derive.run({ threadId: command.threadId, ordinal });
     const latestCompletedRun = projection.runs.findLast((run) => run.status === "completed");
-    const latestHandoffRun = projection.runs.findLast(isHandoffSourceRun);
+    const handoffSource = currentSessionHandoffSource(projection.thread);
+    const latestHandoffRun = projection.runs.findLast(handoffSource);
     const legacyImportItems =
       projection.thread.historyOrigin === "v1_import"
         ? yield* readHandoffItems(command.threadId, [null])
@@ -6960,7 +7212,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? []
         : projection.runs.filter(
             (run) =>
-              isHandoffSourceRun(run) &&
+              handoffSource(run) &&
               run.ordinal >
                 (requiresFullProviderSwitchContext ? 0 : (targetLastCompletedRun?.ordinal ?? 0)) &&
               run.ordinal <= latestHandoffRun.ordinal,
@@ -13363,6 +13615,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "provider-session.detach":
         yield* dispatchProviderSessionDetach(command, events, effects);
         break;
+      case "thread.session.rollover":
+        yield* dispatchSessionRollover(command, events, effects);
+        break;
       case "thread.project.adopt-folder":
         yield* dispatchThreadProjectAdoptFolder(command, events);
         break;
@@ -13707,6 +13962,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.type === "subagent.stop" ||
           // Closing a share again, or after it ended, is not an error.
           command.type === "thread.guest-share.close" ||
+          // A rollover already waiting, or no session to roll over, is not an error either.
+          command.type === "thread.session.rollover" ||
           (command.type === "thread.delete" && command.onlyIfUnused === true),
         (_planned) =>
           new OrchestratorDispatchError({
@@ -13943,10 +14200,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* threadDispatch
           .withLock(
             threadId,
-            (run.status === "completed"
-              ? releaseUnattendedHolds(threadId, run.id)
-              : Effect.void
-            ).pipe(
+            // The rollover lands before the next queued message picks its session.
+            completeSessionRollover(threadId, run.id).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Failed to roll over the provider session", {
+                  threadId,
+                  runId: run.id,
+                  cause,
+                }),
+              ),
+              Effect.andThen(
+                run.status === "completed" ? releaseUnattendedHolds(threadId, run.id) : Effect.void,
+              ),
               Effect.andThen(
                 startNextQueuedRun(threadId, {
                   endedRunId: run.id,

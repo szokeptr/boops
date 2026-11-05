@@ -3,6 +3,7 @@ import {
   EnvironmentId,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
+  ProjectId,
   ProviderInstanceId,
   ProviderInteractionMode,
   RuntimeMode,
@@ -17,6 +18,7 @@ import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 
 import { OrchestratorProjectionError } from "../orchestration-v2/Orchestrator.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
+import * as ProjectService from "../project/ProjectService.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
@@ -464,5 +466,64 @@ it.effect("refuses a linked environment to a tool that acts as its calling threa
       ),
     ).pipe(Effect.scoped, Effect.exit);
     expect(Exit.isFailure(built) && Cause.hasDies(built.cause)).toBe(true);
+  }),
+);
+
+it.effect("refuses thread writes between bots that are not parent and child", () =>
+  Effect.gen(function* () {
+    const project = (id: string, parentBotProjectId: string | null = null) => ({
+      id: ProjectId.make(id),
+      title: id,
+      workspaceRoot: `/home/user/pocks/${id}`,
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: "2026-11-05T00:00:00.000Z",
+      updatedAt: "2026-11-05T00:00:00.000Z",
+      mainThreadId: ThreadId.make(`${id}:main`),
+      parentBotProjectId: parentBotProjectId === null ? null : ProjectId.make(parentBotProjectId),
+    });
+    const inProject = (threadId: ThreadId, projectId: string) => ({
+      ...liveThreadShell(threadId),
+      projectId: ProjectId.make(projectId),
+    });
+    const parentThread = ThreadId.make("thread:parent");
+    const childThread = ThreadId.make("thread:child");
+    const strangerThread = ThreadId.make("thread:stranger");
+    const threadShells = new Map([
+      [parentThread, inProject(parentThread, "project:parent")],
+      [childThread, inProject(childThread, "project:child")],
+      [strangerThread, inProject(strangerThread, "project:stranger")],
+    ]);
+    const projectShells = [
+      project("project:parent"),
+      project("project:child", "project:parent"),
+      project("project:stranger"),
+    ];
+    const outcomes = yield* Effect.forEach(
+      [
+        [parentThread, childThread],
+        [childThread, parentThread],
+        [strangerThread, childThread],
+      ] as const,
+      ([from, to]) => call("writes_threads", threadCaller(from), { threadId: to }),
+    ).pipe(
+      Effect.provide(
+        probeServer(
+          Layer.mock(ThreadManagement.ThreadManagementService)({
+            getThreadShell: (threadId) => Effect.succeed(threadShells.get(threadId) ?? null),
+          }),
+        ).pipe(
+          Layer.provideMerge(
+            Layer.mock(ProjectService.ProjectService)({
+              listShells: (options) =>
+                Effect.succeed(
+                  projectShells.filter((shell) => options?.projectIds?.includes(shell.id) ?? true),
+                ),
+            }),
+          ),
+        ),
+      ),
+    );
+    expect(outcomes).toEqual(["ran", "ran", "capability_denied"]);
   }),
 );

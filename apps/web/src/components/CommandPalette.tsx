@@ -65,6 +65,7 @@ import {
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
+  RefreshCwIcon,
   RotateCcwIcon,
   SettingsIcon,
   MonitorIcon,
@@ -155,7 +156,6 @@ import {
   useCommandPaletteMount,
   useCommandPaletteStore,
 } from "../commandPaletteStore";
-import { PULL_REQUESTS_PANEL_REF } from "../rightPanelStore";
 import { resolveBotMainThreadId } from "@t3tools/client-runtime/state/bot-list";
 import {
   cn,
@@ -443,6 +443,9 @@ function OpenCommandPaletteDialog(props: {
   const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone, {
     reportFailure: false,
   });
+  const startFreshSession = useAtomCommand(threadEnvironment.startFreshSession, {
+    reportFailure: false,
+  });
   const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, {
     reportFailure: false,
   });
@@ -457,20 +460,15 @@ function OpenCommandPaletteDialog(props: {
     useHandleNewThread();
   const paletteRouteTarget = useThreadRouteTarget();
   const projects = useProjects();
-  const referenceThreadRef =
-    pathname === "/pull-requests"
-      ? environments.some((environment) => environment.serverConfig !== null)
-        ? PULL_REQUESTS_PANEL_REF
-        : null
-      : activeThread
-        ? scopeThreadRef(activeThread.environmentId, activeThread.id)
-        : null;
+  const referenceThreadRef = activeThread
+    ? scopeThreadRef(activeThread.environmentId, activeThread.id)
+    : null;
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(referenceThreadRef);
   const canShareActiveThreadWithGuest = useAtomValue(
     canShareWithGuestAtom(activeThread?.environmentId ?? ("" as EnvironmentId)),
   );
   const activeThreadReferenceCopyTarget =
-    referenceThreadRef === null || (pathname === "/pull-requests" && !openPanelPullRequestUrl)
+    referenceThreadRef === null
       ? null
       : resolveThreadReferenceCopyTarget({
           threadRef: referenceThreadRef,
@@ -1363,6 +1361,25 @@ function OpenCommandPaletteDialog(props: {
       icon: <UserPlusIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
         openGuestShareDialog(threadRef);
+      },
+    });
+  }
+
+  if (activeThread !== null && activeThread.activeProviderThreadId !== null) {
+    const thread = activeThread;
+    actionItems.push({
+      kind: "action",
+      value: "action:start-fresh-session",
+      searchTerms: ["fresh", "new", "session", "rollover", "context", "memory", "notes"],
+      title: "Start a fresh session",
+      description: "Saves the bot's notes, then the next turn starts clean",
+      icon: <RefreshCwIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        const result = await startFreshSession({
+          environmentId: thread.environmentId,
+          input: { threadId: thread.id },
+        });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       },
     });
   }

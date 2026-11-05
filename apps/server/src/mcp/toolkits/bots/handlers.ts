@@ -1,0 +1,117 @@
+import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+
+import type { BotFamilyError } from "../../../bots/botFamily.ts";
+import * as Bots from "../../../bots/Bots.ts";
+import { assertNotLinked } from "../../linkOrigin.ts";
+import * as McpToolAccess from "../../McpToolAccess.ts";
+import { loadCaller } from "../../threadAccess.ts";
+import { approveChildBot } from "../../userActionRequest.ts";
+import { BotToolkit } from "./tools.ts";
+
+const DEFAULT_READ_LIMIT = 20;
+
+/** The calling thread's bot. Bots reach only bots on their own machine. */
+const callerBot = Effect.gen(function* () {
+  const caller = yield* loadCaller();
+  yield* assertNotLinked(caller, "reach bots on this machine");
+  if (caller.caller === undefined) {
+    return yield* new OrchestratorMcpFailure({
+      code: "thread_credential_required",
+      message: "Only a bot's own thread can use this tool.",
+    });
+  }
+  return caller.caller.projectId;
+});
+
+const toFailure = (error: BotFamilyError | Bots.BotHomeFolderError | Bots.BotCreateError) =>
+  new OrchestratorMcpFailure({
+    code:
+      error._tag !== "BotFamilyError"
+        ? "orchestration_error"
+        : error.reason === "unrelated"
+          ? "capability_denied"
+          : error.reason === "not-found"
+            ? "target_required"
+            : error.reason === "unavailable"
+              ? "orchestration_error"
+              : "invalid_request",
+    message: error.message,
+  });
+
+const mapBotErrors = <A, R>(
+  effect: Effect.Effect<
+    A,
+    OrchestratorMcpFailure | BotFamilyError | Bots.BotHomeFolderError | Bots.BotCreateError,
+    R
+  >,
+) =>
+  effect.pipe(
+    Effect.mapError((error) =>
+      error._tag === "OrchestratorMcpFailure" ? error : toFailure(error),
+    ),
+  );
+
+const handlers = {
+  create_child_bot: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const parentProjectId = yield* callerBot;
+      const bots = yield* Bots.Bots;
+      return yield* bots.createChild(
+        {
+          parentProjectId,
+          name: input.name,
+          mode: input.mode,
+          ...(input.brief === undefined ? {} : { brief: input.brief }),
+        },
+        approveChildBot,
+      );
+    }).pipe(mapBotErrors),
+  ),
+  list_child_bots: McpToolAccess.readsAsCaller(() =>
+    Effect.gen(function* () {
+      const parentProjectId = yield* callerBot;
+      const bots = yield* Bots.Bots;
+      const children = yield* bots.childrenOf(parentProjectId);
+      return {
+        children: children.map((child) => ({
+          projectId: child.id,
+          name: child.title,
+          archived: child.archivedAt != null,
+        })),
+      };
+    }).pipe(mapBotErrors),
+  ),
+  read_child_bot: McpToolAccess.readsAsCaller((input) =>
+    Effect.gen(function* () {
+      const parentProjectId = yield* callerBot;
+      const bots = yield* Bots.Bots;
+      const messages = yield* bots.readChild({
+        parentProjectId,
+        childProjectId: input.projectId,
+        limit: input.limit ?? DEFAULT_READ_LIMIT,
+      });
+      return { messages };
+    }).pipe(mapBotErrors),
+  ),
+  message_child_bot: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const parentProjectId = yield* callerBot;
+      const bots = yield* Bots.Bots;
+      return yield* bots.messageChild({
+        parentProjectId,
+        childProjectId: input.projectId,
+        text: input.message,
+      });
+    }).pipe(mapBotErrors),
+  ),
+  report_to_parent: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const childProjectId = yield* callerBot;
+      const bots = yield* Bots.Bots;
+      return yield* bots.reportToParent({ childProjectId, text: input.message });
+    }).pipe(mapBotErrors),
+  ),
+} satisfies McpToolAccess.Handlers<typeof BotToolkit.tools>;
+
+export const layer = McpToolAccess.toLayer(BotToolkit, handlers);
