@@ -10,7 +10,7 @@ import {
 } from "./orchestrationInstructions.ts";
 
 describe("Pocks bot instructions", () => {
-  it("name the home-folder files and routine tools the rest of Pocks relies on", () => {
+  it("name the home-folder files, routine and helper tools the rest of Boops relies on", () => {
     for (const name of [
       "`PERSONA.md`",
       "`memory/INDEX.md`",
@@ -18,6 +18,7 @@ describe("Pocks bot instructions", () => {
       "`delete_scheduled_task`",
       "`threadId`",
       "`request_secret`",
+      "`delegate_task` with `mode:'async'`",
     ]) {
       assert.include(POCKS_BOT_INSTRUCTIONS, name);
     }

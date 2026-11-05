@@ -38,6 +38,7 @@ import {
 } from "./run.ts";
 import { briefRoute, gradeDevice, shellInvocations } from "./device-grading.ts";
 import { taskPrompt } from "../../apps/server/src/mcp/delegatedTaskModes.ts";
+import { withHelperTaskHeader } from "../../apps/server/src/bots/botMessageHeader.ts";
 
 it("grades Codex shell and subagent calls with the shared rules", () => {
   const calls = [
@@ -354,7 +355,10 @@ it("rebuilds the template from this checkout and sends a child Boops' task promp
   assert.notInclude(reminders?.join(), "Codebase and user instructions");
 
   const prompt = buildMessages(makeSample(childCase, base)).at(-1)?.content.at(-1);
-  assert.equal(prompt?.text, taskPrompt({ task: childCase.prompt, role: "implementation" }));
+  assert.equal(
+    prompt?.text,
+    withHelperTaskHeader(taskPrompt({ task: childCase.prompt, role: "implementation" })),
+  );
   assert.notEqual(prompt?.text, childCase.prompt);
 });
 
