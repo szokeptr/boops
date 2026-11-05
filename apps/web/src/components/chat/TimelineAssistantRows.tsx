@@ -33,33 +33,57 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   );
   const text = liveText ?? row.message.text;
   const messageText = text || (row.message.streaming ? "" : "(empty response)");
+  const markdown = (
+    <AssistantCitationSource
+      messageId={row.message.id}
+      {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}
+      itemKey={row.id}
+      request={ctx.citationRequest}
+      listRef={ctx.listRef}
+    >
+      <ChatMarkdown
+        text={messageText}
+        cwd={ctx.markdownCwd}
+        threadRef={ctx.threadRef ?? undefined}
+        isStreaming={Boolean(row.message.streaming)}
+        lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
+        skills={ctx.skills}
+        headingLevelOffset={MESSAGE_HEADING_LEVEL}
+        onUseArtifactTemplate={ctx.onUseArtifactTemplate}
+        onRunShellCommand={ctx.onRunShellCommand}
+        onImageExpand={ctx.onImageExpand}
+      />
+    </AssistantCitationSource>
+  );
+
+  if (ctx.directMessage) {
+    return (
+      <div className="flex min-w-0 max-w-5/6 items-end gap-1">
+        <div
+          className={cn(
+            "min-w-0 rounded-2xl bg-message px-3.5 py-2.5 text-message-foreground",
+            row.groupedWithPrevious && "rounded-tl-md",
+            row.groupedWithNext && "rounded-bl-md",
+          )}
+          data-thread-find-text="true"
+        >
+          <MessageAuthorHeading>{ctx.assistantName}</MessageAuthorHeading>
+          {markdown}
+        </div>
+        {row.message.streaming || !text ? null : (
+          <div className="shrink-0 opacity-0 transition-opacity duration-200 pointer-coarse:hidden focus-within:opacity-100 group-hover/assistant:opacity-100">
+            <MessageCopyButton text={text} variant="ghost" />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
       <div className="relative min-w-0 px-1 py-0.5">
         <MessageAuthorHeading>{ctx.assistantName}</MessageAuthorHeading>
-        <div data-thread-find-text="true">
-          <AssistantCitationSource
-            messageId={row.message.id}
-            {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}
-            itemKey={row.id}
-            request={ctx.citationRequest}
-            listRef={ctx.listRef}
-          >
-            <ChatMarkdown
-              text={messageText}
-              cwd={ctx.markdownCwd}
-              threadRef={ctx.threadRef ?? undefined}
-              isStreaming={Boolean(row.message.streaming)}
-              lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
-              skills={ctx.skills}
-              headingLevelOffset={MESSAGE_HEADING_LEVEL}
-              onUseArtifactTemplate={ctx.onUseArtifactTemplate}
-              onRunShellCommand={ctx.onRunShellCommand}
-              onImageExpand={ctx.onImageExpand}
-            />
-          </AssistantCitationSource>
-        </div>
+        <div data-thread-find-text="true">{markdown}</div>
         {ctx.onOpenTurnDiff ? (
           <AssistantChangedFilesSection
             turnSummary={row.assistantTurnDiffSummary}

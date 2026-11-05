@@ -1407,6 +1407,8 @@ export function deriveMessagesTimelineRows(input: {
   threadStartCheckpointReady?: boolean;
   availableRevertTurnCounts?: ReadonlySet<number> | undefined;
   worktreeSetup?: WorktreeSetupSnapshot | null;
+  /** A bot's conversation reads like a DM: what was said and what needs you, not the work. */
+  directMessage?: boolean;
 }): MessagesTimelineRow[] {
   const timelineEntries = timelineRowEntries(input.timelineEntries);
   const isPendingApproval = (entry: WorkLogEntry) => {
@@ -1453,15 +1455,18 @@ export function deriveMessagesTimelineRows(input: {
     isWorking: input.isWorking,
   });
   const runlessWorkActive = input.isWorking && input.runlessWorkActive === true;
-  const foldsByAnchorEntryId = deriveTurnFolds({
-    timelineEntries: timelineEntries,
-    terminalAssistantMessageIds,
-    latestRun: input.latestRun ?? null,
-    unfoldedRunIds: new Set([...activeVisualResponseRunIds, ...failedRunIds]),
-    runlessWorkActive,
-    liveSubagentEntryIds,
-    completeSupersededReplyEntryIds: completeSupersededReplyIds,
-  });
+  // A DM hides the work instead of folding it, so every message the bot sent stays in view.
+  const foldsByAnchorEntryId: ReturnType<typeof deriveTurnFolds> = input.directMessage
+    ? new Map()
+    : deriveTurnFolds({
+        timelineEntries: timelineEntries,
+        terminalAssistantMessageIds,
+        latestRun: input.latestRun ?? null,
+        unfoldedRunIds: new Set([...activeVisualResponseRunIds, ...failedRunIds]),
+        runlessWorkActive,
+        liveSubagentEntryIds,
+        completeSupersededReplyEntryIds: completeSupersededReplyIds,
+      });
   const timelineEntryById = new Map(timelineEntries.map((entry) => [entry.id, entry]));
   const collapsedEntryIds = new Set<string>();
   const collapsedFoldMemberIds = new Set<string>();
@@ -2138,6 +2143,12 @@ export function deriveMessagesTimelineRows(input: {
     }
   }
 
+  if (input.directMessage) {
+    return directMessageRows(nextRows, {
+      typing: input.isWorking && !input.pendingApprovalRequestIds?.size,
+      startedAt: input.activeTurnStartedAt ?? null,
+    });
+  }
   const result = attachTrailingToolGroupsToAssistant(
     attachCreatedThreadSummaries(nextRows, timelineEntries, collapsedFoldMemberIds),
   );
@@ -2154,6 +2165,66 @@ export function deriveMessagesTimelineRows(input: {
     if (!groupedWithNext && !groupedWithPrevious) return row;
     return { ...row, groupedWithNext, groupedWithPrevious, continuesSteer };
   });
+}
+
+const DIRECT_MESSAGE_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "secret_request",
+  "connection_request",
+  "link_request",
+]);
+
+/**
+ * A DM shows what was said, the cards that need the user, and what the bot shows. Runs of
+ * messages from one side stack, and one typing row stands in for the work while the bot has
+ * not started replying.
+ */
+function directMessageRows(
+  rows: ReadonlyArray<MessagesTimelineRow>,
+  activity: { readonly typing: boolean; readonly startedAt: string | null },
+): MessagesTimelineRow[] {
+  const kept = rows.filter((row) => {
+    switch (row.kind) {
+      case "message":
+        return (
+          row.message.role === "assistant" ||
+          (row.message.role === "user" &&
+            resolveUserMessagePresentation(row.message).attribution !== "system")
+        );
+      case "event":
+        return DIRECT_MESSAGE_EVENT_TYPES.has(row.projectedItem.item.type);
+      case "proposed-plan":
+      case "html-render":
+      case "mcp-app":
+        return true;
+      default:
+        return false;
+    }
+  });
+  const side = (row: MessagesTimelineRow | undefined) =>
+    row?.kind !== "message"
+      ? null
+      : row.message.role === "assistant"
+        ? "assistant"
+        : resolveUserMessagePresentation(row.message).attribution === null
+          ? "user"
+          : null;
+  const result = kept.map((row, index): MessagesTimelineRow => {
+    if (row.kind !== "message") return row;
+    const own = side(row);
+    return {
+      ...row,
+      showAssistantMeta: false,
+      groupedWithPrevious: own !== null && side(kept[index - 1]) === own,
+      groupedWithNext: own !== null && side(kept[index + 1]) === own,
+      continuesSteer: false,
+    };
+  });
+  const last = result.at(-1);
+  const replying = last?.kind === "message" && last.message.streaming === true;
+  if (activity.typing && !replying) {
+    result.push({ kind: "working", id: "working-indicator-row", createdAt: activity.startedAt });
+  }
+  return result;
 }
 
 function timelineRowIsOwnUserMessage(

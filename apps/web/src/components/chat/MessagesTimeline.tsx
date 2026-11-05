@@ -225,6 +225,8 @@ interface MessagesTimelineProps {
     sourceAnchor: AssistantCitationSourceAnchor,
   ) => boolean;
   isWorking: boolean;
+  /** A bot's conversation: bubbles and a typing row instead of the work log. */
+  directMessage?: boolean;
   runlessWorkActive?: boolean;
   activeTurnStartedAt?: string | null;
   worktreeSetup?: WorktreeSetupSnapshot | null;
@@ -340,6 +342,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   citationHistory = CITED_HISTORY_LOADING,
   onCiteAssistantText,
   isWorking,
+  directMessage = false,
   runlessWorkActive = false,
   activeTurnStartedAt = null,
   worktreeSetup = null,
@@ -690,6 +693,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     threadStartCheckpointReady,
     availableRevertTurnCounts,
     worktreeSetup,
+    directMessage,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
   const matchedApprovalRequestIds = new Set<string>();
@@ -1018,6 +1022,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       .map((approval) => [approval.requestId, approval]),
   );
   const sharedState: TimelineRowSharedState = {
+    directMessage,
     pendingApprovals: pendingApprovalsByRequestId,
     respondingRequestIds,
     canOperateThread,
@@ -1445,25 +1450,31 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
     (row.kind === "work-toggle" || row.kind === "work-live" || row.kind === "thinking") &&
     row.expanded === true;
 
+  const directMessage = use(TimelineRowCtx).directMessage;
+
   return (
     <div
       className={cn(
         isWorkLogRow || isSubagentGroup
           ? undefined
-          : row.kind === "turn-fold" || row.kind === "working"
-            ? "pb-1.5"
-            : row.kind === "message" && row.groupedWithNext
+          : directMessage
+            ? row.kind === "message" && row.groupedWithNext
               ? "pb-1"
-              : (row.kind === "message" &&
-                    row.message.role === "assistant" &&
-                    !row.showAssistantMeta) ||
-                  row.kind === "worktree-setup" ||
-                  row.kind === "event" ||
-                  row.kind === "attempt-fold" ||
-                  row.kind === "html-render" ||
-                  row.kind === "mcp-app"
-                ? "pb-2"
-                : "pb-4",
+              : "pb-4"
+            : row.kind === "turn-fold" || row.kind === "working"
+              ? "pb-1.5"
+              : row.kind === "message" && row.groupedWithNext
+                ? "pb-1"
+                : (row.kind === "message" &&
+                      row.message.role === "assistant" &&
+                      !row.showAssistantMeta) ||
+                    row.kind === "worktree-setup" ||
+                    row.kind === "event" ||
+                    row.kind === "attempt-fold" ||
+                    row.kind === "html-render" ||
+                    row.kind === "mcp-app"
+                  ? "pb-2"
+                  : "pb-4",
         (row.kind === "message" && row.message.role === "assistant") ||
           row.kind === "assistant-meta"
           ? "group/assistant"

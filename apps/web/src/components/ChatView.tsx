@@ -2270,6 +2270,7 @@ export default function ChatView(props: ChatViewProps) {
     runtimeMode,
     isWorking,
     pendingBackgroundTasks,
+    hideBackgroundWork: isBotConversation,
     turnItems: serverProjection?.turnItems ?? EMPTY_TURN_ITEMS,
     activePendingApproval,
     activePendingUserInput,
@@ -3125,6 +3126,7 @@ export default function ChatView(props: ChatViewProps) {
                 ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
                 : {})}
               {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
+              isBotConversation={isBotConversation}
             />
           </header>
         )}
@@ -3192,6 +3194,7 @@ export default function ChatView(props: ChatViewProps) {
                     ? { onRunShellCommand: parentPanel?.runShellCommand ?? runShellCommandStable }
                     : {})}
                   isWorking={isWorking}
+                  directMessage={isBotConversation}
                   runlessWorkActive={runlessWorkStartedAt !== null}
                   isCompacting={isCompacting}
                   awaitingUser={
@@ -3234,7 +3237,7 @@ export default function ChatView(props: ChatViewProps) {
                   displayThreadKey={displayedTimelineKey}
                   announceTurnStatus={!isProviderSubagent}
                   // A fork would promote the side chat.
-                  {...(embedded ? {} : { onForkFromRun: onForkFromRunStable })}
+                  {...(embedded || isBotConversation ? {} : { onForkFromRun: onForkFromRunStable })}
                   {...(embedded || isProviderSubagent || !canOperateThread
                     ? {}
                     : { onEditMessage: editMessageStable })}
@@ -3358,6 +3361,7 @@ export default function ChatView(props: ChatViewProps) {
                           ) : null}
                           {!composerMounted ? null : (
                             <ChatComposer
+                              botName={isBotConversation ? activeProject?.title : undefined}
                               canOperateThread={canOperateThread}
                               reportedModelSelection={reportedModelSelection}
                               multipleModelSelections={multipleModelSelections}
