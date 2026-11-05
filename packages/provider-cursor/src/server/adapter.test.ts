@@ -1756,6 +1756,13 @@ describe("CursorAdapterV2", () => {
       endpoint: "http://127.0.0.1:43123/mcp",
       authorizationHeader: "Bearer secret-cursor-mcp-token",
       browserToolsAvailable: true,
+      connectors: [
+        {
+          name: "linear",
+          url: "http://127.0.0.1:43123/mcp-connectors/linear",
+          headers: { Authorization: "Bearer secret-cursor-mcp-token" },
+        },
+      ],
     };
 
     assert.deepEqual(cursorMcpServers(mcpSession), {
@@ -1765,6 +1772,11 @@ describe("CursorAdapterV2", () => {
         headers: {
           Authorization: "Bearer secret-cursor-mcp-token",
         },
+      },
+      linear: {
+        type: "http",
+        url: "http://127.0.0.1:43123/mcp-connectors/linear",
+        headers: { Authorization: "Bearer secret-cursor-mcp-token" },
       },
     });
 

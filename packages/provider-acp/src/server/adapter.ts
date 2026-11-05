@@ -807,6 +807,11 @@ interface AcpMcpContext {
   readonly processEnvironment?: NodeJS.ProcessEnv;
   readonly endpoint?: string;
   readonly authorization?: string;
+  readonly connectorTargets?: Readonly<
+    Record<string, { readonly endpoint: string; readonly authorization: string }>
+  >;
+  /** Agents fix MCP servers when a session is activated; a change needs a fresh activation. */
+  readonly connectorKey: string;
 }
 
 function acpMcpContext(
@@ -814,37 +819,56 @@ function acpMcpContext(
   self: SelfInvocation,
   mcpOverHttp: boolean | undefined,
 ): AcpMcpContext {
+  const connectorKey = McpProviderSession.connectorServersKey(session);
   if (session === undefined) {
-    return { servers: [], acpServers: [], httpServers: [] };
+    return { servers: [], acpServers: [], httpServers: [], connectorKey };
   }
+  // T3's own server first, then the bot's connectors, all reached through T3's endpoints.
+  const targets = [
+    { name: "t3-code", url: session.endpoint, authorization: session.authorizationHeader },
+    ...(session.connectors ?? []).map((connector) => ({
+      name: connector.name,
+      url: connector.url,
+      authorization: connector.headers.Authorization ?? "",
+    })),
+  ];
   // codex-acp 1.2.0 and pi-acp drop injected HTTP servers, so HTTP is opt-in per flavor.
   return {
-    servers: [
-      {
-        name: "t3-code",
-        command: self.command,
-        args: [...selfInvocationArgs(self, ["acp-mcp-bridge"])],
-        env: [
-          { name: "ELECTRON_RUN_AS_NODE", value: "1" },
-          { name: "T3_ACP_MCP_ENDPOINT", value: session.endpoint },
-          { name: "T3_ACP_MCP_AUTHORIZATION", value: session.authorizationHeader },
-        ],
-      },
-    ],
-    acpServers: [{ type: "acp", name: "t3-code", serverId: "t3-code" }],
+    servers: targets.map((target) => ({
+      name: target.name,
+      command: self.command,
+      args: [...selfInvocationArgs(self, ["acp-mcp-bridge"])],
+      env: [
+        { name: "ELECTRON_RUN_AS_NODE", value: "1" },
+        { name: "T3_ACP_MCP_ENDPOINT", value: target.url },
+        { name: "T3_ACP_MCP_AUTHORIZATION", value: target.authorization },
+      ],
+    })),
+    acpServers: targets.map((target) => ({
+      type: "acp" as const,
+      name: target.name,
+      serverId: target.name,
+    })),
     httpServers:
       mcpOverHttp === true
-        ? [
-            {
-              type: "http",
-              name: "t3-code",
-              url: session.endpoint,
-              headers: [{ name: "Authorization", value: session.authorizationHeader }],
-            },
-          ]
+        ? targets.map((target) => ({
+            type: "http" as const,
+            name: target.name,
+            url: target.url,
+            headers: [{ name: "Authorization", value: target.authorization }],
+          }))
         : [],
     endpoint: session.endpoint,
     authorization: session.authorizationHeader,
+    connectorTargets: Object.fromEntries(
+      targets
+        .slice(1)
+        .map((target) => [
+          target.name,
+          { endpoint: target.url, authorization: target.authorization },
+        ]),
+    ),
+    connectorKey,
     processEnvironment: {
       T3_ACP_MCP_ENDPOINT: session.endpoint,
       T3_ACP_MCP_AUTHORIZATION: session.authorizationHeader,
@@ -1917,6 +1941,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         // Unique markers keep delayed prompt completions from clearing later compactions.
         const compactionMarkers = yield* Ref.make(new Map<string, symbol>());
         const runtimeRestartRequired = yield* Ref.make(false);
+        let loadedConnectorKey: string | undefined;
         const runtimeTeardownState = yield* Ref.make<AcpRuntimeTeardownState>({ _tag: "Idle" });
         const runtimeCallbackGeneration = yield* Ref.make(0);
         const runtimeCallbackGenerationCounter = yield* Ref.make(0);
@@ -6763,6 +6788,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const mcpBridge = yield* makeAcpMcpOverAcpBridge({
             endpoint: mcpContext.endpoint,
             authorization: mcpContext.authorization,
+            ...(mcpContext.connectorTargets === undefined
+              ? {}
+              : { connectors: mcpContext.connectorTargets }),
             allocateConnectionId: random.uuidV4(),
           });
           yield* Scope.addFinalizer(scope, mcpBridge.dispose);
@@ -6778,6 +6806,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           }
           runtimeScope = yield* Scope.make();
           const mcpContext = yield* readMcpContext(threadId);
+          loadedConnectorKey = mcpContext.connectorKey;
           runtimeMcpBridge = yield* makeRuntimeMcpBridge(mcpContext, runtimeScope);
           const runtimeGeneration = yield* Ref.get(runtimeCallbackGeneration);
           runtime = yield* flavor
@@ -6851,6 +6880,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           let replacementMcpBridge: AcpMcpOverAcpBridge | undefined;
           const startup = Effect.gen(function* () {
             const mcpContext = yield* readMcpContext(threadId);
+            loadedConnectorKey = mcpContext.connectorKey;
             replacementMcpBridge = yield* makeRuntimeMcpBridge(mcpContext, replacementScope);
             const replacementRuntime = yield* flavor
               .makeRuntime(
@@ -7069,6 +7099,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             return yield* initialFailure;
           }
           const mcpContext = yield* readMcpContext(threadId);
+          loadedConnectorKey = mcpContext.connectorKey;
           const activationOptions = acpMcpActivation(mcpContext);
           prepareTerminalEnvironment(mcpContext, sessionId);
           const activated = canLoadSession
@@ -7864,6 +7895,16 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             // load/resume can invoke client methods; install the incoming policy before activation.
             latestRuntimePolicy = turnInput.runtimePolicy;
             const requestedSessionId = yield* nativeThreadId(driver, turnInput.providerThread);
+            // A restarted runtime re-activates the session with the bot's current connectors.
+            // Only when it can load or resume, and not over running background tasks.
+            if (
+              (canLoadSession || canResumeSession) &&
+              loadedConnectorKey !== undefined &&
+              loadedConnectorKey !== (yield* readMcpContext(turnInput.threadId)).connectorKey &&
+              (yield* Ref.get(runningBackgroundTaskIds)).size === 0
+            ) {
+              yield* Ref.set(runtimeRestartRequired, true);
+            }
             const restartAfterInterrupt = yield* restartRuntimeAfterTeardownIfRequired(
               turnInput.threadId,
             );

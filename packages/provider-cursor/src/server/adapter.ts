@@ -213,6 +213,12 @@ export function cursorMcpServers(
         Authorization: session.authorizationHeader,
       },
     },
+    ...Object.fromEntries(
+      (session.connectors ?? []).map((connector) => [
+        connector.name,
+        { type: "http" as const, url: connector.url, headers: { ...connector.headers } },
+      ]),
+    ),
   };
 }
 

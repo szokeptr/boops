@@ -43,8 +43,10 @@ import {
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { connectorServersKey } from "@t3tools/provider-core/server/mcpSession";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
+import * as ConnectorServers from "../connectors/ConnectorServers.ts";
 import * as EventSink from "./EventSink.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -340,6 +342,7 @@ export const layerWithOptions = (
       /** Unreadable settings must preserve explicit browser-access opt-outs. */
       const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
       const projectService = yield* Effect.serviceOption(ProjectService.ProjectService);
+      const connectorServers = yield* Effect.serviceOption(ConnectorServers.ConnectorServers);
       const eventSink = yield* EventSink.EventSinkV2;
       const commandOutput = yield* CommandOutputHub.CommandOutputHub;
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -502,6 +505,34 @@ export const layerWithOptions = (
                 return { mcpCredentialId: credential.config.providerSessionId, issued: true };
               }),
             );
+      /**
+       * Points the thread's MCP config at the bot's current connectors, through this server's
+       * proxy with the thread's own credential. Runs at every turn start, so a connector turned on
+       * or signed in reaches the next turn; adapters re-register when the set changes.
+       */
+      const refreshConnectors = Effect.fn("ProviderSessionManagerV2.refreshConnectors")(function* (
+        threadId: ThreadId,
+      ) {
+        if (Option.isNone(connectorServers)) return;
+        const config = yield* mcpSessions.read(threadId);
+        if (config === undefined) return;
+        const names = yield* connectorServers.value.forThread(threadId);
+        const connectors = names.map((name) => ({
+          name,
+          url: new URL(
+            `${ConnectorServers.CONNECTOR_PROXY_PATH}/${name}`,
+            config.endpoint,
+          ).toString(),
+          headers: { Authorization: config.authorizationHeader },
+        }));
+        const unchanged =
+          connectorServersKey(config) === connectorServersKey({ connectors }) &&
+          (config.connectors ?? []).every(
+            (server) => server.headers.Authorization === config.authorizationHeader,
+          );
+        if (unchanged) return;
+        yield* mcpSessions.set({ ...config, connectors });
+      });
       const clearMcpSession = (threadId: ThreadId, mcpCredentialId?: string) =>
         mcpCredentialId === undefined
           ? mcpSessionRegistry
@@ -2151,6 +2182,7 @@ export const layerWithOptions = (
                   threadId: input.threadId,
                   providerInstanceId: existing.runtime.instanceId,
                 });
+                yield* refreshConnectors(input.threadId);
                 yield* touchActivity(input.providerSessionId);
                 return existing.exposedRuntime;
               }
@@ -2169,6 +2201,7 @@ export const layerWithOptions = (
                 input.threadId,
                 input.modelSelection.instanceId,
               );
+              yield* refreshConnectors(input.threadId);
               const mcpCredentialId = prepared.mcpCredentialId;
               let reservationDropped = mcpCredentialId === undefined;
               const dropReservation = Effect.sync(() => {

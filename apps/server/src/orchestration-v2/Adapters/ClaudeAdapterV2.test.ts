@@ -582,6 +582,32 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     assert.isFalse(overrides.allowedTools?.includes(ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD));
   });
 
+  it("adds connector servers next to t3-code without pre-approving their tools", () => {
+    const threadId = ThreadId.make("thread-claude-mcp-connectors");
+    const connector = {
+      name: "linear",
+      url: "http://127.0.0.1:43123/mcp-connectors/linear",
+      headers: { Authorization: "Bearer secret-claude-token" },
+    };
+    const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
+      mcpSession: { ...mcpSessionFor(threadId), connectors: [connector] },
+      readOnlySandbox: false,
+    });
+
+    assert.deepEqual(overrides, {
+      allowedTools: [ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD],
+      mcpServers: {
+        ...T3_MCP_SERVERS,
+        linear: {
+          type: "http",
+          url: connector.url,
+          headers: connector.headers,
+          timeout: ClaudeAdapterV2.CLAUDE_CONNECTOR_MCP_TOOL_TIMEOUT_MS,
+        },
+      },
+    });
+  });
+
   it("invalidates live-query reuse when MCP credentials rotate", () => {
     const threadId = ThreadId.make("thread-claude-mcp-credential-rotation");
     const mcpSession = mcpSessionFor(threadId);
@@ -951,6 +977,7 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
                   applyFlagSettings: () => Effect.void,
+                  setMcpServers: () => Effect.die("unexpected MCP server change"),
                   setPermissionMode: () => Effect.void,
                   backgroundTasks: () => Effect.succeed(false),
                   mcpServerStatus: Effect.succeed([]),
@@ -1077,6 +1104,7 @@ describe("ClaudeAdapterV2 append-system-prompt-file launch argument", () => {
               offer: () => Effect.void,
               setModel: () => Effect.void,
               applyFlagSettings: () => Effect.void,
+              setMcpServers: () => Effect.die("unexpected MCP server change"),
               setPermissionMode: () => Effect.void,
               backgroundTasks: () => Effect.succeed(false),
               mcpServerStatus: Effect.succeed([]),
@@ -1390,6 +1418,7 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
             offer: () => Effect.void,
             setModel: () => Effect.void,
             applyFlagSettings: () => Effect.void,
+            setMcpServers: () => Effect.die("unexpected MCP server change"),
             setPermissionMode: () => Effect.void,
             backgroundTasks: () => Effect.succeed(false),
             mcpServerStatus: Effect.succeed([]),
@@ -1581,6 +1610,7 @@ describe("ClaudeAdapterV2 resume compaction", () => {
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
                   applyFlagSettings: () => Effect.void,
+                  setMcpServers: () => Effect.die("unexpected MCP server change"),
                   setPermissionMode: () => Effect.void,
                   backgroundTasks: () => Effect.succeed(false),
                   mcpServerStatus: Effect.succeed([]),
@@ -1971,6 +2001,7 @@ describe("ClaudeAdapterV2 attachments", () => {
                       }),
                     setModel: () => Effect.void,
                     applyFlagSettings: () => Effect.void,
+                    setMcpServers: () => Effect.die("unexpected MCP server change"),
                     setPermissionMode: () => Effect.void,
                     backgroundTasks: () => Effect.succeed(false),
                     mcpServerStatus: Effect.succeed([]),
@@ -2482,6 +2513,7 @@ describe("ClaudeAdapterV2 native fork", () => {
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
                   applyFlagSettings: () => Effect.void,
+                  setMcpServers: () => Effect.die("unexpected MCP server change"),
                   setPermissionMode: () => Effect.void,
                   backgroundTasks: () => Effect.succeed(false),
                   mcpServerStatus: Effect.succeed([]),
@@ -2773,6 +2805,8 @@ describe("ClaudeAdapterV2 MCP credential channel", () => {
       assert.notInclude(spawned, "--title");
       assert.notInclude(spawned, "--mcp-config");
       assert.notInclude(spawned, "dummy-mcp-credential");
+      assert.include(spawned, "--strict-mcp-config");
+      assert.include(spawned, '"ENABLE_CLAUDEAI_MCP_SERVERS":"false"');
     }),
   );
 });
@@ -2824,6 +2858,7 @@ describe("ClaudeAdapterV2 native session identity", () => {
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
                   applyFlagSettings: () => Effect.void,
+                  setMcpServers: () => Effect.die("unexpected MCP server change"),
                   setPermissionMode: () => Effect.void,
                   backgroundTasks: () => Effect.succeed(false),
                   mcpServerStatus: Effect.succeed([]),
@@ -3153,6 +3188,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly interrupt?: Effect.Effect<void>;
     readonly setPermissionMode?: ClaudeAdapterV2.ClaudeAgentSdkQuerySession["setPermissionMode"];
     readonly applyFlagSettings?: ClaudeAdapterV2.ClaudeAgentSdkQuerySession["applyFlagSettings"];
+    readonly setMcpServers?: ClaudeAdapterV2.ClaudeAgentSdkQuerySession["setMcpServers"];
     readonly stopTask?: (
       taskId: string,
     ) => Effect.Effect<void, ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerError>;
@@ -3279,6 +3315,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     }).pipe(Effect.andThen(changes.notify)),
                   setModel: () => Effect.void,
                   applyFlagSettings: () => Effect.void,
+                  setMcpServers: () => Effect.die("unexpected MCP server change"),
                   setPermissionMode: (mode) =>
                     Effect.sync(() => {
                       permissionModeChanges.push(mode);
@@ -3312,6 +3349,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   }).pipe(
                     Effect.andThen(() => options?.applyFlagSettings?.(settings) ?? Effect.void),
                   ),
+                setMcpServers:
+                  options?.setMcpServers ?? (() => Effect.die("unexpected MCP server change")),
                 setPermissionMode: (mode) =>
                   Effect.sync(() => {
                     permissionModeChanges.push(mode);
@@ -4028,6 +4067,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         const harness = yield* makeWakeHarnessWithOptions({
           close: Queue.shutdown,
           freshQueueOnReopen: true,
+          setMcpServers: () => Effect.die("unexpected MCP server change"),
           setPermissionMode: (mode) =>
             mode === "bypassPermissions"
               ? Effect.fail(
@@ -5959,6 +5999,77 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           { model: "claude-opus-5-5" },
           { effortLevel: "medium", fastMode: false, ultracode: null },
         ]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("swaps a bot's connector servers on the live query without a restart", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registrations: Array<ReadonlyArray<string>> = [];
+        const harness = yield* makeWakeHarnessWithOptions({
+          setMcpServers: (servers) =>
+            Effect.sync(() => {
+              registrations.push(Object.keys(servers));
+              return [];
+            }),
+        });
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+        const now = yield* DateTime.now;
+        const session: McpProviderSession.McpProviderSessionConfig = {
+          environmentId: EnvironmentId.make("environment-claude-connectors"),
+          threadId: harness.threadId,
+          providerSessionId: "mcp-session-claude-connectors",
+          providerInstanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer secret-claude-token",
+          browserToolsAvailable: true,
+        };
+        const turn = (ordinal: number) =>
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make(`attempt-connectors:${ordinal}`),
+            text: `Request ${ordinal}`,
+            attachments: [],
+            providerTurnOrdinal: ordinal,
+          });
+        const runTurn = Effect.fnUntraced(function* (ordinal: number) {
+          yield* harness.runtime.startTurn(turn(ordinal));
+          yield* harness.offerAndWait(turnOneResult);
+          yield* Queue.take(harness.terminalReceipts);
+        });
+
+        yield* mcpSessions.set(session);
+        yield* runTurn(1);
+        const opened = harness.getOpenedOptions();
+        assert.deepEqual(Object.keys(opened?.mcpServers ?? {}), ["t3-code"]);
+        assert.isTrue(opened?.strictMcpConfig);
+
+        yield* mcpSessions.set({
+          ...session,
+          connectors: [
+            {
+              name: "linear",
+              url: "http://127.0.0.1:43123/mcp-connectors/linear",
+              headers: { Authorization: "Bearer secret-claude-token" },
+            },
+          ],
+        });
+        yield* runTurn(2);
+        yield* runTurn(3);
+        assert.deepEqual(registrations, [["t3-code", "linear"]]);
+        assert.strictEqual(harness.getOpenedOptions(), opened);
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
@@ -10411,6 +10522,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
                   applyFlagSettings: () => Effect.void,
+                  setMcpServers: () => Effect.die("unexpected MCP server change"),
                   setPermissionMode: () => Effect.void,
                   backgroundTasks: () => Effect.succeed(false),
                   mcpServerStatus: Effect.succeed([]),
@@ -10612,6 +10724,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
                     applyFlagSettings: () => Effect.void,
+                    setMcpServers: () => Effect.die("unexpected MCP server change"),
                     setPermissionMode: () => Effect.void,
                     backgroundTasks: () => Effect.succeed(false),
                     mcpServerStatus: Effect.succeed([]),
@@ -12816,6 +12929,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 offer: () => Effect.void,
                 setModel: () => Effect.void,
                 applyFlagSettings: () => Effect.void,
+                setMcpServers: () => Effect.die("unexpected MCP server change"),
                 setPermissionMode: () => Effect.void,
                 backgroundTasks: () => Effect.succeed(false),
                 stopTask: () => Effect.void,
@@ -15687,6 +15801,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
                   applyFlagSettings: () => Effect.void,
+                  setMcpServers: () => Effect.die("unexpected MCP server change"),
                   setPermissionMode: () => Effect.void,
                   backgroundTasks: () => Effect.succeed(false),
                   mcpServerStatus: Effect.succeed([]),
@@ -15865,6 +15980,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
                     applyFlagSettings: () => Effect.void,
+                    setMcpServers: () => Effect.die("unexpected MCP server change"),
                     setPermissionMode: () => Effect.void,
                     backgroundTasks: () => Effect.succeed(false),
                     mcpServerStatus: Effect.succeed([]),
@@ -16046,6 +16162,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
                   applyFlagSettings: () => Effect.void,
+                  setMcpServers: () => Effect.die("unexpected MCP server change"),
                   setPermissionMode: () => Effect.void,
                   backgroundTasks: () => Effect.succeed(false),
                   mcpServerStatus: Effect.succeed([]),
@@ -16245,6 +16362,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   offer: () => Effect.void,
                   setModel: () => Effect.void,
                   applyFlagSettings: () => Effect.void,
+                  setMcpServers: () => Effect.die("unexpected MCP server change"),
                   setPermissionMode: () => Effect.void,
                   backgroundTasks: () => Effect.succeed(false),
                   mcpServerStatus: Effect.succeed([]),
@@ -16392,6 +16510,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     offer: () => Effect.void,
                     setModel: () => Effect.void,
                     applyFlagSettings: () => Effect.void,
+                    setMcpServers: () => Effect.die("unexpected MCP server change"),
                     setPermissionMode: () => Effect.void,
                     backgroundTasks: () => Effect.succeed(false),
                     mcpServerStatus: Effect.succeed([]),

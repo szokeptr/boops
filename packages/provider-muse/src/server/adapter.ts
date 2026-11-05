@@ -1844,6 +1844,18 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                     url: mcpSession.endpoint,
                     headers: { Authorization: mcpSession.authorizationHeader },
                   },
+                  // Muse fixes MCP servers when a session starts or resumes.
+                  ...Object.fromEntries(
+                    (mcpSession.connectors ?? []).map((connector) => [
+                      connector.name,
+                      {
+                        transport: "streamableHttp" as const,
+                        mode: "optional" as const,
+                        url: connector.url,
+                        headers: { ...connector.headers },
+                      },
+                    ]),
+                  ),
                 },
               }
             : undefined;

@@ -5,6 +5,8 @@ export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
 
 export const T3_MCP_URL_ENV = "T3_MCP_URL";
 export const T3_MCP_BEARER_ENV = "T3_MCP_BEARER_TOKEN";
+/** JSON `[{ name, url }]` of the bot's connectors; they take the same T3 bearer. */
+export const T3_MCP_CONNECTORS_ENV = "T3_MCP_CONNECTORS";
 export const T3_PI_RUNTIME_MODE_ENV = "T3_PI_RUNTIME_MODE";
 export const T3_PI_MCP_EXTENSION_PATH_ENV = "T3_PI_MCP_EXTENSION_PATH";
 
@@ -19,6 +21,7 @@ import { Type } from "typebox";
 
 const URL_ENV = ${JSON.stringify(T3_MCP_URL_ENV)};
 const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
+const CONNECTORS_ENV = ${JSON.stringify(T3_MCP_CONNECTORS_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(POCKS_BOT_INSTRUCTIONS.trim())};
@@ -47,6 +50,18 @@ type McpTool = {
 function env(name: string): string | undefined {
   const value = process.env[name];
   return value && value.length > 0 ? value : undefined;
+}
+
+function connectorServers(): ReadonlyArray<{ readonly name: string; readonly url: string }> {
+  try {
+    const parsed = JSON.parse(env(CONNECTORS_ENV) ?? "[]") as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is { name: string; url: string } =>
+          typeof entry?.name === "string" && typeof entry?.url === "string")
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 function runtimeMode(): RuntimeMode {
@@ -424,10 +439,52 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     return attempt;
   };
 
+  // The bot's connectors are plain proxied servers: no T3 read-only trust, so their
+  // calls follow the runtime mode's approvals. One that fails stays absent.
+  const connectorsStarted = new Set<string>();
+  const ensureConnectors = async () => {
+    const failed: string[] = [];
+    for (const server of connectorServers()) {
+      if (connectorsStarted.has(server.name)) continue;
+      try {
+        const signal = AbortSignal.timeout(10_000);
+        const connector = createMcpClient(server.url, token);
+        await connector.connect(signal);
+        for (const tool of await connector.listTools(signal)) {
+          pi.registerTool({
+            name: \`mcp__\${server.name}__\${tool.name}\`,
+            label: tool.name,
+            description: tool.description ?? tool.name,
+            parameters: jsonSchemaToTypebox(tool.inputSchema),
+            ...(supportsExposure ? { outputSchema: mcpOutputSchema(tool), exposure: "deferred" } : {}),
+            async execute(_toolCallId, params, signal) {
+              const result = await connector.callTool(tool.name, (params ?? {}) as Record<string, unknown>, signal);
+              const content = mcpModelContent(result);
+              if (isMcpToolError(result) && !content.some((part) => part.type === "text" && part.text.length > 0)) {
+                content.push({ type: "text", text: "MCP tool " + server.name + "/" + tool.name + " returned an error" });
+              }
+              return {
+                content,
+                structuredContent: mcpScriptResult(result),
+                details: { server: server.name, tool: tool.name },
+                ...(isMcpToolError(result) ? { isError: true } : {}),
+              };
+            },
+          });
+        }
+        connectorsStarted.add(server.name);
+      } catch {
+        failed.push(server.name);
+      }
+    }
+    return failed;
+  };
+
   // CLI extensions load before builtins, and Pi keeps the first registration
   // of a tool name. Register now so the bridge owns the T3 namespace even when
   // mcp.json configures it; retry a failed connection at session_start.
   await ensureStarted().catch(() => undefined);
+  await ensureConnectors();
 
   const reconcileDiscovery = (ctx: Pick<ExtensionContext, "model">) => {
     if (!supportsExposure) return;
@@ -459,6 +516,10 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       ctx.ui.notify(\`t3-code MCP unavailable: \${message}\`, "warning");
+    }
+    const failedConnectors = await ensureConnectors();
+    if (failedConnectors.length > 0) {
+      ctx.ui.notify(\`Connectors unavailable: \${failedConnectors.join(", ")}\`, "warning");
     }
   });
 

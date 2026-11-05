@@ -3,6 +3,7 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import {
+  ConnectorConnectionId,
   CommandId,
   ForwardCompatibleUnion,
   isUnknownUnionMember,
@@ -225,6 +226,7 @@ export const Project = Schema.Struct({
   canCreateBotsWithoutAsking: Schema.optional(Schema.Boolean),
   /** Server-kept: the bot's home folder has a PERSONA.md, so it has hatched. Absent from older servers. */
   personaReady: Schema.optional(Schema.Boolean),
+  connectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),

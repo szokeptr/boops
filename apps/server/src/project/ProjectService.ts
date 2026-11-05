@@ -5,6 +5,7 @@ import {
   type Project,
   type ProjectCreatePayload,
   type ProjectUpdatePayload,
+  type ConnectorConnectionId,
   type ProjectSnapshot,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -45,6 +46,8 @@ export interface ProjectUpdateInput extends ProjectUpdatePayload {
   readonly projectId: ProjectId;
   /** Server-only: clients and agents cannot claim a bot has hatched. */
   readonly personaReady?: boolean;
+  /** Server-only: the Connectors service is the one writer, so agents and clients can't set it. */
+  readonly connectionIds?: ReadonlyArray<ConnectorConnectionId>;
 }
 
 export interface ProjectBootstrapInput extends ProjectCreateInput {}
@@ -189,6 +192,7 @@ export const make = Effect.gen(function* () {
     parentBotProjectId: row.parentBotProjectId,
     canCreateBotsWithoutAsking: row.canCreateBotsWithoutAsking,
     personaReady: row.personaReady,
+    connectionIds: row.connectionIds,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -411,6 +415,7 @@ export const make = Effect.gen(function* () {
           ? {}
           : { canCreateBotsWithoutAsking: input.canCreateBotsWithoutAsking }),
         ...(input.personaReady === undefined ? {} : { personaReady: input.personaReady }),
+        ...(input.connectionIds === undefined ? {} : { connectionIds: input.connectionIds }),
       });
       if (workspaceRoot !== previousRoot) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);

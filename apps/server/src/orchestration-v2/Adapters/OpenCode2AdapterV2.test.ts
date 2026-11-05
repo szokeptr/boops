@@ -2883,6 +2883,85 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("adds the bot's connectors beside T3 MCP and removes one the bot turns off", () =>
+    Effect.gen(function* () {
+      const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+      const session = {
+        environmentId: EnvironmentId.make("environment:opencode2-adapter"),
+        threadId,
+        providerSessionId: "mcp:opencode2-adapter",
+        providerInstanceId: instanceId,
+        endpoint: "http://127.0.0.1:3773/mcp",
+        authorizationHeader: "Bearer thread-credential",
+        browserToolsAvailable: false,
+      };
+      yield* mcpSessions.set({
+        ...session,
+        connectors: [
+          {
+            name: "linear",
+            url: "http://127.0.0.1:3773/mcp-connectors/linear",
+            headers: { Authorization: "Bearer thread-credential" },
+          },
+        ],
+      });
+      yield* Effect.addFinalizer(() => mcpSessions.clear(threadId));
+      const server = "t3-code-thread_opencode2-adapter";
+      const linear = `${server}-linear`;
+      const addT3 = out("mcp.add", {
+        server,
+        "location[directory]": WORK,
+        config: {
+          type: "remote",
+          url: "http://127.0.0.1:3773/mcp",
+          headers: { Authorization: "Bearer thread-credential" },
+          oauth: false,
+        },
+      });
+      const turn = [
+        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+        promptAccepted,
+        event("session.execution.succeeded", { sessionID: SESSION }),
+      ];
+      const { runtime, thread } = yield* resumed([
+        out("session.update", {
+          sessionID: SESSION,
+          permissions: [...t3Rules, { action: `${linear}_*`, resource: "*", effect: "allow" }],
+        }),
+        reply("session.update", null),
+        addT3,
+        reply("mcp.add", null),
+        out("mcp.add", {
+          server: linear,
+          "location[directory]": WORK,
+          config: {
+            type: "remote",
+            url: "http://127.0.0.1:3773/mcp-connectors/linear",
+            headers: { Authorization: "Bearer thread-credential" },
+            oauth: false,
+          },
+        }),
+        reply("mcp.add", null),
+        ...turn,
+        out("session.update", { sessionID: SESSION, permissions: t3Rules }),
+        reply("session.update", null),
+        addT3,
+        reply("mcp.add", null),
+        out("mcp.remove", { server: linear, "location[directory]": WORK }),
+        reply("mcp.remove", null),
+        ...turn,
+        out("mcp.remove", { server, "location[directory]": WORK }),
+        reply("mcp.remove", null),
+      ]);
+      for (const connectors of [undefined, []]) {
+        if (connectors !== undefined) yield* mcpSessions.set({ ...session, connectors });
+        const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+        yield* runtime.startTurn(turnInput(thread));
+        assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+      }
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("registers a long thread id's MCP server under a name OpenCode accepts", () =>
     Effect.gen(function* () {
       const child = ThreadId.make(
@@ -2954,10 +3033,10 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         "thread:delegated-task:command%3Amcp%3A48bef2bf-6d0e-4f7a-9c3b-2e5d8a1f7c40%3Adelegate-task%3Around1",
         "thread:delegated-task:command%3Amcp%3A48bef2bf-6d0e-4f7a-9c3b-2e5d8a1f7c40%3Adelegate-task%3Around2",
       ];
-      const names = yield* Effect.forEach(ids, t3McpServerName);
+      const names = yield* Effect.forEach(ids, (id) => t3McpServerName(id));
       for (const name of names) assert.match(name, /^t3-code-[A-Za-z0-9_-]{1,56}$/);
       assert.equal(new Set(names).size, ids.length);
-      assert.deepEqual(yield* Effect.forEach(ids, t3McpServerName), names);
+      assert.deepEqual(yield* Effect.forEach(ids, (id) => t3McpServerName(id)), names);
       assert.equal(names[0], "t3-code-63abb5df2b188bdd");
       assert.equal(yield* t3McpServerName(threadId), "t3-code-thread_opencode2-adapter");
     }).pipe(Effect.provide(NodeCrypto.layer)),

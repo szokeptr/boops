@@ -1,5 +1,6 @@
 import {
   BotAutonomy,
+  ConnectorConnectionId,
   DEFAULT_BOT_AUTONOMY,
   type ApplicationProjectEvent,
   IsoDateTime,
@@ -52,6 +53,7 @@ export const ProjectRow = Schema.Struct({
   parentBotProjectId: Schema.NullOr(ProjectId),
   canCreateBotsWithoutAsking: Schema.Boolean,
   personaReady: Schema.Boolean,
+  connectionIds: Schema.Array(ConnectorConnectionId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -80,6 +82,7 @@ const ProjectDbRow = Schema.Struct({
   personaReady: Schema.BooleanFromBit,
   projectIcon: Schema.NullOr(Schema.fromJsonString(StoredProjectIcon)),
   scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
+  connectionIds: Schema.fromJsonString(Schema.Array(ConnectorConnectionId)),
 });
 
 function toShell(row: ProjectRow): OrchestrationProjectShell {
@@ -102,6 +105,7 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
     parentBotProjectId: row.parentBotProjectId,
     canCreateBotsWithoutAsking: row.canCreateBotsWithoutAsking,
     personaReady: row.personaReady,
+    connectionIds: row.connectionIds,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -165,6 +169,7 @@ export const make = Effect.gen(function* () {
         parent_bot_project_id AS "parentBotProjectId",
         can_create_bots_without_asking AS "canCreateBotsWithoutAsking",
         persona_ready AS "personaReady",
+        connection_ids AS "connectionIds",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
         deleted_at AS "deletedAt"
@@ -203,6 +208,7 @@ export const make = Effect.gen(function* () {
             parent_bot_project_id,
             can_create_bots_without_asking,
             persona_ready,
+            connection_ids,
             created_at,
             updated_at,
             deleted_at
@@ -225,6 +231,7 @@ export const make = Effect.gen(function* () {
             ${encoded.parentBotProjectId},
             ${encoded.canCreateBotsWithoutAsking},
             ${encoded.personaReady},
+            ${encoded.connectionIds},
             ${encoded.createdAt},
             ${encoded.updatedAt},
             ${encoded.deletedAt}
@@ -247,6 +254,7 @@ export const make = Effect.gen(function* () {
             parent_bot_project_id = excluded.parent_bot_project_id,
             can_create_bots_without_asking = excluded.can_create_bots_without_asking,
             persona_ready = excluded.persona_ready,
+            connection_ids = excluded.connection_ids,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at,
             deleted_at = excluded.deleted_at
@@ -303,6 +311,7 @@ export const make = Effect.gen(function* () {
           parentBotProjectId: null,
           canCreateBotsWithoutAsking: false,
           personaReady: false,
+          connectionIds: [],
           createdAt: payload.createdAt,
           updatedAt: payload.updatedAt,
           deletedAt: null,
@@ -345,6 +354,7 @@ export const make = Effect.gen(function* () {
           ? {}
           : { canCreateBotsWithoutAsking: payload.canCreateBotsWithoutAsking }),
         ...(payload.personaReady === undefined ? {} : { personaReady: payload.personaReady }),
+        ...(payload.connectionIds === undefined ? {} : { connectionIds: payload.connectionIds }),
         updatedAt: payload.updatedAt,
       }).pipe(mapError("apply"));
     },

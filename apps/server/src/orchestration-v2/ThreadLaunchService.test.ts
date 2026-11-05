@@ -262,6 +262,7 @@ function makeHarness(options: HarnessOptions = {}) {
               parentBotProjectId: null,
               canCreateBotsWithoutAsking: false,
               personaReady: false,
+              connectionIds: [],
               createdAt: project.createdAt,
               updatedAt: project.updatedAt,
               deletedAt: project.deletedAt,

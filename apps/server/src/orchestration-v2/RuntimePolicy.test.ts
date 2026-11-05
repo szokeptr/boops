@@ -112,6 +112,7 @@ const layerWithPolicy = (policy?: ManagedPolicySummary, autonomy: BotAutonomy = 
             parentBotProjectId: null,
             canCreateBotsWithoutAsking: false,
             personaReady: false,
+            connectionIds: [],
             createdAt: "2026-06-21T00:00:00.000Z",
             updatedAt: "2026-06-21T00:00:00.000Z",
             deletedAt: null,
