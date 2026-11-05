@@ -83,7 +83,6 @@ import {
   SettingsScheduledTaskNewRouteScreen,
   SettingsScheduledTaskEditRouteScreen,
 } from "./features/settings/SettingsScheduledTasksRouteScreen";
-import { ScheduledTaskModelPickerRouteScreen } from "./features/settings/ScheduledTaskPickerScreens";
 import { SettingsKeyboardRouteScreen } from "./features/settings/SettingsKeyboardRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
 import { SettingsMicrophoneRouteScreen } from "./features/settings/SettingsMicrophoneRouteScreen";
@@ -336,18 +335,6 @@ const SETTINGS_SCREENS = {
   SettingsScheduledTaskEdit: createNativeStackScreen({
     screen: SettingsScheduledTaskEditRouteScreen,
     options: { ...SETTINGS_PAGE_OPTIONS, title: "Edit scheduled task" },
-  }),
-  SettingsScheduledTaskModel: createNativeStackScreen({
-    screen: ScheduledTaskModelPickerRouteScreen,
-    options: {
-      ...SETTINGS_PAGE_OPTIONS,
-      headerShown: false,
-      ...(Platform.OS === "android"
-        ? { presentation: "card" as const }
-        : {
-            ...THREAD_SETTINGS_SHEET_OPTIONS,
-          }),
-    },
   }),
   SettingsClientStorage: createNativeStackScreen({
     screen: SettingsClientStorageRouteScreen,

@@ -55,7 +55,6 @@ import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { webhookAddress } from "@t3tools/client-runtime/webhook-address";
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { usePreparedConnection } from "../../state/session";
-import { buildModelOptions } from "../../lib/modelOptions";
 import { useProjects, useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -93,7 +92,6 @@ import {
 type ScheduledTaskRoutes = {
   SettingsScheduledTaskNew: undefined;
   SettingsScheduledTaskEdit: undefined;
-  SettingsScheduledTaskModel: undefined;
 };
 
 const DAYS = [
@@ -329,46 +327,6 @@ function WebhookFilterRows(props: {
         </Text>
       ) : null}
     </>
-  );
-}
-
-function PickerRow(props: {
-  readonly label: string;
-  readonly value: string;
-  readonly onPress: () => void;
-  readonly disabled?: boolean;
-  readonly borderTop?: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${props.label}, ${props.value}`}
-      accessibilityState={{ disabled: props.disabled }}
-      disabled={props.disabled}
-      onPress={props.onPress}
-      className={
-        props.borderTop
-          ? "min-h-14 flex-row items-center gap-3 border-t border-border-subtle px-4 py-3 active:opacity-70 disabled:opacity-50"
-          : "min-h-14 flex-row items-center gap-3 px-4 py-3 active:opacity-70 disabled:opacity-50"
-      }
-    >
-      <Text textRole="body" className="text-foreground">
-        {props.label}
-      </Text>
-      <Text
-        textRole="footnote"
-        className="min-w-0 flex-1 text-right text-foreground-muted"
-        numberOfLines={1}
-      >
-        {props.value}
-      </Text>
-      <SymbolView
-        name="chevron.right"
-        size={14}
-        tintColorClassName="accent-chevron"
-        type="monochrome"
-      />
-    </Pressable>
   );
 }
 
@@ -674,7 +632,6 @@ function TaskForm({
   readonly onSaved: () => void;
   readonly onChangeEnvironment: (target: SettingsTarget) => void;
 }) {
-  const navigation = useNavigation<NativeStackNavigationProp<ScheduledTaskRoutes>>();
   const tasks = useEnvironmentQuery(
     serverEnvironment.scheduledTasksLive({ environmentId, input: {} }),
   );
@@ -689,7 +646,6 @@ function TaskForm({
     )
     .sort((left, right) => Number(right.pinnedAt != null) - Number(left.pinnedAt != null));
   const config = useEnvironmentServerConfig(environmentId);
-  const modelOptions = buildModelOptions(config, null, undefined, draft.projectId);
   // Existing webhook tasks keep the option so they can still switch to a timer.
   const webhookDenial = managedCapabilityDenial(config?.managedPolicy, "webhookTasks");
   const canOperate = useAtomValue(
@@ -770,13 +726,9 @@ function TaskForm({
       !draft.prompt.trim() ||
       !draft.projectId ||
       !draft.modelSelection ||
-      !schedule ||
-      (draft.workspace === "existing_worktree" && !draft.checkoutPath.trim())
+      !schedule
     ) {
-      Dialog.alert(
-        "Incomplete task",
-        "Add a name, prompt, project, model, valid schedule, and checkout path if needed.",
-      );
+      Dialog.alert("Incomplete task", "Add a name, prompt, project, and valid schedule.");
       return;
     }
     const project = projects.find((candidate) => candidate.id === draft.projectId);
@@ -802,16 +754,8 @@ function TaskForm({
       schedule,
       enabled: draft.enabled,
       threadId,
-      workspaceStrategy:
-        draft.workspace === "root"
-          ? { type: "root" }
-          : draft.workspace === "existing_worktree"
-            ? { type: "existing_worktree", worktreePath: draft.checkoutPath.trim() }
-            : {
-                type: "worktree",
-                baseRef: draft.baseRef.trim() || "main",
-                startFromOrigin: draft.startFromOrigin,
-              },
+      // Runs post into the bot's thread, which owns its workspace and model.
+      workspaceStrategy: { type: "root" },
       // Tasks have no mode picker; a mode above the administrator's ceiling is refused.
       runtimeMode:
         clampManagedRuntimeMode(config?.managedPolicy, draft.runtimeMode) ?? draft.runtimeMode,
@@ -921,21 +865,6 @@ function TaskForm({
                 modelSelectionIsExplicit: keepsExplicitModel,
               });
             }}
-          />
-          <PickerRow
-            label="Model"
-            borderTop
-            value={
-              modelOptions.find(
-                (option) =>
-                  option.selection.instanceId === draft.modelSelection?.instanceId &&
-                  option.selection.model === draft.modelSelection?.model,
-              )?.label ??
-              draft.modelSelection?.model ??
-              (modelOptions.length ? "Choose model" : "No models available")
-            }
-            onPress={() => navigation.navigate("SettingsScheduledTaskModel")}
-            disabled={saving || dictationPending || environmentUnavailable}
           />
         </SettingsSection>
 
