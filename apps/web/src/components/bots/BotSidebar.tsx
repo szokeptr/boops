@@ -33,6 +33,7 @@ import { Button } from "../ui/button";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { ArchivedBotList } from "./ArchivedBotList";
 import { BotList } from "./BotList";
 
 /** The bot whose main thread, background thread, or activity page the route shows. */
@@ -191,6 +192,7 @@ export default function BotSidebar() {
       >
         <SidebarGroup className="flex-1" role="presentation">
           <BotListPanel {...(isMobile ? { onNavigate: () => setOpenMobile(false) } : {})} />
+          <ArchivedBotList />
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />

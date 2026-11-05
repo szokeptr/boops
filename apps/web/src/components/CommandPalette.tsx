@@ -50,6 +50,8 @@ import {
 } from "@t3tools/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
   ArrowLeftIcon,
   BotIcon,
   BugIcon,
@@ -73,8 +75,10 @@ import {
   PinOffIcon,
   SquarePenIcon,
   TextSearchIcon,
+  Trash2Icon,
   UserPlusIcon,
 } from "lucide-react";
+import { openDeleteBotDialog, useBotArchive, useCanManageBot } from "./bots/BotLifecycle";
 import { openThreadFind } from "./chat/threadFindStore";
 import {
   useDeferredValue,
@@ -519,6 +523,8 @@ function OpenCommandPaletteDialog(props: {
     defaultProjectRef,
     handleNewThread,
   });
+  const canManageContextualBot = useCanManageBot(contextualProjectRef?.environmentId ?? null);
+  const { archiveBot, unarchiveBot } = useBotArchive();
   const projectPickerEntries = buildSidebarProjectPickerEntries({
     groups: pickableProjectGroups(projectGroups),
     preferredProjectRef: contextualProjectRef,
@@ -1574,6 +1580,33 @@ function OpenCommandPaletteDialog(props: {
         <PinIcon className={ITEM_ICON_CLASS} />
       ),
       run: async () => toggleProjectGroupPin(currentProjectGroup),
+    });
+  }
+  if (currentProjectGroup && contextualProjectRef && canManageContextualBot) {
+    const bot = { ...contextualProjectRef, name: currentProjectGroup.displayName };
+    actionItems.push({
+      kind: "action",
+      value: "action:bot-archive",
+      searchTerms: ["archive", "unarchive", "bot", "pause", "hide", "restore"],
+      title: currentProjectGroup.archived ? "Unarchive bot" : "Archive bot",
+      description: currentProjectGroup.displayName,
+      icon: currentProjectGroup.archived ? (
+        <ArchiveRestoreIcon className={ITEM_ICON_CLASS} />
+      ) : (
+        <ArchiveIcon className={ITEM_ICON_CLASS} />
+      ),
+      run: async () => {
+        await (currentProjectGroup.archived ? unarchiveBot(bot) : archiveBot(bot));
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:bot-delete",
+      searchTerms: ["delete", "remove", "bot"],
+      title: "Delete bot…",
+      description: currentProjectGroup.displayName,
+      icon: <Trash2Icon className={ITEM_ICON_CLASS} />,
+      run: async () => openDeleteBotDialog(bot),
     });
   }
   const contextualProjectGroup = currentProjectGroup ?? projectGroups[0] ?? null;
