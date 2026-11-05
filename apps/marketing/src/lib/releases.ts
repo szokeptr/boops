@@ -1,3 +1,4 @@
+// Boops has no release repository yet, so downloads still resolve to upstream T3 Code builds.
 const REPO = "pingdotgg/t3code";
 
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
@@ -22,7 +23,7 @@ export interface Release {
 }
 
 function cacheKey(channel: ReleaseChannel) {
-  return `t3code-${channel}-release`;
+  return `boops-${channel}-release`;
 }
 
 async function fetchStable(): Promise<Release> {
