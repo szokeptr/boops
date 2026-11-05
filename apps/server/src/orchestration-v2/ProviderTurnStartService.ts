@@ -863,11 +863,18 @@ export const layer: Layer.Layer<
         }),
         message.context,
       );
+      // Only bot projects (those with a main conversation) inject bot instructions that key on it.
+      const helperTask =
+        isHelperTask(projection.thread, message.senderThreadId) &&
+        (yield* projects.getById(projection.thread.projectId).pipe(
+          Effect.map((project) => Option.getOrUndefined(project)?.mainThreadId != null),
+          Effect.orElseSucceed(() => false),
+        ));
       const userText = goalCommand
         ? composedText
         : message.routine !== undefined
           ? `${routineHeader(message.routine)}\n\n${composedText}`
-          : isHelperTask(projection.thread, message.senderThreadId)
+          : helperTask
             ? withHelperTaskHeader(composedText)
             : composedText;
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
