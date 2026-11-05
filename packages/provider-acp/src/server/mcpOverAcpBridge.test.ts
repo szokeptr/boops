@@ -145,31 +145,60 @@ describe("AcpMcpOverAcpBridge", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("rejects unknown servers, connections, and oversized messages", () =>
-    Effect.gen(function* () {
-      const bridge = yield* makeAcpMcpOverAcpBridge({
-        endpoint: "http://127.0.0.1:1/mcp",
-        authorization: "Bearer bridge-test",
-        allocateConnectionId: Effect.succeed("connection-1"),
-        fetchImplementation: () => Promise.resolve(new Response(null, { status: 202 })),
-      });
+  it.effect(
+    "routes connectors to their own endpoint and rejects unknown servers, connections, and oversized messages",
+    () =>
+      Effect.gen(function* () {
+        const posts: Array<{ readonly url: string; readonly authorization: string | null }> = [];
+        const bridge = yield* makeAcpMcpOverAcpBridge({
+          endpoint: "http://127.0.0.1:1/mcp",
+          authorization: "Bearer bridge-test",
+          connectors: {
+            linear: {
+              endpoint: "http://127.0.0.1:1/mcp-connectors/linear",
+              authorization: "Bearer connector-test",
+            },
+          },
+          allocateConnectionId: Effect.succeed("connection-1"),
+          fetchImplementation: (url, init) => {
+            posts.push({ url, authorization: new Headers(init?.headers).get("authorization") });
+            return Promise.resolve(new Response(null, { status: 202 }));
+          },
+        });
 
-      expect(yield* bridge.connect({ serverId: "other" }).pipe(Effect.flip)).toMatchObject({
-        _tag: "AcpMcpOverAcpError",
-      });
-      expect(
-        yield* bridge.message({ connectionId: "missing", method: "tools/list" }).pipe(Effect.flip),
-      ).toMatchObject({ _tag: "AcpMcpOverAcpError" });
+        const linear = yield* bridge.connect({ serverId: "linear" });
+        yield* bridge.notification({
+          connectionId: linear.connectionId,
+          method: "notifications/initialized",
+        });
+        expect(posts).toEqual([
+          {
+            url: "http://127.0.0.1:1/mcp-connectors/linear",
+            authorization: "Bearer connector-test",
+          },
+        ]);
+        yield* bridge.disconnect({ connectionId: linear.connectionId });
 
-      const connected = yield* bridge.connect({ serverId: "t3-code" });
-      const failure = yield* bridge
-        .message({
-          connectionId: connected.connectionId,
-          method: "tools/call",
-          params: { payload: "x".repeat(8 * 1024 * 1024) },
-        })
-        .pipe(Effect.flip);
-      expect(failure.message).toContain("exceeds 8 MiB");
-    }),
+        for (const serverId of ["other", "toString"]) {
+          expect(yield* bridge.connect({ serverId }).pipe(Effect.flip)).toMatchObject({
+            _tag: "AcpMcpOverAcpError",
+          });
+        }
+        expect(
+          yield* bridge
+            .message({ connectionId: "missing", method: "tools/list" })
+            .pipe(Effect.flip),
+        ).toMatchObject({ _tag: "AcpMcpOverAcpError" });
+
+        const connected = yield* bridge.connect({ serverId: "t3-code" });
+        const failure = yield* bridge
+          .message({
+            connectionId: connected.connectionId,
+            method: "tools/call",
+            params: { payload: "x".repeat(8 * 1024 * 1024) },
+          })
+          .pipe(Effect.flip);
+        expect(failure.message).toContain("exceeds 8 MiB");
+      }),
   );
 });

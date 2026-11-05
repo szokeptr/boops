@@ -150,6 +150,20 @@ describe("Pi MCP tool results", () => {
     },
   );
 
+  it("registers the bot's connectors under their own names and calls them with T3's bearer", async () => {
+    const url = "http://fixture.invalid/mcp-connectors/linear";
+    const bridge = await loadMcpBridge({ connectors: [{ name: "linear", url }] });
+    const tool = bridge.tools.find((tool) => tool.name === "mcp__linear__delegate_task");
+    assert.isDefined(tool);
+    const output = await tool!.execute("connector", {});
+    assert.deepEqual(output.content, [{ type: "text", text: "browser snapshot" }]);
+    assert.deepEqual(bridge.transports.at(-1), {
+      url,
+      authorization: "Bearer fixture-token",
+      signal: undefined,
+    });
+  });
+
   it("uses structured output as model text when content is empty", async () => {
     const result = { content: [], structuredContent: { count: 2 } };
     const bridge = await loadMcpBridge({ result });

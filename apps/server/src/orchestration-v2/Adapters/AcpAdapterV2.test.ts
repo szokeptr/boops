@@ -4089,6 +4089,13 @@ describe("AcpAdapterV2", () => {
         endpoint: "http://127.0.0.1:43123/mcp",
         authorizationHeader: "Bearer target-thread-token",
         browserToolsAvailable: true,
+        connectors: [
+          {
+            name: "linear",
+            url: "http://127.0.0.1:43123/mcp-connectors/linear",
+            headers: { Authorization: "Bearer target-thread-token" },
+          },
+        ],
       });
       const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
         runtimeMode: "full-access",
@@ -4136,24 +4143,26 @@ describe("AcpAdapterV2", () => {
       assert.equal(forkedProviderThread.nativeThreadRef?.nativeId, "mock-session-1-fork");
       assert.equal(forkedProviderThread.appThreadId, targetThreadId);
       assert.equal(forkedProviderThread.forkedFrom?.providerThreadId, sourceProviderThread.id);
+      const stdioBridge = (name: string, endpoint: string) => ({
+        type: "stdio",
+        name,
+        command: process.execPath,
+        args: [
+          process.argv[1] === undefined ? "t3" : NodePath.resolve(process.argv[1]),
+          "acp-mcp-bridge",
+        ],
+        env: [
+          { name: "ELECTRON_RUN_AS_NODE", value: "1" },
+          { name: "T3_ACP_MCP_ENDPOINT", value: endpoint },
+          { name: "T3_ACP_MCP_AUTHORIZATION", value: "Bearer target-thread-token" },
+        ],
+      });
       assert.deepEqual(forkRequest.params, {
         sessionId: "mock-session-1",
         cwd: process.cwd(),
         mcpServers: [
-          {
-            type: "stdio",
-            name: "t3-code",
-            command: process.execPath,
-            args: [
-              process.argv[1] === undefined ? "t3" : NodePath.resolve(process.argv[1]),
-              "acp-mcp-bridge",
-            ],
-            env: [
-              { name: "ELECTRON_RUN_AS_NODE", value: "1" },
-              { name: "T3_ACP_MCP_ENDPOINT", value: "http://127.0.0.1:43123/mcp" },
-              { name: "T3_ACP_MCP_AUTHORIZATION", value: "Bearer target-thread-token" },
-            ],
-          },
+          stdioBridge("t3-code", "http://127.0.0.1:43123/mcp"),
+          stdioBridge("linear", "http://127.0.0.1:43123/mcp-connectors/linear"),
         ],
       });
       yield* runtime.ensureThread({

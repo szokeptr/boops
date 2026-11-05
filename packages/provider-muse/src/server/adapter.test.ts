@@ -385,7 +385,7 @@ const approval = (turnId: string) => ({
 vi.mock("node:fs/promises", { spy: true });
 
 describe("MuseAdapterV2", () => {
-  it.effect("connects the thread's MCP credential on native start and resume", () =>
+  it.effect("connects the thread's MCP credential and connectors on native start and resume", () =>
     Effect.gen(function* () {
       yield* (yield* McpProviderSessions.McpProviderSessions).set({
         environmentId: EnvironmentId.make("test-environment"),
@@ -395,6 +395,13 @@ describe("MuseAdapterV2", () => {
         endpoint: "http://127.0.0.1:43210/mcp",
         authorizationHeader: "Bearer thread-scoped-test-token",
         browserToolsAvailable: true,
+        connectors: [
+          {
+            name: "linear",
+            url: "http://127.0.0.1:43210/mcp-connectors/linear",
+            headers: { Authorization: "Bearer thread-scoped-test-token" },
+          },
+        ],
       });
       for (const nativeId of [undefined, "saved-native-session"]) {
         const fake = yield* makeFakeMuse();
@@ -407,6 +414,12 @@ describe("MuseAdapterV2", () => {
               transport: "streamableHttp",
               mode: "optional",
               url: "http://127.0.0.1:43210/mcp",
+              headers: { Authorization: "Bearer thread-scoped-test-token" },
+            },
+            linear: {
+              transport: "streamableHttp",
+              mode: "optional",
+              url: "http://127.0.0.1:43210/mcp-connectors/linear",
               headers: { Authorization: "Bearer thread-scoped-test-token" },
             },
           },

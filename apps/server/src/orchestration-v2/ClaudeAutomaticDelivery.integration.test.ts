@@ -167,6 +167,7 @@ it.effect.each(deliveries)(
                   }),
                 setModel: () => Effect.void,
                 applyFlagSettings: () => Effect.void,
+                setMcpServers: () => Effect.die("unexpected MCP server change"),
                 setPermissionMode: () => Effect.void,
                 backgroundTasks: () => Effect.succeed(false),
                 mcpServerStatus: Effect.succeed([]),
