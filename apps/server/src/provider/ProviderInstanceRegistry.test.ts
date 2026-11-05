@@ -433,6 +433,48 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.live("puts the home-folder reason on Claude's snapshot before its first probe", () =>
+    Effect.gen(function* () {
+      if (windowsHost) return;
+
+      const fixtures = yield* makeTildeProviderFixtures();
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const bin = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-sandbox-bin-" });
+      yield* fileSystem.writeFileString(path.join(bin, "bwrap"), "#!/bin/sh\n");
+      yield* fileSystem.chmod(path.join(bin, "bwrap"), 0o755);
+      const claudeId = ProviderInstanceId.make("claude_home_folder");
+      const { registry } = yield* makeProviderInstanceRegistry<ClaudeDriverEnv>({
+        drivers: [ClaudeDriver],
+        configMap: {
+          [claudeId]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            enabled: true,
+            // The mock claude CLI runs on node; socat is on neither directory.
+            environment: [
+              {
+                name: "PATH",
+                value: `${bin}:${path.dirname(process.execPath)}`,
+                sensitive: false,
+              },
+            ],
+            config: makeClaudeConfig({
+              enabled: true,
+              binaryPath: fixtures.claudeBinaryPath,
+              homePath: fixtures.claudeHomePath,
+            }),
+          },
+        },
+      });
+      const claude = yield* registry.getInstance(claudeId);
+      const reason =
+        "Staying in its home folder needs socat on this machine (sudo apt install socat).";
+
+      expect((yield* claude!.snapshot.getSnapshot).homeFolderUnavailableReason).toBe(reason);
+      expect((yield* claude!.snapshot.refresh).homeFolderUnavailableReason).toBe(reason);
+    }).pipe(Effect.provideService(HostProcess.Platform, "linux"), Effect.provide(layerTest)),
+  );
+
   it.live("runs Claude instance probes in the server state dir, not the server cwd", () =>
     Effect.gen(function* () {
       if (yield* HostProcess.isWindows) return;

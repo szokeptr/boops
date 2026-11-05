@@ -82,6 +82,13 @@ export type ClaudeDriverEnv =
   | ProviderEventLoggers.ProviderEventLoggers
   | ServerConfig.ServerConfig;
 
+function withHomeFolderReason<Provider extends object>(
+  provider: Provider,
+  reason: string | undefined,
+): Provider {
+  return reason === undefined ? provider : { ...provider, homeFolderUnavailableReason: reason };
+}
+
 export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.Path> = {
   driverKind: DRIVER_KIND,
   metadata: {
@@ -232,6 +239,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       Effect.map((result) => result.capabilities),
     );
 
+    // The pending snapshot, and the cached status hydrated onto it at startup, stand until the
+    // first probe finishes, which can take a while or fail; they must carry the reason too.
+    const initialHomeFolderReason = yield* claudeHomeFolderSandboxUnavailableReason(processEnv);
     const checkProvider = catalogService.refreshInBackground.pipe(
       Effect.andThen(
         modelCatalog.pipe(
@@ -258,11 +268,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
           ),
           Effect.flatMap((provider) =>
             claudeHomeFolderSandboxUnavailableReason(processEnv).pipe(
-              Effect.map((reason) =>
-                reason === undefined
-                  ? provider
-                  : { ...provider, homeFolderUnavailableReason: reason },
-              ),
+              Effect.map((reason) => withHomeFolderReason(provider, reason)),
             ),
           ),
           Effect.map(stampIdentity),
@@ -282,6 +288,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       initialSnapshot: (settings) =>
         modelCatalog.pipe(
           Effect.flatMap((catalog) => makePendingClaudeProvider(settings.provider, catalog)),
+          Effect.map((provider) => withHomeFolderReason(provider, initialHomeFolderReason)),
           Effect.map(stampIdentity),
         ),
       checkProvider,
