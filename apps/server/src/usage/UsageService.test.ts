@@ -1555,7 +1555,7 @@ describe("UsageService", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.live("reads the Cursor account of an API key or T3 sign-in instead of a CLI login", () =>
+  it.live("reads the Cursor account of an API key or Boops sign-in instead of a CLI login", () =>
     Effect.gen(function* () {
       const { settings, home } = yield* setup;
       const signIn = new TextEncoder().encode(

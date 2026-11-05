@@ -177,7 +177,7 @@ const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(fun
   const platformKey = cliArchivePlatformKey(input.platform, input.arch);
   if (platformKey === undefined) {
     return yield* new PinnedRuntimeInstallError({
-      step: `selecting a t3 release archive for ${input.platform}-${input.arch}`,
+      step: `selecting a boops release archive for ${input.platform}-${input.arch}`,
     });
   }
   const httpClient = input.httpClient;
@@ -186,18 +186,18 @@ const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(fun
   const archive = yield* fetchReleaseAsset(
     httpClient,
     cliReleaseAssetUrl(input.version, fileName, input.releaseBaseUrl),
-    "downloading the t3 release archive",
+    "downloading the boops release archive",
     input.onProgress,
   );
   input.onProgress?.({ stage: "verify" });
   const digest = yield* Effect.tryPromise({
     try: () => crypto.subtle.digest("SHA-256", archive),
     catch: (cause) =>
-      new PinnedRuntimeInstallError({ step: "verifying the t3 release archive", cause }),
+      new PinnedRuntimeInstallError({ step: "verifying the boops release archive", cause }),
   });
   if (Hex.encode(new Uint8Array(digest)) !== expected) {
     return yield* new PinnedRuntimeInstallError({
-      step: "verifying the t3 release archive checksum",
+      step: "verifying the boops release archive checksum",
     });
   }
 
@@ -206,11 +206,12 @@ const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(fun
     .writeFile(archivePath, archive)
     .pipe(
       Effect.mapError(
-        (cause) => new PinnedRuntimeInstallError({ step: "writing the t3 release archive", cause }),
+        (cause) =>
+          new PinnedRuntimeInstallError({ step: "writing the boops release archive", cause }),
       ),
     );
   input.onProgress?.({ stage: "extract" });
-  const extractStep = "extracting the t3 release archive";
+  const extractStep = "extracting the boops release archive";
   // Strip the archive's stem directory so the executable lands at <versionDir>/t3.
   yield* input.runner
     .run({
@@ -245,14 +246,14 @@ const publishedArchive = Effect.fn("cloud.pinned_runtime.published_archive")(fun
       yield* fetchReleaseAsset(
         input.httpClient,
         cliReleaseAssetUrl(input.version, CLI_RELEASE_CHECKSUMS_FILE, input.releaseBaseUrl),
-        "downloading the t3 release checksums",
+        "downloading the boops release checksums",
       ),
     ),
   );
   const expected = checksums.get(fileName);
   if (expected === undefined) {
     return yield* new PinnedRuntimeInstallError({
-      step: `finding ${fileName} in the t3 release checksums`,
+      step: `finding ${fileName} in the boops release checksums`,
     });
   }
   return { fileName, expected };
@@ -264,7 +265,7 @@ const isPinnedRuntimeInstallError = Schema.is(PinnedRuntimeInstallError);
 export const isUnpublishedRelease = (error: unknown): error is PinnedRuntimeInstallError =>
   isPinnedRuntimeInstallError(error) &&
   (error.step.startsWith("finding ") ||
-    (error.step.startsWith("downloading the t3 release") &&
+    (error.step.startsWith("downloading the boops release") &&
       HttpClientError.isHttpClientError(error.cause) &&
       error.cause.response?.status === 404));
 
@@ -289,7 +290,7 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
       const platformKey = cliArchivePlatformKey(input.platform, input.arch);
       if (platformKey === undefined) {
         return yield* new PinnedRuntimeInstallError({
-          step: `selecting a t3 release archive for ${input.platform}-${input.arch}`,
+          step: `selecting a boops release archive for ${input.platform}-${input.arch}`,
         });
       }
       yield* publishedArchive(input, platformKey);
@@ -455,7 +456,7 @@ const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targ
   const platform = yield* HostProcess.Platform;
   const environment = yield* HostProcess.Environment;
   const home = yield* HostProcess.HomeDirectory;
-  const launcherName = platform === "win32" ? "t3.cmd" : "t3";
+  const launcherName = platform === "win32" ? "boops.cmd" : "boops";
   const launchersFile = path.join(baseDir, PINNED_RUNTIME_DIR, PINNED_RUNTIME_LAUNCHERS_FILE);
   const recorded = (yield* fs.readFileString(launchersFile).pipe(Effect.orElseSucceed(() => "")))
     .split(/\r?\n/)
@@ -479,7 +480,7 @@ const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targ
             Effect.map(windowsShimTarget),
             Effect.orElseSucceed(() => undefined),
           )
-        : // Fully resolved, through chained links and a symlinked T3 home alike.
+        : // Fully resolved, through chained links and a symlinked Boops home alike.
           yield* fs.realPath(launcher).pipe(Effect.orElseSucceed(() => undefined));
     if (target === undefined) continue;
     targets.push(target);
@@ -639,7 +640,7 @@ const selectUnusedRuntimes = Effect.fn("cloud.pinned_runtime.select_unused")(fun
       Effect.andThen(fs.rename(versionDir, target)),
       Effect.andThen(Effect.sync(() => pruned.add(target))),
       Effect.catch((cause) =>
-        Effect.logWarning("Could not remove an unused t3 runtime.", { version, cause }),
+        Effect.logWarning("Could not remove an unused boops runtime.", { version, cause }),
       ),
     );
   }
@@ -671,7 +672,7 @@ export const prunePinnedRuntimes = Effect.fn("cloud.pinned_runtime.prune")(funct
         ),
       ),
       Effect.catch((cause) =>
-        Effect.logWarning("Could not remove an unused t3 runtime.", { target, cause }),
+        Effect.logWarning("Could not remove an unused boops runtime.", { target, cause }),
       ),
     );
   }

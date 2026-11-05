@@ -546,7 +546,7 @@ const recordScenario = Effect.fn("recordKiroScenario")(function* (fixtureName: s
       generatedBy: "live-kiro-recorder",
       kiroVersion: process.env.T3_KIRO_VERSION ?? "unknown",
       normalization:
-        "Session ids are fixed sess_ UUIDs and other UUIDs (message and request ids) are numbered in first-seen order, the workspace is <workspace>, HOME is /home/kiro-replay and the recording user is kiro-replay. T3-owned prompt text, MCP servers and initialize params other than clientCapabilities and _meta are <any>. Kiro's log directory, user-scoped commands and agents, and the _kiro/* broadcasts T3 ignores (governance, steering documents, powers, tools, hooks, MCP status, session roster, memory sync) are removed. Timestamps are kept as recorded.",
+        "Session ids are fixed sess_ UUIDs and other UUIDs (message and request ids) are numbered in first-seen order, the workspace is <workspace>, HOME is /home/kiro-replay and the recording user is kiro-replay. T3-owned prompt text, MCP servers and initialize params other than clientCapabilities and _meta are <any>. Kiro's log directory, user-scoped commands and agents, and the _kiro/* broadcasts Boops ignores (governance, steering documents, powers, tools, hooks, MCP status, session roster, memory sync) are removed. Timestamps are kept as recorded.",
       droppedFrames,
     },
     entries: [

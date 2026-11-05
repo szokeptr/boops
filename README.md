@@ -1,105 +1,44 @@
-# T3 Code
+# Boops
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+Little bots that live on your machine.
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, and fx. If they're set up on your computer, T3 Code can control them.
+Boops is an open-source, self-hosted app for running one or many persistent personal bots on your own computer or VPS. Each bot has a name, a persona, a home folder with memory notes it keeps itself, and routines that run on a schedule or from a webhook. Each bot lives in one long conversation that you can pick up from the web, desktop, or mobile app, with push notifications when it needs you.
 
-## "Wait, what are you selling me?"
+New bots hatch: their first conversation is the bot interviewing you and writing its own persona.
 
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
+Bots are powered by the Claude Code or Codex subscription you already have. Boops does not resell tokens.
 
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
+Website: [getboops.com](https://getboops.com)
+
+## A bot is a folder
+
+A bot's persona and the notes it keeps are plain Markdown in its home folder. Back it up, grep it, move it to another box.
 
 ## Installation
 
 > [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, Antigravity, and fx. Install and authenticate at least one provider before use:
+> Install and authenticate at least one provider before use:
 >
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 > - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
-> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
-> - fx: install [fx](https://fx.sh) and run `fx login` on the machine running the T3 Code server ([setup guide](./docs/user/providers-fx.md))
+> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
+>
+> Cursor, Grok Build, OpenCode, Antigravity and fx work too. See [Install and first run](./docs/user/install.md#providers).
 
 ### Command line
 
 ```bash
-curl -fsSL https://t3.codes/install.sh | sh
+npx boops
 ```
 
-On Windows, in PowerShell:
+That starts the server and opens the local web app. Once installed, `boops service install` keeps it running in the background, `boops update` moves to a newer release, and `boops --help` has the full reference.
 
-```powershell
-irm https://t3.codes/install.ps1 | iex
-```
+### Desktop and mobile
 
-Then run `t3` to start the server and open the local web app. `t3 service install` keeps it running in the background, `t3 update` moves to a newer release, and `t3 --help` has the full reference.
-
-To try it once without installing, run `npx t3@latest` instead.
-
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
-
-```bash
-winget install T3Tools.T3Code
-```
-
-#### Windows (`scoop`)
-
-```bash
-scoop install extras/t3code
-```
-
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
-```
-
-#### Debian, Ubuntu (`.deb`)
-
-Download the `.deb` from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), then:
-
-```bash
-sudo apt install ./T3-Code-*.deb
-```
-
-#### Arch Linux (AUR)
-
-Stable:
-
-```bash
-yay -S t3code-bin
-```
-
-Nightly:
-
-```bash
-yay -S t3code-nightly-bin
-```
-
-The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
-
-#### Nix (nixpkgs)
-
-```bash
-nix profile add github:NixOS/nixpkgs/nixos-unstable#t3code
-```
-
-The package is maintained in [nixpkgs](https://github.com/NixOS/nixpkgs/tree/nixos-unstable/pkgs/by-name/t3/t3code)
-and includes the desktop app (`t3code-desktop`) and the `t3` command.
-See [Nix installation](./docs/user/install.md#nix-nixpkgs) for NixOS configuration and updates.
+Get the desktop app from [getboops.com/download](https://getboops.com/download). The mobile app connects to any Boops server; see [Install and first run](./docs/user/install.md#mobile-app).
 
 ## Some notes
 
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
+Boops is very early. Expect bugs.
 
 ## Documentation
 
@@ -114,17 +53,16 @@ Full docs live in [docs/](./docs). There's no docs site yet.
 - [Remote access from a phone or another machine](./docs/user/remote-access.md)
 - [Connect Claude Code, Codex, ChatGPT and other agents over MCP](./docs/user/outside-agents.md)
 - [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
 - Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- [Run T3 Code as a background service](./docs/user/background-service.md)
+- [Run Boops as a background service](./docs/user/background-service.md)
 
 Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
 
-## If you REALLY want to contribute still.... read this first
+## Building from source
 
 ### Install `vp`
 
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
+Boops uses Vite+ so you'll need to install the global `vp` command-line tool.
 
 #### macOS / Linux
 
@@ -138,7 +76,7 @@ curl -fsSL https://vite.plus | bash
 irm https://vite.plus/ps1 | iex
 ```
 
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
+Check out their getting started guide for more information: https://viteplus.dev/guide/
 
 ### Install dependencies
 
@@ -147,7 +85,3 @@ vp i
 ```
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
-
-Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
-
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).

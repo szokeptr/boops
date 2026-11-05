@@ -24,7 +24,7 @@ describe("Pocks bot instructions", () => {
   });
 });
 
-describe("T3 device instructions", () => {
+describe("Boops device instructions", () => {
   it("route device work through device_open and give Claude the line that loads the tools", () => {
     for (const intent of ["`device_list`", "`device_open`", "`agent-device`", "ssh", "`hostId`"]) {
       assert.include(T3_CODE_DEVICE_TOOL_INSTRUCTIONS, intent);
@@ -56,7 +56,7 @@ describe("T3 device instructions", () => {
 
   it("reach OpenCode and Cursor only when the session holds device access", () => {
     assert.include(t3OrchestrationSystemPrompt(true, true), T3_CODE_DEVICE_TOOL_INSTRUCTIONS);
-    assert.notInclude(t3OrchestrationSystemPrompt(true, false), "## T3 Code devices");
+    assert.notInclude(t3OrchestrationSystemPrompt(true, false), "## Boops devices");
     assert.isUndefined(t3OrchestrationSystemPrompt(false, true));
 
     const firstRun = (hasDeviceTools: boolean) =>
@@ -68,7 +68,7 @@ describe("T3 device instructions", () => {
         deviceInstructionsDelivered: false,
       });
     assert.include(firstRun(true), T3_CODE_DEVICE_TOOL_INSTRUCTIONS);
-    assert.notInclude(firstRun(false), "## T3 Code devices");
+    assert.notInclude(firstRun(false), "## Boops devices");
 
     const laterRun = (deviceInstructionsDelivered: boolean) =>
       t3OrchestrationPrompt({
@@ -95,6 +95,6 @@ describe("T3 device instructions", () => {
       t3AcpPromptWithInstructions({ prompt: "Again.", state, previousState: state }),
       "Again.",
     );
-    assert.notInclude(t3AcpPromptWithInstructions({ prompt: "Hi.", state }), "## T3 Code devices");
+    assert.notInclude(t3AcpPromptWithInstructions({ prompt: "Hi.", state }), "## Boops devices");
   });
 });

@@ -47,7 +47,7 @@ export class WorktreeMcpService extends Context.Service<
       },
     ) => Effect.Effect<VcsListRefsResult, GitCommandError | PlatformError.PlatformError>;
   }
->()("t3/mcp/WorktreeMcpService") {}
+>()("boops/mcp/WorktreeMcpService") {}
 
 function failure(code: WorktreeMcpFailure["code"], message: string): WorktreeMcpFailure {
   return new WorktreeMcpFailure({ code, message });
@@ -84,7 +84,7 @@ const make = Effect.gen(function* () {
       ? Effect.fail(
           failure(
             "thread_credential_required",
-            "Worktree handoff and status act as the calling T3 thread, so they need an agent running inside T3 Code.",
+            "Worktree handoff and status act as the calling Boops thread, so they need an agent running inside Boops.",
           ),
         )
       : Effect.succeed(scope as McpThreadInvocationScope);

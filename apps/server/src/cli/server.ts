@@ -64,7 +64,7 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
     if (!explicitPath && (!(yield* fs.exists(cwd)) || (yield* fs.stat(cwd)).type !== "Directory")) {
       return yield* new CliError.UserError({
         cause: cwd,
-        userMessage: `Unknown command ${yield* encodeCommand(cwd)}. Use "t3 --help" for commands or an explicit path such as "t3 ./my-project" for a new directory.`,
+        userMessage: `Unknown command ${yield* encodeCommand(cwd)}. Use "boops --help" for commands or an explicit path such as "boops ./my-project" for a new directory.`,
       });
     }
   }
@@ -72,15 +72,15 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
 });
 
 export const startCommand = Command.make("start", { ...sharedServerCommandFlags }).pipe(
-  Command.withDescription("Same as `t3`."),
+  Command.withDescription("Same as `boops`."),
   Command.unlisted,
   Command.withHandler((flags) => runServerCommand(flags, { rejectRunningServer: true })),
 );
 
 export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
-  Command.withShortDescription("Run T3 Code in this terminal, with no browser."),
+  Command.withShortDescription("Run Boops in this terminal, with no browser."),
   Command.withDescription(
-    "Run T3 Code in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `t3 up`.",
+    "Run Boops in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `boops up`.",
   ),
   Command.withHandler((flags) =>
     runServerCommand(flags, {

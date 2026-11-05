@@ -116,7 +116,7 @@ it.effect("reads the newest version from the update feed file a mirror publishes
   }),
 );
 
-it.layer(NodeServices.layer)("t3 update under a managed policy", (it) => {
+it.layer(NodeServices.layer)("boops update under a managed policy", (it) => {
   const runWithPolicy = (
     updates: ManagedUpdatesPolicy,
     input: { readonly channel?: "stable" | "nightly"; readonly requestedVersion?: string } = {},
@@ -150,7 +150,7 @@ it.layer(NodeServices.layer)("t3 update under a managed policy", (it) => {
   it.effect("refuses to update when updates are off", () =>
     Effect.gen(function* () {
       const error = yield* runWithPolicy({ mode: "off" });
-      assert.equal(error.message, "Example Corp manages T3 Code updates.");
+      assert.equal(error.message, "Example Corp manages Boops updates.");
     }),
   );
 
@@ -167,7 +167,7 @@ it.layer(NodeServices.layer)("t3 update under a managed policy", (it) => {
       for (const error of [byChannel, byVersion]) {
         assert.equal(
           error.message,
-          "Example Corp manages T3 Code updates. Only stable releases can be installed.",
+          "Example Corp manages Boops updates. Only stable releases can be installed.",
         );
       }
     }),
@@ -192,7 +192,7 @@ it.layer(NodeServices.layer)("t3 update under a managed policy", (it) => {
   );
 });
 
-it.layer(NodeServices.layer)("t3 update launcher", (it) => {
+it.layer(NodeServices.layer)("boops update launcher", (it) => {
   it.effect("repoints a symlink that lives in a runtime versions tree", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -335,7 +335,7 @@ it.layer(NodeServices.layer)("t3 update launcher", (it) => {
   );
 
   it.effect.each(["recording", "repointing"] as const)(
-    "never leaves a repointed launcher unrecorded when t3 update dies while %s",
+    "never leaves a repointed launcher unrecorded when boops update dies while %s",
     (step) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -350,11 +350,11 @@ it.layer(NodeServices.layer)("t3 update launcher", (it) => {
             ...fs,
             writeFileString: (path, data, options) =>
               step === "recording" && path === launchersFile
-                ? Effect.die("t3 update was killed")
+                ? Effect.die("boops update was killed")
                 : fs.writeFileString(path, data, options),
             rename: (from, to) =>
               step === "repointing" && to === launcher
-                ? Effect.die("t3 update was killed")
+                ? Effect.die("boops update was killed")
                 : fs.rename(from, to),
           }),
           Effect.exit,
@@ -455,7 +455,7 @@ const withoutTerminals = Effect.acquireRelease(
     }),
 );
 
-it.layer(NodeServices.layer)("t3 update with a background service", (it) => {
+it.layer(NodeServices.layer)("boops update with a background service", (it) => {
   it.effect("names the version a service with a pending restart still runs", () =>
     Effect.gen(function* () {
       yield* withoutTerminals;
@@ -489,7 +489,7 @@ it.layer(NodeServices.layer)("t3 update with a background service", (it) => {
           input.args?.includes("--version") === true
             ? unrelatedLsof
                 .run(input)
-                .pipe(Effect.map((result) => ({ ...result, stdout: `t3 v${version}\n` })))
+                .pipe(Effect.map((result) => ({ ...result, stdout: `boops v${version}\n` })))
             : unrelatedLsof.run(input),
       });
 
@@ -520,7 +520,7 @@ it.layer(NodeServices.layer)("t3 update with a background service", (it) => {
 
       assert.include(
         output,
-        `Background service still running the version before ${version}. Run \`t3 service restart\` when you are ready to switch it to ${version}.`,
+        `Background service still running the version before ${version}. Run \`boops service restart\` when you are ready to switch it to ${version}.`,
       );
     }).pipe(
       Effect.scoped,
