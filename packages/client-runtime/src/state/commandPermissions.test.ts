@@ -181,6 +181,9 @@ describe("command permissions", () => {
     WS_METHODS.scheduledTasksDelete,
     ORCHESTRATION_V2_WS_METHODS.stopWorkflow,
     WS_METHODS.botsCreate,
+    WS_METHODS.botsArchive,
+    WS_METHODS.botsUnarchive,
+    WS_METHODS.botsDelete,
   ])("uses the target grant for both availability and execution of %s", (method) =>
     Effect.scoped(
       Effect.gen(function* () {

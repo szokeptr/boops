@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/Button";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import * as Dialog from "../../components/ui/Dialog";
 import { AuthOrchestrationOperateScope, type BotAutonomy } from "@t3tools/contracts";
+import { liveBotDescendants } from "@t3tools/client-runtime/state/bot-list";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
 import {
   isAtomCommandInterrupted,
@@ -20,7 +21,7 @@ import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { projectEnvironment } from "../../state/projects";
-import { useThreadShells } from "../../state/entities";
+import { useProjects, useThreadShells } from "../../state/entities";
 import { appAtomRegistry } from "../../state/atom-registry";
 import {
   clearComposerDraft,
@@ -182,7 +183,6 @@ function ProjectOverviewContent(props: {
   // One machine at a time, stopping at the first failure, as web does.
   const organize = async (input: {
     readonly pinned?: boolean;
-    readonly archived?: boolean;
     readonly autonomy?: BotAutonomy;
     readonly canCreateBotsWithoutAsking?: boolean;
   }) => {
@@ -208,6 +208,58 @@ function ProjectOverviewContent(props: {
       }
     }
     setIsOrganizing(false);
+  };
+  const archiveBot = useAtomCommand(projectEnvironment.archiveBot, { reportFailure: false });
+  const unarchiveBot = useAtomCommand(projectEnvironment.unarchiveBot, { reportFailure: false });
+  const projects = useProjects();
+  const setArchived = async (archived: boolean, includeChildren = false) => {
+    setIsOrganizing(true);
+    for (const member of allMembers) {
+      if (!readEnvironmentScope(member.environmentId, AuthOrchestrationOperateScope)) {
+        Dialog.alert("Failed to update the bot", "This connection can no longer change it.");
+        break;
+      }
+      const result = archived
+        ? await archiveBot({
+            environmentId: member.environmentId,
+            input: { projectId: member.id, ...(includeChildren ? { includeChildren } : {}) },
+          })
+        : await unarchiveBot({
+            environmentId: member.environmentId,
+            input: { projectId: member.id },
+          });
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          Dialog.alert(
+            `Failed to ${archived ? "archive" : "unarchive"} "${member.title}"`,
+            error instanceof Error ? error.message : "An error occurred.",
+          );
+        }
+        break;
+      }
+    }
+    setIsOrganizing(false);
+  };
+  // A bot with live child bots asks whether they go too; one without archives at once.
+  const archive = () => {
+    const children = allMembers.reduce(
+      (count, member) =>
+        count +
+        liveBotDescendants(projects, { environmentId: member.environmentId, projectId: member.id })
+          .length,
+      0,
+    );
+    if (children === 0) return void setArchived(true);
+    Dialog.alert(
+      `Archive ${displayName}?`,
+      `It created ${children === 1 ? "a bot" : `${children} bots`} that ${children === 1 ? "is" : "are"} still running. Archive ${children === 1 ? "it" : "them"} too, or leave ${children === 1 ? "it" : "them"} running on ${children === 1 ? "its" : "their"} own.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: `Only ${displayName}`, onPress: () => void setArchived(true) },
+        { text: "Archive all", onPress: () => void setArchived(true, true) },
+      ],
+    );
   };
   const nextName = (draftName ?? displayName).trim();
   const canSave = !isSaving && nextName.length > 0 && nextName !== displayName;
@@ -401,14 +453,14 @@ function ProjectOverviewContent(props: {
           />
           <SettingsActionRow
             icon="archivebox"
-            label={props.group.archived ? "Unarchive project" : "Archive project"}
+            label={props.group.archived ? "Unarchive bot" : "Archive bot"}
             description={
               props.group.archived
-                ? "Hidden from project pickers. Threads and files are kept."
-                : "Hides the project from project pickers. Threads and files are kept."
+                ? "Archived: its routines are paused and it is out of the bot list. Unarchiving turns back on the routines that were running."
+                : "Pauses its routines and heartbeat and moves it out of the bot list. Its conversation and home folder are kept."
             }
             disabled={isOrganizing || offline}
-            onPress={() => void organize({ archived: !props.group.archived })}
+            onPress={() => (props.group.archived ? void setArchived(false) : archive())}
           />
         </SettingsSection>
       ) : null}
@@ -452,28 +504,123 @@ function ProjectOverviewContent(props: {
         })}
       </SettingsSection>
       <SettingsSection title="Danger">
-        <SettingsActionRow
-          icon="trash"
-          label={
-            props.hasOtherMembers
-              ? "Remove checkout"
-              : props.members.length > 1
-                ? "Remove this project everywhere"
-                : "Remove project"
-          }
-          description={
-            props.hasOtherMembers
-              ? "Deletes the selected machine's checkout entries and their threads. Other machines and files on disk are not touched."
-              : props.members.length > 1
-                ? `Deletes all ${props.members.length} checkout entries and their threads on every machine. Files on disk are not touched.`
-                : "Deletes the project entry and its threads. Files on disk are not touched."
-          }
-          tone="danger"
-          disabled={!canRemoveGroup || isRemoving}
-          loading={isRemoving}
-          onPress={() => removeMembers(props.members)}
-        />
+        {props.members.length === 1 && !props.hasOtherMembers ? (
+          <DeleteBotRow
+            bot={representative}
+            name={displayName}
+            disabled={!canRemoveGroup || isRemoving}
+            onDeleted={() => props.onProjectRemoved(props.projectKey)}
+          />
+        ) : (
+          <SettingsActionRow
+            icon="trash"
+            label={
+              props.hasOtherMembers
+                ? "Remove checkout"
+                : props.members.length > 1
+                  ? "Remove this project everywhere"
+                  : "Remove project"
+            }
+            description={
+              props.hasOtherMembers
+                ? "Deletes the selected machine's checkout entries and their threads. Other machines and files on disk are not touched."
+                : props.members.length > 1
+                  ? `Deletes all ${props.members.length} checkout entries and their threads on every machine. Files on disk are not touched.`
+                  : "Deletes the project entry and its threads. Files on disk are not touched."
+            }
+            tone="danger"
+            disabled={!canRemoveGroup || isRemoving}
+            loading={isRemoving}
+            onPress={() => removeMembers(props.members)}
+          />
+        )}
       </SettingsSection>
+    </>
+  );
+}
+
+/** Delete asks for the bot's name, and keeps its home folder unless the switch is on. */
+function DeleteBotRow(props: {
+  readonly bot: EnvironmentProject;
+  readonly name: string;
+  readonly disabled: boolean;
+  readonly onDeleted: () => void;
+}) {
+  const deleteBot = useAtomCommand(projectEnvironment.deleteBot, { reportFailure: false });
+  const [confirming, setConfirming] = useState(false);
+  const [typedName, setTypedName] = useState("");
+  const [removeHomeFolder, setRemoveHomeFolder] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const confirmed = typedName.trim() === props.name.trim();
+
+  const submit = async () => {
+    if (!confirmed || deleting) return;
+    setDeleting(true);
+    const result = await deleteBot({
+      environmentId: props.bot.environmentId,
+      input: { projectId: props.bot.id, ...(removeHomeFolder ? { removeHomeFolder } : {}) },
+    });
+    setDeleting(false);
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        Dialog.alert(
+          `Failed to delete "${props.name}"`,
+          error instanceof Error ? error.message : "An error occurred.",
+        );
+      }
+      return;
+    }
+    props.onDeleted();
+  };
+
+  if (!confirming) {
+    return (
+      <SettingsActionRow
+        icon="trash"
+        label="Delete bot"
+        description="Deletes its conversation, threads and routines. You choose whether its home folder goes too."
+        tone="danger"
+        disabled={props.disabled}
+        onPress={() => setConfirming(true)}
+      />
+    );
+  }
+  return (
+    <>
+      <View className="gap-3 p-4">
+        <Text className="text-sm text-foreground-muted">
+          Deletes its conversation, threads and routines. This cannot be undone. Type{" "}
+          <Text className="font-t3-semibold text-foreground">{props.name}</Text> to confirm.
+        </Text>
+        <AppTextInput
+          accessibilityLabel={`Type ${props.name} to confirm`}
+          className="min-h-11 rounded-xl border-continuous bg-card px-3 text-base text-foreground"
+          value={typedName}
+          onChangeText={setTypedName}
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoFocus
+        />
+      </View>
+      <SettingsSwitchRow
+        icon="folder"
+        label="Also delete its home folder"
+        subtitle="Removes its files and memory from ~/pocks on its machine. Off keeps the folder."
+        value={removeHomeFolder}
+        disabled={deleting}
+        onValueChange={setRemoveHomeFolder}
+      />
+      <View className="flex-row justify-end gap-3 p-4">
+        <Button label="Cancel" tone="secondary" onPress={() => setConfirming(false)} />
+        <Button
+          label="Delete bot"
+          tone="danger"
+          disabled={!confirmed || props.disabled}
+          loading={deleting}
+          onPress={() => void submit()}
+        />
+      </View>
     </>
   );
 }

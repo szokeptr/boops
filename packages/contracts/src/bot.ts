@@ -86,6 +86,29 @@ export const BotMcpDelivery = Schema.Struct({
 });
 export type BotMcpDelivery = typeof BotMcpDelivery.Type;
 
+export const BotArchiveInput = Schema.Struct({
+  projectId: ProjectId,
+  /** Also archive the bots this bot created. */
+  includeChildren: Schema.optional(Schema.Boolean),
+});
+export type BotArchiveInput = typeof BotArchiveInput.Type;
+
+export const BotArchiveResult = Schema.Struct({
+  /** Every bot archived, the requested one first. */
+  projectIds: Schema.Array(ProjectId),
+});
+export type BotArchiveResult = typeof BotArchiveResult.Type;
+
+export const BotUnarchiveInput = Schema.Struct({ projectId: ProjectId });
+export type BotUnarchiveInput = typeof BotUnarchiveInput.Type;
+
+export const BotDeleteInput = Schema.Struct({
+  projectId: ProjectId,
+  /** Also delete the bot's home folder from disk. Off unless asked. */
+  removeHomeFolder: Schema.optional(Schema.Boolean),
+});
+export type BotDeleteInput = typeof BotDeleteInput.Type;
+
 type Timestamp = string | DateTime.DateTime;
 
 const epochMillis = (at: Timestamp) =>

@@ -31,6 +31,7 @@ import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environmen
 import { useThreadShells, waitForProjectRemoval } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { openDeleteBotDialog, useBotArchive } from "../bots/BotLifecycle";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -304,6 +305,18 @@ function ProjectDetail({
   const organize = async (input: ProjectGroupUpdate, failureTitle: string) => {
     setIsOrganizing(true);
     await updateProjectGroup(allMembers, input, failureTitle);
+    setIsOrganizing(false);
+  };
+
+  const { archiveBot, unarchiveBot } = useBotArchive();
+  const setArchived = async (archived: boolean) => {
+    if (checkProjectAccess(allMembers, archived ? "Failed to archive" : "Failed to unarchive"))
+      return;
+    setIsOrganizing(true);
+    for (const member of allMembers) {
+      const bot = { environmentId: member.environmentId, projectId: member.id, name: member.title };
+      await (archived ? archiveBot(bot) : unarchiveBot(bot));
+    }
     setIsOrganizing(false);
   };
 
@@ -664,22 +677,15 @@ function ProjectDetail({
                 title="Archive"
                 description={
                   group.archived
-                    ? "Hidden from project pickers. Threads and files are kept."
-                    : "Hides the project from project pickers. Threads and files are kept."
+                    ? "Archived: its routines are paused and it is out of the bot list. Unarchiving turns back on the routines that were running."
+                    : "Pauses its routines and heartbeat and moves it out of the bot list. Its conversation and home folder are kept."
                 }
                 control={
                   <Button
                     size="sm"
                     variant="outline"
                     disabled={isOrganizing}
-                    onClick={() =>
-                      void organize(
-                        { archived: !group.archived },
-                        group.archived
-                          ? "Failed to unarchive project"
-                          : "Failed to archive project",
-                      )
-                    }
+                    onClick={() => void setArchived(!group.archived)}
                   >
                     {group.archived ? "Unarchive" : "Archive"}
                   </Button>
@@ -691,37 +697,61 @@ function ProjectDetail({
         <ProjectDefaultsSettings category="project" />
         {checkoutChoices}
         <SettingsSection title="Danger">
-          <SettingsRow
-            title={
-              hasOtherMembers
-                ? "Remove checkout"
-                : group.memberProjects.length > 1
-                  ? "Remove this project everywhere"
-                  : "Remove project"
-            }
-            description={
-              hasOtherMembers
-                ? "Deletes the selected machine's checkout entries and their threads. Other machines and files on disk are not touched."
-                : group.memberProjects.length > 1
-                  ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
-                  : "Deletes the project entry and its threads. Files on disk are not touched."
-            }
-            control={
-              <Button
-                size="sm"
-                variant="destructive-outline"
-                disabled={!canEditGroup}
-                onClick={() => void removeMembers(group.memberProjects)}
-              >
-                <Trash2Icon />
-                {hasOtherMembers
+          {!hasMultipleCheckouts && !hasOtherMembers ? (
+            <SettingsRow
+              title="Delete bot"
+              description="Deletes its conversation, threads and routines. You choose whether its home folder goes too."
+              control={
+                <Button
+                  size="sm"
+                  variant="destructive-outline"
+                  disabled={!canEditGroup}
+                  onClick={() =>
+                    openDeleteBotDialog({
+                      environmentId: representative.environmentId,
+                      projectId: representative.id,
+                      name: representative.title,
+                    })
+                  }
+                >
+                  <Trash2Icon />
+                  Delete bot
+                </Button>
+              }
+            />
+          ) : (
+            <SettingsRow
+              title={
+                hasOtherMembers
                   ? "Remove checkout"
                   : group.memberProjects.length > 1
-                    ? "Remove all entries"
-                    : "Remove project"}
-              </Button>
-            }
-          />
+                    ? "Remove this project everywhere"
+                    : "Remove project"
+              }
+              description={
+                hasOtherMembers
+                  ? "Deletes the selected machine's checkout entries and their threads. Other machines and files on disk are not touched."
+                  : group.memberProjects.length > 1
+                    ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
+                    : "Deletes the project entry and its threads. Files on disk are not touched."
+              }
+              control={
+                <Button
+                  size="sm"
+                  variant="destructive-outline"
+                  disabled={!canEditGroup}
+                  onClick={() => void removeMembers(group.memberProjects)}
+                >
+                  <Trash2Icon />
+                  {hasOtherMembers
+                    ? "Remove checkout"
+                    : group.memberProjects.length > 1
+                      ? "Remove all entries"
+                      : "Remove project"}
+                </Button>
+              }
+            />
+          )}
         </SettingsSection>
       </SettingsPageContainer>
 
