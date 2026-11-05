@@ -1,4 +1,3 @@
-import type { AnyRouter } from "@tanstack/react-router";
 import type { PullRequestReviewGuideResult } from "@t3tools/contracts";
 import { CircleAlertIcon, CircleCheckIcon } from "lucide-react";
 import { AsyncResult, type AtomRegistry } from "effect/reactivity";
@@ -12,7 +11,6 @@ import {
 } from "~/threadNotifications";
 
 import { toastManager } from "../../ui/toast";
-import { readPullRequestListPreferences } from "../pullRequestListPreferences";
 import { useGuideRunStore, type GuideRunWatch } from "./guideRunStore";
 
 const RUN_POLL_MS = 5_000;
@@ -24,10 +22,7 @@ function isGuideShown(runKey: string): boolean {
 }
 
 /** Polls every watched guide run and announces each one when it settles. App-lifetime. */
-export function startGuideRunNotifications(
-  registry: AtomRegistry.AtomRegistry,
-  router: AnyRouter,
-): () => void {
+export function startGuideRunNotifications(registry: AtomRegistry.AtomRegistry): () => void {
   const running = new Map<string, () => void>();
   const sync = (watches: Readonly<Record<string, GuideRunWatch>>) => {
     for (const [key, stop] of running) {
@@ -37,7 +32,7 @@ export function startGuideRunNotifications(
     }
     for (const [key, watch] of Object.entries(watches)) {
       if (running.has(key)) continue;
-      const stop = watchGuideRun(registry, router, key, watch);
+      const stop = watchGuideRun(registry, key, watch);
       // The first read can settle the run before it is recorded as running.
       if (useGuideRunStore.getState().watches[key] === watch) running.set(key, stop);
       else stop();
@@ -56,7 +51,6 @@ export function startGuideRunNotifications(
 
 function watchGuideRun(
   registry: AtomRegistry.AtomRegistry,
-  router: AnyRouter,
   runKey: string,
   watch: GuideRunWatch,
 ): () => void {
@@ -94,20 +88,6 @@ function watchGuideRun(
       watch.title ??
       observedPullRequestTitle(registry, watch.environmentId, watch.reference) ??
       `${watch.reference.repository} #${watch.reference.number}`;
-    const open = () => {
-      useGuideRunStore.getState().showPageDetailTab(runKey, "guide");
-      void router.navigate({
-        to: "/pull-requests",
-        search: {
-          ...readPullRequestListPreferences(),
-          repository: watch.reference.repository,
-          number: watch.reference.number,
-          selectedProjectId: watch.reference.projectId,
-          selectedEnvironmentId: watch.environmentId,
-          ...(watch.reference.host === undefined ? {} : { selectedHost: watch.reference.host }),
-        },
-      });
-    };
     const mode = getClientSettings().notificationMode;
     if (hasNotificationSound(mode)) {
       void playNotificationSound(failure === null ? "completion" : "input", () =>
@@ -115,7 +95,7 @@ function watchGuideRun(
       );
     }
     if (looking) {
-      const toastId = toastManager.add({
+      toastManager.add({
         type: failure === null ? "success" : "error",
         title,
         description: failure === null ? body : `${body}: ${failure}`,
@@ -127,13 +107,6 @@ function watchGuideRun(
             ) : (
               <CircleAlertIcon aria-hidden className="size-4 text-destructive-foreground" />
             ),
-        },
-        actionProps: {
-          children: "Open guide",
-          onClick: () => {
-            toastManager.close(toastId);
-            open();
-          },
         },
       });
       return;
@@ -149,7 +122,6 @@ function watchGuideRun(
       notification.addEventListener("click", () => {
         notification.close();
         window.focus();
-        open();
       });
     } catch {
       // Some browsers expose Notification but reject desktop presentation.

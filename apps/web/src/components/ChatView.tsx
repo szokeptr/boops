@@ -3546,17 +3546,6 @@ export default function ChatView(props: ChatViewProps) {
                 environmentId={activeThread.environmentId}
                 threadId={activeThread.id}
                 {...(draftId ? { draftId } : {})}
-                keybindings={keybindings}
-                availableEditors={availableEditors}
-                showOpenInPicker={showOpenInPicker}
-                openInShortcutEnabled={
-                  !(
-                    rightPanelOpen &&
-                    renderedRightPanelSurface?.kind === "file" &&
-                    renderedRightPanelSurface.attachment === undefined
-                  )
-                }
-                openInCwd={gitCwd}
                 usage={{
                   providerInstanceId: activeProviderInstanceId,
                   providers: providerStatuses,
