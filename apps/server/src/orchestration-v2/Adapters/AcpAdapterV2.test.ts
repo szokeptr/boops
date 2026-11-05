@@ -671,7 +671,7 @@ function assertReinjectedInstructions(
   const text = blocks[0]?.text ?? "";
   assert.include(text, "Boops interaction mode: Default");
   assert.include(text, "## Boops browser");
-  assert.include(text, "## Pocks bot");
+  assert.include(text, "## Boops bot");
   assert.include(text, `<user_request>\n${request}\n</user_request>`);
 }
 
@@ -2069,7 +2069,7 @@ describe("AcpAdapterV2", () => {
         assert.equal(firstDefault.textBlockCount, 2);
         assert.include(firstDefault.prompt, "Boops interaction mode: Default");
         assert.include(firstDefault.prompt, "## Boops browser");
-        assert.include(firstDefault.prompt, "## Pocks bot");
+        assert.include(firstDefault.prompt, "## Boops bot");
         assert.notInclude(
           firstDefault.methods,
           "session/set_config_option",
