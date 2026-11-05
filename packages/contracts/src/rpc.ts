@@ -17,6 +17,24 @@ import {
   McpAppUpdateModelContextInput,
 } from "./mcpApps.ts";
 import {
+  ConnectorCatalogEntry,
+  ConnectorConnection,
+  ConnectorError,
+  ConnectorsAddConnectionInput,
+  ConnectorsAnswerRequestInput,
+  ConnectorsAuthorizationResult,
+  ConnectorsConnectionInput,
+  ConnectorsDetectAuthInput,
+  ConnectorsDetectAuthResult,
+  ConnectorsReauthenticateInput,
+  ConnectorsReauthenticateResult,
+  ConnectorsRenameInput,
+  ConnectorsSetBotConnectionInput,
+  ConnectorsSnapshot,
+  ConnectorsStartOAuthInput,
+  ConnectorsTestResult,
+} from "./connectors.ts";
+import {
   PeerLink,
   PeerLinkCreateInput,
   PeerLinkError,
@@ -524,6 +542,19 @@ export const WS_METHODS = {
   peerLinksLink: "peerLinks.link",
   peerLinksUnlink: "peerLinks.unlink",
   peerLinksAnswerRequest: "peerLinks.answerRequest",
+  connectorsListCatalog: "connectors.listCatalog",
+  connectorsList: "connectors.list",
+  connectorsSubscribe: "connectors.subscribe",
+  connectorsDetectAuth: "connectors.detectAuth",
+  connectorsStartOAuth: "connectors.startOAuth",
+  connectorsAddConnection: "connectors.addConnection",
+  connectorsRename: "connectors.rename",
+  connectorsReauthenticate: "connectors.reauthenticate",
+  connectorsDisconnect: "connectors.disconnect",
+  connectorsRemove: "connectors.remove",
+  connectorsTest: "connectors.test",
+  connectorsSetBotConnection: "connectors.setBotConnection",
+  connectorsAnswerRequest: "connectors.answerRequest",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverSearchAcpRegistry: "server.searchAcpRegistry",
@@ -830,6 +861,76 @@ const WsPeerLinksUnlinkRpc = Rpc.make(WS_METHODS.peerLinksUnlink, {
 const WsPeerLinksAnswerRequestRpc = Rpc.make(WS_METHODS.peerLinksAnswerRequest, {
   payload: PeerLinkRequestAnswerInput,
   error: Schema.Union([PeerLinkRequestError, EnvironmentAuthorizationError]),
+});
+
+const ConnectorRpcError = Schema.Union([ConnectorError, EnvironmentAuthorizationError]);
+
+const WsConnectorsListCatalogRpc = Rpc.make(WS_METHODS.connectorsListCatalog, {
+  payload: Schema.Struct({}),
+  success: Schema.Struct({ entries: Schema.Array(ConnectorCatalogEntry) }),
+  error: EnvironmentAuthorizationError,
+});
+const WsConnectorsListRpc = Rpc.make(WS_METHODS.connectorsList, {
+  payload: Schema.Struct({}),
+  success: ConnectorsSnapshot,
+  error: ConnectorRpcError,
+});
+/** The current connections, then the list again after every change. */
+const WsConnectorsSubscribeRpc = Rpc.make(WS_METHODS.connectorsSubscribe, {
+  payload: Schema.Struct({}),
+  success: ConnectorsSnapshot,
+  stream: true,
+  error: ConnectorRpcError,
+});
+const WsConnectorsDetectAuthRpc = Rpc.make(WS_METHODS.connectorsDetectAuth, {
+  payload: ConnectorsDetectAuthInput,
+  success: ConnectorsDetectAuthResult,
+  error: ConnectorRpcError,
+});
+const WsConnectorsStartOAuthRpc = Rpc.make(WS_METHODS.connectorsStartOAuth, {
+  payload: ConnectorsStartOAuthInput,
+  success: ConnectorsAuthorizationResult,
+  error: ConnectorRpcError,
+});
+const WsConnectorsAddConnectionRpc = Rpc.make(WS_METHODS.connectorsAddConnection, {
+  payload: ConnectorsAddConnectionInput,
+  success: ConnectorConnection,
+  error: ConnectorRpcError,
+});
+const WsConnectorsRenameRpc = Rpc.make(WS_METHODS.connectorsRename, {
+  payload: ConnectorsRenameInput,
+  success: ConnectorConnection,
+  error: ConnectorRpcError,
+});
+const WsConnectorsReauthenticateRpc = Rpc.make(WS_METHODS.connectorsReauthenticate, {
+  payload: ConnectorsReauthenticateInput,
+  success: ConnectorsReauthenticateResult,
+  error: ConnectorRpcError,
+});
+/** Forgets the credentials and keeps the connection, as needs_auth, so bots keep it turned on. */
+const WsConnectorsDisconnectRpc = Rpc.make(WS_METHODS.connectorsDisconnect, {
+  payload: ConnectorsConnectionInput,
+  success: ConnectorConnection,
+  error: ConnectorRpcError,
+});
+/** Deletes the connection and its credentials, and turns it off for every bot. */
+const WsConnectorsRemoveRpc = Rpc.make(WS_METHODS.connectorsRemove, {
+  payload: ConnectorsConnectionInput,
+  error: ConnectorRpcError,
+});
+/** MCP initialize and tools/list with the stored credentials; updates the connection's status. */
+const WsConnectorsTestRpc = Rpc.make(WS_METHODS.connectorsTest, {
+  payload: ConnectorsConnectionInput,
+  success: ConnectorsTestResult,
+  error: ConnectorRpcError,
+});
+const WsConnectorsSetBotConnectionRpc = Rpc.make(WS_METHODS.connectorsSetBotConnection, {
+  payload: ConnectorsSetBotConnectionInput,
+  error: ConnectorRpcError,
+});
+const WsConnectorsAnswerRequestRpc = Rpc.make(WS_METHODS.connectorsAnswerRequest, {
+  payload: ConnectorsAnswerRequestInput,
+  error: ConnectorRpcError,
 });
 
 const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
@@ -2055,6 +2156,19 @@ export const WsRpcGroup = RpcGroup.make(
   WsPeerLinksLinkRpc,
   WsPeerLinksUnlinkRpc,
   WsPeerLinksAnswerRequestRpc,
+  WsConnectorsListCatalogRpc,
+  WsConnectorsListRpc,
+  WsConnectorsSubscribeRpc,
+  WsConnectorsDetectAuthRpc,
+  WsConnectorsStartOAuthRpc,
+  WsConnectorsAddConnectionRpc,
+  WsConnectorsRenameRpc,
+  WsConnectorsReauthenticateRpc,
+  WsConnectorsDisconnectRpc,
+  WsConnectorsRemoveRpc,
+  WsConnectorsTestRpc,
+  WsConnectorsSetBotConnectionRpc,
+  WsConnectorsAnswerRequestRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerSearchAcpRegistryRpc,
   WsServerPrepareAcpRegistryAgentRpc,

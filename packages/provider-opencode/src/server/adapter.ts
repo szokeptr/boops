@@ -1,5 +1,6 @@
 import type {
   Event as OpenCodeEvent,
+  McpRemoteConfig,
   Message as OpenCodeMessage,
   Part as OpenCodePart,
   PermissionRequest,
@@ -71,6 +72,7 @@ import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import { providerMessageTextWithAttachmentPaths } from "@t3tools/provider-core/server/attachmentPrompt";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import {
   ProviderAdapterDriverCreateError,
   type ProviderAdapterDriver,
@@ -298,6 +300,27 @@ type OpenCodeAdmissionSignal =
   | "idle"
   | "user-message";
 type OpenCodeAdmissionAction = "hold" | "reconcile-idle" | "release";
+
+/** T3's own server plus the bot's connectors, as OpenCode remote MCP servers. */
+export function openCodeMcpServers(
+  session: McpProviderSession.McpProviderSessionConfig,
+): Record<string, McpRemoteConfig> {
+  const remote = (url: string, headers: Readonly<Record<string, string>>): McpRemoteConfig => ({
+    type: "remote",
+    url,
+    headers: { ...headers },
+    oauth: false,
+  });
+  return {
+    "t3-code": remote(session.endpoint, { Authorization: session.authorizationHeader }),
+    ...Object.fromEntries(
+      (session.connectors ?? []).map((connector) => [
+        connector.name,
+        remote(connector.url, connector.headers),
+      ]),
+    ),
+  };
+}
 
 export function advanceOpenCodePromptAdmission(
   admission: Pick<
@@ -966,18 +989,50 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           hasT3Mcp,
           mcpSession?.capabilities?.has("device") === true,
         );
+        // A spawned server serves only this session, so its MCP set is the bot's alone.
+        // A connector that fails to connect must not fail the session; its tools are just absent.
+        let connectorNames: ReadonlyArray<string> = [];
+        let connectorKey = McpProviderSession.connectorServersKey(undefined);
+        const syncConnectors = Effect.fn("OpenCodeAdapterV2.syncConnectors")(function* (
+          session: McpProviderSession.McpProviderSessionConfig,
+        ) {
+          const servers = openCodeMcpServers(session);
+          const names = (session.connectors ?? []).map((connector) => connector.name);
+          for (const name of names) {
+            yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
+              client.mcp.add({ name, config: servers[name]! }, { throwOnError: true }),
+            ).pipe(
+              Effect.catch((cause) =>
+                Effect.logWarning("opencode.connector-unavailable", { server: name, cause }),
+              ),
+            );
+          }
+          for (const name of connectorNames.filter((name) => !names.includes(name))) {
+            yield* OpenCodeRuntime.runOpenCodeSdk("mcp.disconnect", () =>
+              client.mcp.disconnect({ name }, { throwOnError: true }),
+            ).pipe(Effect.ignore);
+          }
+          connectorNames = names;
+          connectorKey = McpProviderSession.connectorServersKey(session);
+        });
         if (hasT3Mcp) {
           yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
-            client.mcp.add({
-              name: "t3-code",
-              config: {
-                type: "remote",
-                url: mcpSession.endpoint,
-                headers: { Authorization: mcpSession.authorizationHeader },
-                oauth: false,
-              },
-            }),
+            client.mcp.add({ name: "t3-code", config: openCodeMcpServers(mcpSession)["t3-code"]! }),
           );
+          yield* syncConnectors(mcpSession);
+          // Bots see only T3's servers; the user's own opencode.json servers stay off.
+          const native = yield* OpenCodeRuntime.runOpenCodeSdk("mcp.status", () =>
+            client.mcp.status(undefined, { throwOnError: true }),
+          ).pipe(
+            Effect.map((response) => Object.keys(response.data ?? {})),
+            Effect.orElseSucceed((): ReadonlyArray<string> => []),
+          );
+          for (const name of native) {
+            if (name === "t3-code" || connectorNames.includes(name)) continue;
+            yield* OpenCodeRuntime.runOpenCodeSdk("mcp.disconnect", () =>
+              client.mcp.disconnect({ name }, { throwOnError: true }),
+            ).pipe(Effect.ignore);
+          }
         }
 
         const now = yield* DateTime.now;
@@ -3184,6 +3239,15 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 );
               }
               yield* applyPermissionRules(state, turnInput.runtimePolicy);
+              if (hasT3Mcp) {
+                const current = yield* mcpSessions.read(turnInput.threadId);
+                if (
+                  current !== undefined &&
+                  McpProviderSession.connectorServersKey(current) !== connectorKey
+                ) {
+                  yield* syncConnectors(current);
+                }
+              }
               const isCompaction =
                 turnInput.message.text.trim() === "/compact" &&
                 turnInput.message.attachments.length === 0;

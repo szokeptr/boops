@@ -558,6 +558,10 @@ export interface ClaudeAgentSdkQuerySession {
     mode: PermissionMode,
   ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly stopTask: (taskId: string) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  /** Replaces the dynamic MCP server set; succeeds with the names that failed to connect. */
+  readonly setMcpServers: (
+    servers: NonNullable<ClaudeQueryOptions["mcpServers"]>,
+  ) => Effect.Effect<ReadonlyArray<string>, ClaudeAgentSdkQueryRunnerError>;
   readonly backgroundTasks: (
     toolUseId: string,
   ) => Effect.Effect<boolean, ClaudeAgentSdkQueryRunnerError>;
@@ -1193,6 +1197,8 @@ export const layerQueryRunner: Layer.Layer<
             env: {
               ...(sdkOptions.env ?? hostEnvironment),
               [PortScanner.AGENT_THREAD_ENV]: input.threadId,
+              // With T3's MCP config, claude.ai connectors would bypass the bot's own connectors.
+              ...(mcpServers === undefined ? {} : { ENABLE_CLAUDEAI_MCP_SERVERS: "false" }),
             },
           };
           // The SDK can prepend a scope wrapper to native binaries; script entries run through node.
@@ -1469,6 +1475,11 @@ export const layerQueryRunner: Layer.Layer<
                   }),
                 ),
               ),
+            setMcpServers: (servers) =>
+              Effect.tryPromise({
+                try: () => queryRuntime.setMcpServers(servers),
+                catch: (cause) => queryRunnerError(cause, "setMcpServers"),
+              }).pipe(Effect.map((result) => Object.keys(result.errors))),
             backgroundTasks: (toolUseId) =>
               Effect.tryPromise({
                 try: () => queryRuntime.backgroundTasks(toolUseId),
@@ -1895,7 +1906,10 @@ export function makeClaudeQueryOptions(input: {
       ? { pathToClaudeCodeExecutable: input.settings.binaryPath }
       : {}),
     ...(input.environment === undefined ? {} : { env: input.environment }),
-    ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
+    // T3's servers replace user and project MCP config, so a bot sees only what Pocks gives it.
+    ...(input.mcpServers === undefined
+      ? {}
+      : { mcpServers: input.mcpServers, strictMcpConfig: true }),
     systemPrompt: {
       type: "preset" as const,
       preset: "claude_code" as const,
@@ -2005,6 +2019,7 @@ export const CLAUDE_T3_MCP_TOOL_WILDCARD = "mcp__t3-code__*";
 export const CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__t3-code__orchestrator_capabilities",
   "mcp__t3-code__list_scheduled_tasks",
+  "mcp__t3-code__list_connectors",
   "mcp__t3-code__t3_thread_list",
   "mcp__t3-code__t3_thread_wait",
   "mcp__t3-code__t3_worktree_status",
@@ -2021,6 +2036,9 @@ export const CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
 
 // T3 waits can block for an hour; exceed Claude's default 60 s timeout.
 export const CLAUDE_T3_MCP_TOOL_TIMEOUT_MS = 65 * 60 * 1_000;
+
+// Connector tools are third-party API calls; allow slow searches without holding a turn for an hour.
+export const CLAUDE_CONNECTOR_MCP_TOOL_TIMEOUT_MS = 5 * 60 * 1_000;
 
 // allowedTools pre-approves calls; tools controls availability. Pre-approve T3 tools for headless modes,
 // limited to annotated read-only tools in read-only sandboxes.
@@ -2051,6 +2069,17 @@ export function claudeMcpQueryOverrides(input: {
         },
         timeout: CLAUDE_T3_MCP_TOOL_TIMEOUT_MS,
       },
+      ...Object.fromEntries(
+        (session.connectors ?? []).map((connector) => [
+          connector.name,
+          {
+            type: "http" as const,
+            url: connector.url,
+            headers: { ...connector.headers },
+            timeout: CLAUDE_CONNECTOR_MCP_TOOL_TIMEOUT_MS,
+          },
+        ]),
+      ),
     },
   };
 }
@@ -3045,7 +3074,8 @@ export function claudeEffectiveQueryPolicyKey(
         ? {}
         : { allowedTools: mcpOverrides.allowedTools }),
     }),
-    mcpServers: mcpOverrides.mcpServers,
+    // Connectors change on the live query through setMcpServers; only t3-code needs a new process.
+    t3McpServer: mcpOverrides.mcpServers?.["t3-code"],
   });
 }
 
@@ -4438,6 +4468,7 @@ interface ClaudeLiveQueryContext {
   readonly nativeThreadId: string;
   readonly query: ClaudeAgentSdkQuerySession;
   readonly queryPolicyKey: string;
+  connectorServersKey: string;
   selection: CompiledClaudeModelSelection;
   readonly closed: Deferred.Deferred<void, never>;
   lastTurn: ActiveClaudeTurnContext | null;
@@ -10755,6 +10786,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : { allowedTools: queryPolicy.allowedTools }),
           });
           const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides);
+          const connectorServersKey = McpProviderSession.connectorServersKey(mcpSession);
           const compiledSelection = compileClaudeModelSelection(turnInput.modelSelection);
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
@@ -10819,6 +10851,27 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                         : Effect.fail(error),
                   }),
                 );
+            }
+            const liveMcpServers = mcpOverrides.mcpServers;
+            if (
+              existing.connectorServersKey !== connectorServersKey &&
+              liveMcpServers !== undefined
+            ) {
+              // A connector that fails to connect must not block the turn; its tools are just absent.
+              const failed = yield* existing.query.setMcpServers(liveMcpServers).pipe(
+                Effect.timeoutOrElse({
+                  duration: CLAUDE_MCP_REGISTRATION_TIMEOUT,
+                  orElse: () => Effect.succeed(Object.keys(liveMcpServers)),
+                }),
+                Effect.orElseSucceed(() => Object.keys(liveMcpServers)),
+              );
+              existing.connectorServersKey = connectorServersKey;
+              if (failed.length > 0) {
+                yield* Effect.logWarning("orchestration-v2.claude-mcp-servers-unavailable", {
+                  threadId: turnInput.threadId,
+                  servers: failed,
+                });
+              }
             }
             return existing;
           }
@@ -10948,6 +11001,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             nativeThreadId,
             query: querySession,
             queryPolicyKey,
+            connectorServersKey,
             selection: compiledSelection,
             closed,
             lastTurn: null,

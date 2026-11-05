@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import {
+  ConnectorConnectionId,
   ApprovalRequestId,
   ClientSurface,
   CommandId,
@@ -69,6 +70,7 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   parentBotProjectId: Schema.optional(Schema.NullOr(ProjectId)),
   canCreateBotsWithoutAsking: Schema.optional(Schema.Boolean),
   personaReady: Schema.optional(Schema.Boolean),
+  connectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
   updatedAt: IsoDateTime,
 });
 export type ApplicationProjectMetaUpdatedPayload = typeof ApplicationProjectMetaUpdatedPayload.Type;

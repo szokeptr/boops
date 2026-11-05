@@ -1,5 +1,6 @@
 import {
   type BotAutonomy,
+  type ConnectorConnectionId,
   DEFAULT_BOT_AUTONOMY,
   type CommandId,
   type EventId,
@@ -50,6 +51,7 @@ export interface ProjectMetaUpdateCommand {
   readonly parentBotProjectId?: ProjectId | null;
   readonly canCreateBotsWithoutAsking?: boolean;
   readonly personaReady?: boolean;
+  readonly connectionIds?: ReadonlyArray<ConnectorConnectionId>;
 }
 
 export interface ProjectDeleteCommand {
@@ -240,6 +242,7 @@ export function planProjectCommand(input: {
             ? {}
             : { canCreateBotsWithoutAsking: command.canCreateBotsWithoutAsking }),
           ...(command.personaReady === undefined ? {} : { personaReady: command.personaReady }),
+          ...(command.connectionIds === undefined ? {} : { connectionIds: command.connectionIds }),
           updatedAt: occurredAt,
         },
       });

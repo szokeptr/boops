@@ -1,6 +1,12 @@
 import * as Schema from "effect/Schema";
 
-import { IsoDateTime, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  ConnectorConnectionId,
+  IsoDateTime,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import {
@@ -33,6 +39,8 @@ export const OrchestrationProjectShell = Schema.Struct({
   canCreateBotsWithoutAsking: Schema.optional(Schema.Boolean),
   /** Server-kept: the bot's home folder has a PERSONA.md, so it has hatched. Absent from older servers. */
   personaReady: Schema.optional(Schema.Boolean),
+  /** Connections turned on for this bot; only the user turns them on, through `connectors.*`. */
+  connectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

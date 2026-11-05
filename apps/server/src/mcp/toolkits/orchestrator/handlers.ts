@@ -11,6 +11,7 @@ import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
 import { requestUserAction } from "../../userActionRequest.ts";
+import * as Connectors from "../../../connectors/Connectors.ts";
 
 const handlers = {
   orchestrator_capabilities: McpToolAccess.reads((input) =>
@@ -139,6 +140,21 @@ const handlers = {
     }),
   ),
   request_user_action: McpToolAccess.actsAsCaller(requestUserAction),
+  list_connectors: McpToolAccess.readsAsCaller(() =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      const connectors = yield* Connectors.Connectors;
+      return yield* connectors.listForCaller(scope);
+    }),
+  ),
+  // Shows a card only; the user is the one who connects and turns a connector on.
+  request_connection: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      const connectors = yield* Connectors.Connectors;
+      return yield* connectors.requestConnection(scope, input);
+    }),
+  ),
   create_threads: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;

@@ -88,6 +88,7 @@ import Migration0081 from "./Migrations/081_ProjectionProjectsBotAutonomy.ts";
 import Migration0082 from "./Migrations/082_ProjectionProjectsBotFamily.ts";
 import Migration0083 from "./Migrations/083_ProjectionProjectsPersonaReady.ts";
 import Migration0084 from "./Migrations/084_ScheduledTasksPausedByArchive.ts";
+import Migration0085 from "./Migrations/085_Connectors.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -175,6 +176,7 @@ const migrationEntries = [
   [82, "ProjectionProjectsBotFamily", Migration0082],
   [83, "ProjectionProjectsPersonaReady", Migration0083],
   [84, "ScheduledTasksPausedByArchive", Migration0084],
+  [85, "Connectors", Migration0085],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

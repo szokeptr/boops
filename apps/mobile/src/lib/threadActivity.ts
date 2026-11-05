@@ -561,6 +561,7 @@ function itemIcon(item: OrchestrationV2TurnItem): ThreadFeedActivity["icon"] {
     case "secret_request":
       return "lock";
     case "link_request":
+    case "connection_request":
       return "globe";
   }
 }
@@ -624,6 +625,8 @@ function itemSummary(
       return item.label;
     case "link_request":
       return `Link ${item.label ?? item.url ?? "an environment"}`;
+    case "connection_request":
+      return `Connect ${item.label}`;
     case "dynamic_tool": {
       const classified = classifyToolActivity({
         itemType: "dynamic_tool_call",
@@ -685,6 +688,7 @@ function itemPreview(item: OrchestrationV2TurnItem): string | null {
       return item.targetThreadId;
     case "secret_request":
     case "link_request":
+    case "connection_request":
       return item.reason || null;
     case "subagent":
       return item.result ?? item.progress ?? item.prompt;

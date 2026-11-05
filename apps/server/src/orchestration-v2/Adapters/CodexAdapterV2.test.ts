@@ -63,6 +63,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import packageJson from "../../../package.json" with { type: "json" };
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import type * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as EffectWorker from "../EffectWorker.ts";
@@ -711,6 +712,68 @@ function codexReplayPreamble(input: {
     },
   ];
 }
+
+// Native servers as `config/read` reports them: one from the user's config, one from launch arguments.
+/** T3's MCP config also turns off ChatGPT connectors; the replay compares that key. */
+function withNativeAppsOff(
+  entry: CodexReplay.CodexAppServerReplayEntry,
+): CodexReplay.CodexAppServerReplayEntry {
+  if (entry.type !== "expect_outbound") return entry;
+  const frame = entry.frame as {
+    readonly method?: string;
+    readonly params?: Record<string, unknown>;
+  };
+  if (frame.method !== "thread/start" && frame.method !== "thread/resume") return entry;
+  const config = (frame.params?.config ?? CodexAdapterV2.CODEX_THREAD_CONFIG) as Record<
+    string,
+    unknown
+  >;
+  return {
+    ...entry,
+    frame: { ...frame, params: { ...frame.params, config: { ...config, "features.apps": false } } },
+  };
+}
+
+function codexConfigReadEntries(id: number): Array<CodexReplay.CodexAppServerReplayEntry> {
+  return [
+    {
+      type: "expect_outbound",
+      label: "config/read",
+      frame: { id, method: "config/read", params: { cwd: "/workspace", includeLayers: false } },
+    },
+    {
+      type: "emit_inbound",
+      label: "config/read",
+      frame: {
+        id,
+        result: {
+          config: {
+            mcp_servers: {
+              user_tool: { command: "user-tool" },
+              launch_tool: { url: "http://127.0.0.1:41000/mcp" },
+            },
+          },
+          origins: {
+            "mcp_servers.user_tool.command": {
+              name: { type: "user", file: "/home/user/.codex/config.toml", profile: null },
+              version: "sha256:user",
+            },
+            "mcp_servers.launch_tool.url": {
+              name: { type: "sessionFlags" },
+              version: "sha256:flags",
+            },
+          },
+        },
+      },
+    },
+  ];
+}
+
+const CODEX_TEST_LINEAR_CONNECTOR = {
+  name: "linear",
+  url: "http://127.0.0.1:43123/mcp-connectors/linear",
+  headers: { Authorization: "Bearer secret-codex-token" },
+};
 
 function makeCodexReplayTranscript(input: {
   readonly scenario: string;
@@ -1588,58 +1651,195 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
-  it.effect("adds the session MCP server without replacing launch-argument servers", () =>
+  it.effect(
+    "adds T3 and connector MCP servers and turns off the user's own, not launch arguments'",
+    () =>
+      Effect.gen(function* () {
+        const scenario = "launch-mcp-servers";
+        yield* (yield* McpProviderSessions.McpProviderSessions).set({
+          environmentId: EnvironmentId.make("environment-codex-mcp"),
+          threadId: ThreadId.make(`thread-${scenario}`),
+          providerSessionId: `provider-session-${scenario}`,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer secret-codex-token",
+          browserToolsAvailable: true,
+          connectors: [CODEX_TEST_LINEAR_CONNECTOR],
+        });
+        const preamble = codexReplayPreamble({
+          nativeThreadId: "launch-mcp-thread",
+          nativeTurnId: "unused",
+          prompt: "unused",
+        });
+        const requests: Array<unknown> = [];
+        yield* makeCodexReplayHarness(
+          makeCodexReplayTranscript({
+            scenario,
+            entries: [
+              ...preamble.slice(0, 3),
+              ...codexConfigReadEntries(2),
+              ...preamble
+                .slice(3, 5)
+                .map((entry) => withNativeAppsOff(withReplayRequestId(entry, 3))),
+            ],
+          }),
+          () => Effect.void,
+          (method, params) =>
+            Effect.sync(() => {
+              if (method === "thread/start") requests.push(params);
+            }),
+        );
+        assert.deepEqual(requests, [
+          {
+            cwd: "/workspace",
+            model: "gpt-5.4",
+            config: {
+              "tools.update_plan.enabled": true,
+              mcp_optional_startup_grace_ms: 10_000,
+              "shell_environment_policy.set.T3CODE_THREAD_ID": `thread-${scenario}`,
+              "mcp_servers.t3-code": {
+                url: "http://127.0.0.1:43123/mcp",
+                tool_timeout_sec: 3_900,
+                http_headers: { Authorization: "Bearer secret-codex-token" },
+                disabled_tools: ["t3_thread_wait"],
+              },
+              "mcp_servers.t3-code-direct": {
+                url: "http://127.0.0.1:43123/mcp",
+                tool_timeout_sec: 3_900,
+                http_headers: { Authorization: "Bearer secret-codex-token" },
+                enabled_tools: ["t3_thread_wait"],
+                omit_tools_from: ["code_mode", "deferred"],
+              },
+              "mcp_servers.linear": {
+                url: CODEX_TEST_LINEAR_CONNECTOR.url,
+                tool_timeout_sec: 300,
+                http_headers: CODEX_TEST_LINEAR_CONNECTOR.headers,
+              },
+              "mcp_servers.user_tool.enabled": false,
+              "features.apps": false,
+            },
+          },
+        ]);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+  );
+
+  it.effect("reloads a loaded thread when the bot's connector set changes", () =>
     Effect.gen(function* () {
-      const scenario = "launch-mcp-servers";
-      yield* (yield* McpProviderSessions.McpProviderSessions).set({
-        environmentId: EnvironmentId.make("environment-codex-mcp"),
+      const scenario = "connector-reload";
+      const nativeThreadId = "connector-reload-thread";
+      const nativeTurnId = "connector-reload-turn";
+      const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+      const session: McpProviderSession.McpProviderSessionConfig = {
+        environmentId: EnvironmentId.make("environment-codex-connectors"),
         threadId: ThreadId.make(`thread-${scenario}`),
         providerSessionId: `provider-session-${scenario}`,
         providerInstanceId: ProviderInstanceId.make("codex"),
         endpoint: "http://127.0.0.1:43123/mcp",
         authorizationHeader: "Bearer secret-codex-token",
         browserToolsAvailable: true,
+      };
+      yield* mcpSessions.set(session);
+      const preamble = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" });
+      const threadStarted = preamble[4]!;
+      // A reloaded thread gets T3's context again with its first turn.
+      const turnParams = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        nativeThreadId,
+        codexInput: [{ type: "text", text: "work" }],
+        runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+        modelSelection: CODEX_TEST_MODEL_SELECTION,
+        hasT3Mcp: true,
       });
-      const requests: Array<unknown> = [];
-      yield* makeCodexReplayHarness(
+      const resumes: Array<unknown> = [];
+      const methods: Array<string> = [];
+      const harness = yield* makeCodexReplayHarness(
         makeCodexReplayTranscript({
           scenario,
-          entries: codexReplayPreamble({
-            nativeThreadId: "launch-mcp-thread",
-            nativeTurnId: "unused",
-            prompt: "unused",
-          }).slice(0, 5),
+          entries: [
+            ...preamble.slice(0, 3),
+            ...codexConfigReadEntries(2),
+            ...preamble
+              .slice(3, 5)
+              .map((entry) => withNativeAppsOff(withReplayRequestId(entry, 3))),
+            {
+              type: "expect_outbound",
+              label: "thread/unsubscribe",
+              frame: { id: 4, method: "thread/unsubscribe", params: { threadId: nativeThreadId } },
+            },
+            {
+              type: "emit_inbound",
+              label: "thread/unsubscribe",
+              frame: { id: 4, result: { status: "unsubscribed" } },
+            },
+            ...codexConfigReadEntries(5),
+            withNativeAppsOff({
+              type: "expect_outbound",
+              label: "thread/resume",
+              frame: {
+                id: 6,
+                method: "thread/resume",
+                params: { threadId: nativeThreadId, excludeTurns: true },
+              },
+            }),
+            withReplayRequestId(threadStarted, 6),
+            {
+              type: "expect_outbound",
+              label: "turn/start",
+              frame: { id: 7, method: "turn/start", params: turnParams },
+            },
+            ...preamble.slice(6).map((entry) => withReplayRequestId(entry, 7)),
+            {
+              type: "emit_inbound",
+              label: "done",
+              frame: {
+                method: "turn/completed",
+                params: {
+                  threadId: nativeThreadId,
+                  turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+                },
+              },
+            },
+          ],
         }),
         () => Effect.void,
         (method, params) =>
           Effect.sync(() => {
-            if (method === "thread/start") requests.push(params);
+            methods.push(method);
+            if (method === "thread/resume") resumes.push(params);
           }),
       );
-      assert.deepEqual(requests, [
-        {
-          cwd: "/workspace",
-          model: "gpt-5.4",
-          config: {
-            "tools.update_plan.enabled": true,
-            mcp_optional_startup_grace_ms: 10_000,
-            "shell_environment_policy.set.T3CODE_THREAD_ID": `thread-${scenario}`,
-            "mcp_servers.t3-code": {
-              url: "http://127.0.0.1:43123/mcp",
-              tool_timeout_sec: 3_900,
-              http_headers: { Authorization: "Bearer secret-codex-token" },
-              disabled_tools: ["t3_thread_wait"],
-            },
-            "mcp_servers.t3-code-direct": {
-              url: "http://127.0.0.1:43123/mcp",
-              tool_timeout_sec: 3_900,
-              http_headers: { Authorization: "Bearer secret-codex-token" },
-              enabled_tools: ["t3_thread_wait"],
-              omit_tools_from: ["code_mode", "deferred"],
-            },
-          },
+      yield* mcpSessions.set({ ...session, connectors: [CODEX_TEST_LINEAR_CONNECTOR] });
+      yield* harness.runtime.startTurn(
+        makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("connector-reload-attempt"),
+          text: "work",
+        }),
+      );
+      yield* harness.firstTerminal;
+
+      assert.deepEqual(
+        methods.filter((method) => method.startsWith("thread/") || method === "turn/start"),
+        ["thread/start", "thread/unsubscribe", "thread/resume", "turn/start"],
+      );
+      assert.deepInclude(Reflect.get(resumes[0] as object, "config") as Record<string, unknown>, {
+        "mcp_servers.linear": {
+          url: CODEX_TEST_LINEAR_CONNECTOR.url,
+          tool_timeout_sec: 300,
+          http_headers: CODEX_TEST_LINEAR_CONNECTOR.headers,
         },
-      ]);
+      });
     }).pipe(
       Effect.scoped,
       Effect.provide(

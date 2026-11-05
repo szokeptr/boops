@@ -830,6 +830,7 @@ function makeReplayQueryRunner(
               settings,
             });
           }),
+        setMcpServers: () => Effect.die("unexpected MCP server change"),
         setPermissionMode: (mode) =>
           replayEffect(() => {
             assertNextOutboundFrame({

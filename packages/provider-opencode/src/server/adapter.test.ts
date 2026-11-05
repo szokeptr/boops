@@ -9,6 +9,7 @@ import type { OpencodeClient, ToolPart } from "@opencode-ai/sdk/v2";
 import { toolOutputImages } from "@t3tools/shared/toolOutput";
 import {
   CheckpointId,
+  EnvironmentId,
   NodeId,
   ProjectId,
   ProviderInstanceId,
@@ -42,12 +43,14 @@ import type * as ProviderEventLoggers from "@t3tools/provider-core/server/Provid
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import type * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 
 import {
   advanceOpenCodePromptAdmission,
   cancelOpenCodePromptAdmission,
   openCodeBoundaryAfterProviderTurn,
   openCodeChildPermissionRules,
+  openCodeMcpServers,
   openCodePermissionRules,
   makeOpenCodeProtocolLogger,
   makeOpenCodeAdapterV2,
@@ -157,6 +160,8 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
     readonly options?: ReadonlyArray<ProviderOptionSelection>;
     readonly interactionMode?: ProviderAdapter.ProviderAdapterV2RuntimePolicy["interactionMode"];
   } = {},
+  /** A server T3 spawned serves only this session, so it gets T3's MCP servers. */
+  spawned = false,
 ) {
   const instanceId = ProviderInstanceId.make(`opencode-${suffix}`);
   const threadId = ThreadId.make(`thread-opencode-${suffix}`);
@@ -175,7 +180,8 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
     environment: {},
   }).pipe(
     Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, {
-      connectToOpenCodeServer: () => Effect.succeed({ url: "http://test.invalid", external: true }),
+      connectToOpenCodeServer: () =>
+        Effect.succeed({ url: "http://test.invalid", external: !spawned, exitCode: null }),
       createOpenCodeSdkClient: () => client,
     } as unknown as OpenCodeRuntime.OpenCodeRuntime["Service"]),
     Effect.provideService(ProviderHost.ProviderHost, {
@@ -418,6 +424,82 @@ describe("OpenCodeAdapterV2", () => {
       Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
       Effect.scoped,
     ),
+  );
+
+  it.effect(
+    "registers the bot's connectors, turns off native servers, and syncs a changed set",
+    () =>
+      Effect.gen(function* () {
+        const suffix = "connectors";
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+        const connector = (name: string) => ({
+          name,
+          url: `http://127.0.0.1:43123/mcp-connectors/${name}`,
+          headers: { Authorization: "Bearer secret-opencode-token" },
+        });
+        const session: McpProviderSession.McpProviderSessionConfig = {
+          environmentId: EnvironmentId.make("environment-opencode-connectors"),
+          threadId: ThreadId.make(`thread-opencode-${suffix}`),
+          providerSessionId: `mcp-session-opencode-${suffix}`,
+          providerInstanceId: ProviderInstanceId.make(`opencode-${suffix}`),
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer secret-opencode-token",
+          browserToolsAvailable: true,
+          connectors: [connector("linear")],
+        };
+        yield* mcpSessions.set(session);
+        const added: Array<{ readonly name: string; readonly config: unknown }> = [];
+        const disconnected: Array<string> = [];
+        const harness = yield* makeOpenCodeRuntimeHarness(
+          suffix,
+          "root",
+          {
+            event: { subscribe: async () => ({ stream: asyncEventStream().stream }) },
+            session: {
+              create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+              promptAsync: async () => ({ data: true }),
+              abort: async () => ({ data: true }),
+              children: async () => ({ data: [] }),
+            },
+            mcp: {
+              add: async (input: { readonly name: string; readonly config: unknown }) => {
+                added.push(input);
+                return { data: {} };
+              },
+              status: async () => ({
+                data: {
+                  "t3-code": { status: "connected" },
+                  linear: { status: "connected" },
+                  user_tool: { status: "connected" },
+                },
+              }),
+              disconnect: async (input: { readonly name: string }) => {
+                disconnected.push(input.name);
+                return { data: true };
+              },
+            },
+          },
+          {},
+          {},
+          true,
+        );
+        assert.deepStrictEqual(
+          added,
+          Object.entries(openCodeMcpServers(session)).map(([name, config]) => ({ name, config })),
+        );
+        assert.deepStrictEqual(disconnected, ["user_tool"]);
+
+        yield* mcpSessions.set({ ...session, connectors: [connector("notion")] });
+        yield* harness.startTurn();
+        assert.deepStrictEqual(
+          added.slice(2).map((entry) => entry.name),
+          ["notion"],
+        );
+        assert.deepStrictEqual(disconnected, ["user_tool", "linear"]);
+      }).pipe(
+        Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+        Effect.scoped,
+      ),
   );
 
   it.effect("applies a changed runtime policy to existing subagent sessions", () =>

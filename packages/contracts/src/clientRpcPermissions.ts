@@ -74,6 +74,18 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.peerLinksUnlink]: AuthAccessWriteScope,
   // A link lets every agent here reach the other environment: Settings' bar.
   [WS_METHODS.peerLinksAnswerRequest]: AuthAccessWriteScope,
+  // Connections hold third-party credentials and decide what bots can reach, as settings do.
+  [WS_METHODS.connectorsStartOAuth]: AuthSettingsWriteScope,
+  [WS_METHODS.connectorsAddConnection]: AuthSettingsWriteScope,
+  [WS_METHODS.connectorsRename]: AuthSettingsWriteScope,
+  [WS_METHODS.connectorsReauthenticate]: AuthSettingsWriteScope,
+  [WS_METHODS.connectorsDisconnect]: AuthSettingsWriteScope,
+  [WS_METHODS.connectorsRemove]: AuthSettingsWriteScope,
+  [WS_METHODS.connectorsTest]: AuthSettingsWriteScope,
+  [WS_METHODS.connectorsSetBotConnection]: AuthSettingsWriteScope,
+  [WS_METHODS.connectorsAnswerRequest]: AuthSettingsWriteScope,
+  // Probing sends a request to a URL the client names.
+  [WS_METHODS.connectorsDetectAuth]: AuthSettingsWriteScope,
 } as const;
 export type ClientGuardedRpcTag = keyof typeof CLIENT_GUARDED_RPC_SCOPES;
 

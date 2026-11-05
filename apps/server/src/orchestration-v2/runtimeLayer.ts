@@ -1,4 +1,5 @@
 import * as GuestShareService from "../guest/GuestShareService.ts";
+import * as ConnectorServers from "../connectors/ConnectorServers.ts";
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
@@ -140,6 +141,10 @@ const layerProviderSessionManagerProvided = ProviderSessionManager.layer.pipe(
       IdAllocator.layer,
       layerProviderEventIngestorProvided,
       ProjectionStore.layer,
+      // Optional in the session manager; tests without it run with no connectors.
+      ConnectorServers.layer.pipe(
+        Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer)),
+      ),
     ),
   ),
 );

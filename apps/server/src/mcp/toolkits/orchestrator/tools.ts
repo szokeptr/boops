@@ -1,4 +1,7 @@
 import {
+  OrchestratorMcpListConnectorsResult,
+  OrchestratorMcpRequestConnectionInput,
+  OrchestratorMcpRequestConnectionResult,
   OrchestratorMcpCapabilitiesInput,
   OrchestratorMcpCapabilitiesResult,
   OrchestrationV2StopWorkflowInput,
@@ -51,6 +54,7 @@ import * as PeerLinks from "../../../peer/PeerLinks.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
+import * as Connectors from "../../../connectors/Connectors.ts";
 
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
@@ -65,6 +69,7 @@ const linkingDependencies = [
   PeerLinkRequests.PeerLinkRequests,
   PeerLinks.PeerLinks,
 ];
+const connectorDependencies = [...dependencies, Connectors.Connectors];
 const threadMetadataDependencies = [
   McpInvocationContext.McpInvocationContext,
   ThreadManagementService.ThreadManagementService,
@@ -223,6 +228,32 @@ const RequestUserActionTool = Tool.make("request_user_action", {
   .annotate(Tool.Title, "Ask the user to do something")
   .annotate(Tool.Destructive, false);
 
+const ListConnectorsTool = Tool.make("list_connectors", {
+  description:
+    "List connectors (remote MCP servers such as Linear or Notion) you can ask for, and the user's connections with their status for you.",
+  success: OrchestratorMcpListConnectorsResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: connectorDependencies,
+})
+  .annotate(Tool.Title, "List connectors")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
+
+const RequestConnectionTool = Tool.make("request_connection", {
+  description:
+    "Ask the user to connect a service for you, in a card. Pass catalogId from list_connectors, or url. Returns at once: already_connected, or card_shown; the answer arrives as a message. Never ask for tokens in chat.",
+  parameters: OrchestratorMcpRequestConnectionInput,
+  success: OrchestratorMcpRequestConnectionResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: connectorDependencies,
+})
+  .annotate(Tool.Title, "Ask the user to connect a service")
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.OpenWorld, true);
+
 const CreateThreadsTool = Tool.make("create_threads", {
   description:
     "Create new top-level threads in this checkout. Not delegation. One thread or its own worktree: `t3_thread_launch`. Project, branch, and worktree inherit.",
@@ -375,6 +406,8 @@ export const OrchestratorToolkit = Toolkit.make(
   DeleteScheduledTaskTool,
   RequestSecretTool,
   RequestUserActionTool,
+  ListConnectorsTool,
+  RequestConnectionTool,
   CreateThreadsTool,
   ThreadListTool,
   ThreadReadTool,
