@@ -250,6 +250,32 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
   return rows.sort((a, b) => compareByActivity(a, b, a.key, b.key));
 }
 
+/**
+ * The unarchived bots below a bot, children and their children, on its environment. Archiving
+ * with `includeChildren` takes these along.
+ */
+export function liveBotDescendants(
+  projects: ReadonlyArray<
+    Pick<EnvironmentProject, "environmentId" | "id" | "archivedAt" | "parentBotProjectId">
+  >,
+  bot: { readonly environmentId: EnvironmentId; readonly projectId: ProjectId },
+): ReadonlyArray<ProjectId> {
+  const found: ProjectId[] = [];
+  const seen = new Set<ProjectId>([bot.projectId]);
+  const queue = [bot.projectId];
+  while (queue.length > 0) {
+    const parent = queue.shift()!;
+    for (const project of projects) {
+      if (project.environmentId !== bot.environmentId) continue;
+      if (project.parentBotProjectId !== parent || seen.has(project.id)) continue;
+      seen.add(project.id);
+      queue.push(project.id);
+      if (project.archivedAt == null) found.push(project.id);
+    }
+  }
+  return found;
+}
+
 /** A bot's threads other than its main one, most recently active first. */
 export function deriveBotActivity(input: {
   readonly project: Pick<EnvironmentProject, "environmentId" | "id" | "mainThreadId">;

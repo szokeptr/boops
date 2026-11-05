@@ -14,6 +14,7 @@ import {
   botMonogram,
   deriveBotActivity,
   deriveBotList,
+  liveBotDescendants,
   resolveBotMainThreadId,
 } from "./botList.ts";
 import { presentThreadShell, scopeProject } from "./models.ts";
@@ -195,6 +196,17 @@ describe("deriveBotList", () => {
     expect(byId.pace).toMatchObject({ madeBy: "Wren", status: "needs-you" });
     expect(byId.orphan?.madeBy).toBeNull();
     expect(byId.stride?.madeBy).toBeNull();
+    // Archiving Wren with its children takes Pace and Pace's own child, not the VPS's bots.
+    const projects = [
+      project(laptop, "wren", "Wren"),
+      childOf("pace", "Pace", "wren"),
+      childOf("lap", "Lap", "pace"),
+      { ...childOf("old", "Old", "wren"), archivedAt: "2026-06-02T00:00:00.000Z" },
+      childOf("stride", "Stride", "wren-on-vps"),
+    ];
+    expect(
+      liveBotDescendants(projects, { environmentId: laptop, projectId: ProjectId.make("wren") }),
+    ).toEqual(["pace", "lap"]);
   });
 
   it("orders bots by their main thread's latest message across environments", () => {

@@ -422,7 +422,14 @@ import {
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
-import { BotCreateInput, BotCreateResult } from "./bot.ts";
+import {
+  BotArchiveInput,
+  BotArchiveResult,
+  BotCreateInput,
+  BotCreateResult,
+  BotDeleteInput,
+  BotUnarchiveInput,
+} from "./bot.ts";
 
 export const WS_METHODS = {
   projectsListEntries: "projects.listEntries",
@@ -436,6 +443,9 @@ export const WS_METHODS = {
   projectsCreateNew: "projects.createNew",
   projectsCreateFromThread: "projects.createFromThread",
   botsCreate: "bots.create",
+  botsArchive: "bots.archive",
+  botsUnarchive: "bots.unarchive",
+  botsDelete: "bots.delete",
 
   shellOpenInEditor: "shell.openInEditor",
 
@@ -1459,6 +1469,22 @@ const WsBotsCreateRpc = Rpc.make(WS_METHODS.botsCreate, {
   error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
 });
 
+const WsBotsArchiveRpc = Rpc.make(WS_METHODS.botsArchive, {
+  payload: BotArchiveInput,
+  success: BotArchiveResult,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsBotsUnarchiveRpc = Rpc.make(WS_METHODS.botsUnarchive, {
+  payload: BotUnarchiveInput,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsBotsDeleteRpc = Rpc.make(WS_METHODS.botsDelete, {
+  payload: BotDeleteInput,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
 const WsProjectsCreateFromThreadRpc = Rpc.make(WS_METHODS.projectsCreateFromThread, {
   payload: ProjectCreateFromThreadInput,
   success: ProjectCreateFromThreadResult,
@@ -2233,6 +2259,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsEnsureScratchRpc,
   WsProjectsCreateNewRpc,
   WsBotsCreateRpc,
+  WsBotsArchiveRpc,
+  WsBotsUnarchiveRpc,
+  WsBotsDeleteRpc,
   WsProjectsCreateFromThreadRpc,
   WsProjectsWriteFileRpc,
   WsProjectsMutateRpc,

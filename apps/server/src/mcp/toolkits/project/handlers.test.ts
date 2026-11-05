@@ -15,6 +15,7 @@ import {
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -22,6 +23,7 @@ import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import { McpSchema } from "effect/ai";
 
 import * as DocumentText from "../../../provider/DocumentText.ts";
 import { OrchestratorRuntimeModeAboveCeilingError } from "../../../orchestration-v2/Orchestrator.ts";
@@ -30,7 +32,7 @@ import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementSer
 import * as ServerConfig from "../../../config.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import * as Project from "../../../project/ProjectService.ts";
-import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
+import * as Bots from "../../../bots/Bots.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
@@ -621,46 +623,152 @@ it.effect("a client launches with the fallback for an exhausted default", () =>
   }),
 );
 
-it.effect("deleting a project through MCP also discards its clone record", () =>
-  Effect.gen(function* () {
-    const discarded: Array<ProjectId> = [];
-    const harness = clientLaunchHarness({ runtimeModeCeiling: "full-access", launched: [] });
-    const dependencies = Layer.merge(
-      harness.dependencies,
-      Layer.mergeAll(
-        Layer.mock(Project.ProjectService)({
-          delete: (input) =>
-            Effect.succeed({
-              id: input.projectId,
-              title: "client-target",
-              workspaceRoot: "/projects/client-target",
-              repositoryIdentity: null,
-              faviconPath: null,
-              defaultModelSelection: null,
-              defaultThreadEnvMode: null,
-              autoPull: false,
-              projectIcon: null,
-              scripts: [],
-              createdAt: "2026-01-01T00:00:00.000Z",
-              updatedAt: "2026-01-01T00:00:00.000Z",
-              deletedAt: "2026-01-01T00:00:00.000Z",
-            }),
+const botLifecycleHarness = (input: {
+  readonly caller: "bot" | "client";
+  readonly card?: "accept" | "decline";
+  readonly calls: Array<string>;
+}) => {
+  const projectId = ProjectId.make("project:bot");
+  const otherProjectId = ProjectId.make("project:other-bot");
+  const threadId = ThreadId.make("thread:bot-main");
+  const providerInstanceId = ProviderInstanceId.make("claudeAgent");
+  const clientInfo = { name: "harness", version: "1.0.0" };
+  const dependencies = Layer.mergeAll(
+    Layer.succeed(McpInvocationContext.McpInvocationContext, {
+      environmentId: EnvironmentId.make("environment"),
+      requestNamespace: "bot:session-1",
+      thread:
+        input.caller === "bot"
+          ? { threadId, providerSessionId: "session-1", providerInstanceId }
+          : undefined,
+      client:
+        input.caller === "client"
+          ? { sessionId: "session-1", label: "Claude Code", access: "full-access" }
+          : undefined,
+      issuedAt: 0,
+      capabilities: new Set(["orchestration" as const]),
+    }),
+    Layer.mock(ThreadManagement.ThreadManagementService)({
+      getThreadShell: () =>
+        Effect.succeed({
+          id: threadId,
+          projectId,
+          providerInstanceId,
+          activeRunId: "run:1",
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          archivedAt: null,
+          deletedAt: null,
+        } as unknown as OrchestrationV2ThreadShell),
+    }),
+    Layer.mock(Project.ProjectService)({
+      getById: (id) => Effect.succeedSome({ id, title: "Ledger" } as unknown as ProjectRecord),
+    }),
+    Layer.mock(Bots.Bots)({
+      childrenOf: () => Effect.succeed([]),
+      archive: (archive) =>
+        Effect.sync(() => {
+          input.calls.push(`archive:${archive.projectId}`);
+          return { projectIds: [archive.projectId] };
         }),
-        Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({
-          discard: (projectId) => Effect.sync(() => void discarded.push(projectId)),
-        }),
-      ),
-    );
+      unarchive: (unarchive) =>
+        Effect.sync(() => void input.calls.push(`unarchive:${unarchive.projectId}`)),
+      delete: (remove) => Effect.sync(() => void input.calls.push(`delete:${remove.projectId}`)),
+    }),
+    Layer.mock(McpSchema.McpServerClient)({
+      clientId: 1,
+      protocolVersion: "2025-06-18",
+      clientInfo,
+      initializePayload: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo },
+      clientCapabilities: { elicitation: {} },
+      getClient: Effect.succeed({
+        listRoots: () => Effect.die("unused"),
+        createMessage: () => Effect.die("unused"),
+        elicit: (request) =>
+          Effect.sync(() => {
+            input.calls.push(`card:${request.message.split("\n")[0]}`);
+            return { action: input.card ?? "decline", content: {} };
+          }),
+      } as McpSchema.McpReverseClient),
+    }),
+  ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
+  const call = Effect.fn("test.callBotTool")(function* (
+    name: "t3_bot_archive" | "t3_bot_unarchive" | "t3_bot_delete",
+    params: object,
+  ) {
     const toolkit = yield* ProjectToolkit.pipe(
       Effect.provide(
         McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
       ),
     );
-
-    yield* toolkit
-      .handle("t3_project_delete", { projectId: harness.projectId })
+    const result = yield* toolkit
+      .handle(name, params as never)
       .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+    return result.at(-1)?.result;
+  });
+  /** The project tools this caller's MCP session lists. */
+  const listed = Effect.gen(function* () {
+    const names: Array<string> = [];
+    for (const tool of Object.values(ProjectToolkit.tools)) {
+      const enabled = Context.getOrUndefined(tool.annotations, McpSchema.EnabledWhen);
+      if (enabled === undefined || (yield* Effect.sync(() => enabled({} as never))))
+        names.push(tool.name);
+    }
+    return names;
+  }).pipe(Effect.provide(dependencies));
+  return { projectId, otherProjectId, call, listed };
+};
 
-    expect(discarded).toEqual([harness.projectId]);
+it.effect("a bot lists no delete or unarchive tool and is refused them by name", () =>
+  Effect.gen(function* () {
+    const calls: Array<string> = [];
+    const bot = botLifecycleHarness({ caller: "bot", calls });
+    const listed = yield* bot.listed;
+    expect(listed).toContain("t3_bot_archive");
+    expect(listed.filter((name) => /delete|unarchive/.test(name))).toEqual([]);
+    expect(yield* bot.call("t3_bot_delete", { projectId: bot.projectId })).toMatchObject({
+      code: "capability_denied",
+    });
+    expect(yield* bot.call("t3_bot_unarchive", { projectId: bot.projectId })).toMatchObject({
+      code: "capability_denied",
+    });
+    expect(calls).toEqual([]);
+
+    const client = botLifecycleHarness({ caller: "client", calls });
+    expect(yield* client.listed).toEqual(
+      expect.arrayContaining(["t3_bot_delete", "t3_bot_unarchive"]),
+    );
+    yield* client.call("t3_bot_delete", { projectId: client.projectId, removeHomeFolder: true });
+    expect(calls).toEqual([`delete:${client.projectId}`]);
+  }),
+);
+
+it.effect("a bot's archive waits on the user's card, and reaches only itself", () =>
+  Effect.gen(function* () {
+    const archiveSelf = (card: "accept" | "decline") =>
+      Effect.gen(function* () {
+        const calls: Array<string> = [];
+        const bot = botLifecycleHarness({ caller: "bot", card, calls });
+        const result = yield* bot.call("t3_bot_archive", { reason: "The trip is over." });
+        return { result, calls, bot };
+      });
+
+    const declined = yield* archiveSelf("decline");
+    expect(declined.result).toEqual({ status: "declined", projectIds: [] });
+    expect(declined.calls).toEqual(["card:Archive Ledger?"]);
+
+    const approved = yield* archiveSelf("accept");
+    expect(approved.result).toEqual({
+      status: "archived",
+      projectIds: [approved.bot.projectId],
+    });
+    expect(approved.calls).toEqual(["card:Archive Ledger?", `archive:${approved.bot.projectId}`]);
+
+    const elsewhere = yield* approved.bot.call("t3_bot_archive", {
+      projectId: approved.bot.otherProjectId,
+      reason: "Unused.",
+    });
+    expect(elsewhere).toMatchObject({ code: "capability_denied" });
+    expect(approved.calls).toHaveLength(2);
   }),
 );

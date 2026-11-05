@@ -63,7 +63,8 @@ describe("V2 preview upgrade", () => {
         [81, "ProjectionProjectsBotAutonomy"],
         [82, "ProjectionProjectsBotFamily"],
         [83, "ProjectionProjectsPersonaReady"],
-        [84, "Connectors"],
+        [84, "ScheduledTasksPausedByArchive"],
+        [85, "Connectors"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -170,7 +171,8 @@ describe("V2 preview upgrade", () => {
         [81, "ProjectionProjectsBotAutonomy"],
         [82, "ProjectionProjectsBotFamily"],
         [83, "ProjectionProjectsPersonaReady"],
-        [84, "Connectors"],
+        [84, "ScheduledTasksPausedByArchive"],
+        [85, "Connectors"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

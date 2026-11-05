@@ -207,6 +207,24 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: projectScheduler,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
+    archiveBot: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:archive-bot",
+      tag: WS_METHODS.botsArchive,
+      scheduler: projectScheduler,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    unarchiveBot: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:unarchive-bot",
+      tag: WS_METHODS.botsUnarchive,
+      scheduler: projectScheduler,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    deleteBot: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:delete-bot",
+      tag: WS_METHODS.botsDelete,
+      scheduler: projectScheduler,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
     createFromThread: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:create-from-thread",
       tag: WS_METHODS.projectsCreateFromThread,
