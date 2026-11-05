@@ -1,4 +1,4 @@
-import { ConnectorError } from "@t3tools/contracts";
+import { CONNECTOR_CALLBACK_PATH, ConnectorError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -62,7 +62,7 @@ const page = (title: string, body: string) => `<!doctype html>
 export const layerCallbackRoute = Layer.unwrap(
   Effect.gen(function* () {
     const connectors = yield* Connectors.Connectors;
-    return HttpRouter.add("GET", Connectors.CONNECTOR_CALLBACK_PATH, callback(connectors));
+    return HttpRouter.add("GET", CONNECTOR_CALLBACK_PATH, callback(connectors));
   }),
 );
 

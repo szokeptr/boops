@@ -2,13 +2,148 @@ import type { ConnectorCatalogEntry } from "@t3tools/contracts";
 
 const icon = (domain: string) => `https://icons.duckduckgo.com/ip3/${domain}.ico`;
 
+const GOOGLE_SETUP_DOCS = "https://developers.google.com/workspace/guides/configure-mcp-servers";
+
 /**
- * Remote MCP servers Pocks can sign in to by itself. Every OAuth entry was checked live
- * (2026-11-05): a 401 with protected-resource or authorization-server metadata and a dynamic
- * client registration endpoint. Servers that need a pre-registered OAuth client (GitHub, Asana,
- * HubSpot, Box) are left out until Pocks can carry one.
+ * Google's Workspace MCP servers (Developer Preview) sign in through accounts.google.com, which has
+ * no dynamic client registration, so the user brings an OAuth client. Scopes are the ones Google
+ * recommends per server; it issues a refresh token only with `access_type=offline`.
+ */
+const google = (input: {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly host: string;
+  readonly docsUrl: string;
+  readonly icon: string;
+  /** What to enable in Google Cloud, by display name. */
+  readonly apis: string;
+  readonly extraStep?: string;
+  readonly scopes: ReadonlyArray<string>;
+}): ConnectorCatalogEntry => ({
+  id: input.id,
+  name: input.name,
+  description: input.description,
+  url: `https://${input.host}/mcp/v1`,
+  auth: {
+    kind: "oauth",
+    scopes: input.scopes.map((scope) => `https://www.googleapis.com/auth/${scope}`),
+    authorizationParams: { access_type: "offline", prompt: "consent" },
+    clientSetup: {
+      docsUrl: GOOGLE_SETUP_DOCS,
+      steps: [
+        `In a Google Cloud project, enable the ${input.apis}.`,
+        ...(input.extraStep === undefined ? [] : [input.extraStep]),
+        "Under Google Auth Platform, set up the consent screen: Internal for a Workspace account, otherwise External with yourself as a test user. Add the scopes below under Data Access.",
+        "Create an OAuth client of type Web application, tick “Use this client for an AI-powered agent”, and add the redirect URI below.",
+        "Copy its client ID and secret here. Your other Google connections reuse them.",
+      ],
+    },
+  },
+  docsUrl: input.docsUrl,
+  iconUrl: `https://ssl.gstatic.com/images/branding/product/1x/${input.icon}_48dp.png`,
+});
+
+const workspaceDocs = (product: string) =>
+  `https://developers.google.com/workspace/${product}/api/guides/configure-mcp-server`;
+
+/**
+ * Remote MCP servers Boops can sign in to. Every OAuth entry was checked live (2026-11-05): a 401,
+ * or for Google's servers protected-resource metadata at the well-known path, leading to
+ * authorization-server metadata. Entries without dynamic client registration carry
+ * `clientSetup`; others that need one (GitHub, Asana, HubSpot, Box) are not added yet.
  */
 export const CONNECTOR_CATALOG: ReadonlyArray<ConnectorCatalogEntry> = [
+  google({
+    id: "gmail",
+    name: "Gmail",
+    description: "Search, read and draft email.",
+    host: "gmailmcp.googleapis.com",
+    docsUrl: workspaceDocs("gmail"),
+    icon: "gmail_2020q4",
+    apis: "Gmail API and Gmail MCP API",
+    scopes: ["gmail.readonly", "gmail.compose"],
+  }),
+  google({
+    id: "google-calendar",
+    name: "Google Calendar",
+    description: "Calendars, events and free time.",
+    host: "calendarmcp.googleapis.com",
+    docsUrl: workspaceDocs("calendar"),
+    icon: "calendar_2020q4",
+    apis: "Google Calendar API and Google Calendar MCP API",
+    // Google lists calendar.events.readonly; the server's tools also create and change events.
+    scopes: ["calendar.calendarlist.readonly", "calendar.events.freebusy", "calendar.events"],
+  }),
+  google({
+    id: "google-drive",
+    name: "Google Drive",
+    description: "Search, read and create files.",
+    host: "drivemcp.googleapis.com",
+    docsUrl: workspaceDocs("drive"),
+    icon: "drive_2020q4",
+    apis: "Google Drive API and Google Drive MCP API",
+    scopes: ["drive.readonly", "drive.file"],
+  }),
+  google({
+    id: "google-docs",
+    name: "Google Docs",
+    description: "Read and edit documents.",
+    host: "docsmcp.googleapis.com",
+    docsUrl: workspaceDocs("docs"),
+    icon: "docs_2020q4",
+    apis: "Google Docs API and Google Docs MCP API",
+    scopes: ["drive.readonly", "drive.file", "documents.readonly", "documents"],
+  }),
+  google({
+    id: "google-sheets",
+    name: "Google Sheets",
+    description: "Read and edit spreadsheets.",
+    host: "sheetsmcp.googleapis.com",
+    docsUrl: workspaceDocs("sheets"),
+    icon: "sheets_2020q4",
+    apis: "Google Sheets API and Google Sheets MCP API",
+    scopes: ["drive.readonly", "drive.file", "spreadsheets.readonly", "spreadsheets"],
+  }),
+  google({
+    id: "google-slides",
+    name: "Google Slides",
+    description: "Read and edit presentations.",
+    host: "slidesmcp.googleapis.com",
+    docsUrl: workspaceDocs("slides"),
+    icon: "slides_2020q4",
+    apis: "Google Slides API and Google Slides MCP API",
+    scopes: ["drive.readonly", "drive.file", "presentations.readonly", "presentations"],
+  }),
+  google({
+    id: "google-chat",
+    name: "Google Chat",
+    description: "Search conversations, read and send messages.",
+    host: "chatmcp.googleapis.com",
+    docsUrl: workspaceDocs("chat"),
+    icon: "chat_2020q4",
+    apis: "Google Chat API and Google Chat MCP API",
+    extraStep:
+      "Under Google Chat API → Configuration, set up a Chat app with interactive features off.",
+    scopes: [
+      "chat.spaces.readonly",
+      "chat.memberships.readonly",
+      "chat.messages.readonly",
+      "chat.messages.create",
+      "chat.users.readstate",
+      "chat.users.spacesettings",
+    ],
+  }),
+  google({
+    id: "google-contacts",
+    name: "Google Contacts",
+    description: "Your contacts, the directory and your profile.",
+    host: "people.googleapis.com",
+    docsUrl: GOOGLE_SETUP_DOCS,
+    icon: "contacts_2022",
+    apis: "People API",
+    scopes: ["directory.readonly", "userinfo.profile", "contacts.readonly"],
+  }),
   {
     id: "linear",
     name: "Linear",

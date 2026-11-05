@@ -1,12 +1,19 @@
-import { type ConnectorChoice, connectorFailureMessage } from "@t3tools/client-runtime/connectors";
+import {
+  type ConnectorChoice,
+  connectorCallbackUrl,
+  connectorFailureMessage,
+  isOAuthClientRequired,
+} from "@t3tools/client-runtime/connectors";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type {
+  ConnectorCatalogEntry,
   ConnectorConnection,
   ConnectorConnectionId,
+  ConnectorOAuthClientInput,
   ConnectorRequestRef,
   EnvironmentId,
 } from "@t3tools/contracts";
@@ -16,6 +23,7 @@ import { Platform } from "react-native";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import {
   connectorEnvironment,
+  useConnectorCatalog,
   useConnectorConnections,
   useConnectorRedirect,
 } from "../../state/connectors";
@@ -34,6 +42,13 @@ export type ConnectorKeyPrompt =
   | { readonly kind: "new"; readonly choice: ConnectorChoice }
   | { readonly kind: "reauthenticate"; readonly connection: ConnectorConnection };
 
+/** An OAuth client the user still has to create, for a server without client registration. */
+export type ConnectorClientPrompt = ConnectorKeyPrompt & {
+  readonly name: string;
+  readonly entry: ConnectorCatalogEntry | null;
+  readonly redirectUri: string;
+};
+
 // Loaded on first sign-in, so the thread feed doesn't load the native browser module up front.
 const webBrowser = () => import("expo-web-browser");
 
@@ -46,6 +61,10 @@ const openAuthPage = async (url: string) => {
   }
 };
 
+/** A new connection's id; signing in again answers without one. */
+const connectionIdOf = (value: object): ConnectorConnectionId | null =>
+  "connectionId" in value ? (value.connectionId as ConnectorConnectionId) : null;
+
 const settle = <A, E>(result: AtomCommandResult<A, E>, fallback: string) =>
   result._tag === "Success"
     ? ({ ok: true, value: result.value } as const)
@@ -54,6 +73,7 @@ const settle = <A, E>(result: AtomCommandResult<A, E>, fallback: string) =>
         message: isAtomCommandInterrupted(result)
           ? null
           : connectorFailureMessage(squashAtomCommandFailure(result), fallback),
+        clientRequired: isOAuthClientRequired(squashAtomCommandFailure(result)),
       } as const);
 
 /**
@@ -70,8 +90,10 @@ export function useConnectorSignIn(
 ) {
   const redirect = useConnectorRedirect(environmentId);
   const { connections } = useConnectorConnections(environmentId);
+  const catalog = useConnectorCatalog(environmentId).entries;
   const [pending, setPending] = useState<PendingConnectorSignIn | null>(null);
   const [keyPrompt, setKeyPrompt] = useState<ConnectorKeyPrompt | null>(null);
+  const [clientPrompt, setClientPrompt] = useState<ConnectorClientPrompt | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
@@ -106,23 +128,58 @@ export function useConnectorSignIn(
     setError(failure);
   };
 
+  /** Starts a sign-in, or asks for an OAuth client when the server has no way to register one. */
   const oauth = async (
-    name: string,
-    fresh: boolean,
-    begin: (
-      redirectOrigin: string,
-    ) => Promise<
-      | { readonly ok: true; readonly connectionId: ConnectorConnectionId; readonly url: string }
-      | { readonly ok: false; readonly message: string | null }
-    >,
-  ) => {
+    target: ConnectorKeyPrompt,
+    client?: ConnectorOAuthClientInput,
+  ): Promise<string | null> => {
     if (redirect === null) {
       return "This app has no address for the server to send sign-ins back to. Reconnect and try again.";
     }
-    const started = await begin(redirect.origin);
-    if (!started.ok) return started.message;
-    setPending({ connectionId: started.connectionId, name, authorizationUrl: started.url, fresh });
-    void openAuthPage(started.url);
+    const redirectOrigin = redirect.origin;
+    const withClient = client === undefined ? {} : { client };
+    const fallback = "Could not start signing in.";
+    const started =
+      target.kind === "new"
+        ? settle(
+            await startOAuth({
+              environmentId,
+              input: { target: target.choice.target, redirectOrigin, ...withClient, ...forRequest },
+            }),
+            fallback,
+          )
+        : settle(
+            await reauthenticate({
+              environmentId,
+              input: {
+                connectionId: target.connection.id,
+                credential: { type: "oauth", redirectOrigin, ...withClient },
+                ...forRequest,
+              },
+            }),
+            fallback,
+          );
+    const name = target.kind === "new" ? target.choice.name : target.connection.displayName;
+    if (!started.ok) {
+      if (!started.clientRequired || client !== undefined) return started.message;
+      const entry =
+        target.kind === "new"
+          ? target.choice.entry
+          : (catalog.find((candidate) => candidate.id === target.connection.catalogId) ?? null);
+      setClientPrompt({
+        ...target,
+        name,
+        entry,
+        redirectUri: connectorCallbackUrl(redirectOrigin),
+      });
+      return null;
+    }
+    const connectionId =
+      target.kind === "reauthenticate" ? target.connection.id : connectionIdOf(started.value);
+    const url = started.value.authorizationUrl;
+    if (connectionId === null || url === null) return "The server did not return a sign-in page.";
+    setPending({ connectionId, name, authorizationUrl: url, fresh: target.kind === "new" });
+    void openAuthPage(url);
     return null;
   };
 
@@ -153,22 +210,7 @@ export function useConnectorSignIn(
         options.onConnected?.(result.value.id);
         return null;
       }
-      return oauth(choice.name, true, async (redirectOrigin) => {
-        const result = settle(
-          await startOAuth({
-            environmentId,
-            input: { target: choice.target, redirectOrigin, ...forRequest },
-          }),
-          "Could not start signing in.",
-        );
-        return result.ok
-          ? {
-              ok: true,
-              connectionId: result.value.connectionId,
-              url: result.value.authorizationUrl,
-            }
-          : result;
-      });
+      return oauth({ kind: "new", choice });
     });
 
   const signInAgain = (connection: ConnectorConnection) => {
@@ -186,26 +228,20 @@ export function useConnectorSignIn(
         return result.ok ? null : result.message;
       });
     }
-    return run(() =>
-      oauth(connection.displayName, false, async (redirectOrigin) => {
-        const result = settle(
-          await reauthenticate({
-            environmentId,
-            input: {
-              connectionId: connection.id,
-              credential: { type: "oauth", redirectOrigin },
-              ...forRequest,
-            },
-          }),
-          "Could not start signing in.",
-        );
-        if (!result.ok) return result;
-        if (result.value.authorizationUrl === null) {
-          return { ok: false, message: "The server did not return a sign-in page." };
-        }
-        return { ok: true, connectionId: connection.id, url: result.value.authorizationUrl };
-      }),
-    );
+    return run(() => oauth({ kind: "reauthenticate", connection }));
+  };
+
+  /** Settles to an error to show in the client sheet, or null once the sign-in page opens. */
+  const submitClient = async (client: ConnectorOAuthClientInput): Promise<string | null> => {
+    const prompt = clientPrompt;
+    if (prompt === null || inFlight.current) return null;
+    inFlight.current = true;
+    setBusy(true);
+    const failure = await oauth(prompt, client);
+    inFlight.current = false;
+    setBusy(false);
+    if (failure === null) setClientPrompt(null);
+    return failure;
   };
 
   /** Settles to an error to show in the key sheet, or null once the key is saved. */
@@ -267,6 +303,9 @@ export function useConnectorSignIn(
     },
     keyPrompt,
     closeKeyPrompt: () => setKeyPrompt(null),
+    clientPrompt,
+    closeClientPrompt: () => setClientPrompt(null),
+    submitClient,
     busy,
     error,
     connect,

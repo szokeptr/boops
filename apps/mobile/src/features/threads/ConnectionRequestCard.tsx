@@ -32,6 +32,7 @@ import {
 import { useProject, useThreadShell } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ConnectorIcon } from "../connectors/ConnectorIcon";
+import { ConnectorClientSheet } from "../connectors/ConnectorClientSheet";
 import { ConnectorKeySheet } from "../connectors/ConnectorKeySheet";
 import { useConnectorSignIn } from "../connectors/useConnectorSignIn";
 import { useSetBotConnection } from "../connectors/useSetBotConnection";
@@ -221,6 +222,14 @@ function ConnectionRequestCardBody(props: {
           ) : null}
         </>
       )}
+      {signIn.clientPrompt !== null ? (
+        <ConnectorClientSheet
+          prompt={signIn.clientPrompt}
+          busy={signIn.busy}
+          onSubmit={signIn.submitClient}
+          onClose={signIn.closeClientPrompt}
+        />
+      ) : null}
       {signIn.keyPrompt !== null ? (
         <ConnectorKeySheet
           prompt={signIn.keyPrompt}

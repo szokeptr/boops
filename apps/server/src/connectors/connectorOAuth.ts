@@ -33,6 +33,8 @@ export const OAuthClient = Schema.Struct({
   clientId: Schema.String,
   clientSecret: Schema.optionalKey(Schema.String),
   tokenEndpointAuthMethod: Schema.optionalKey(Schema.String),
+  /** The user registered it with the provider, so it is kept until they replace it. */
+  userProvided: Schema.optionalKey(Schema.Boolean),
 });
 export type OAuthClient = typeof OAuthClient.Type;
 
@@ -210,21 +212,15 @@ const oauthFailure = (response: HttpClientResponse.HttpClientResponse, text: str
 const jsonBody = (value: unknown) => HttpBody.text(JSON.stringify(value), "application/json");
 
 export const registerClient = Effect.fn("ConnectorOAuth.registerClient")(function* (
-  info: OAuthServerInfo,
+  info: OAuthServerInfo & { readonly registrationEndpoint: string },
   redirectUri: string,
 ) {
-  if (info.registrationEndpoint === undefined) {
-    return yield* new ConnectorError({
-      reason: "oauth_unsupported",
-      detail: "no dynamic client registration",
-    });
-  }
   const { response, text } = yield* send(
     HttpClientRequest.post(info.registrationEndpoint).pipe(
       HttpClientRequest.acceptJson,
       HttpClientRequest.setBody(
         jsonBody({
-          client_name: "Pocks",
+          client_name: "Boops",
           redirect_uris: [redirectUri],
           grant_types: ["authorization_code", "refresh_token"],
           response_types: ["code"],
@@ -256,9 +252,14 @@ export const authorizationUrl = (
     readonly redirectUri: string;
     readonly codeChallenge: string;
     readonly state: string;
+    /** Provider extras such as `access_type`; they never replace the parameters set here. */
+    readonly params?: Readonly<Record<string, string>>;
   },
 ): string => {
   const url = new URL(info.authorizationEndpoint);
+  for (const [name, value] of Object.entries(input.params ?? {})) {
+    url.searchParams.set(name, value);
+  }
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", client.clientId);
   url.searchParams.set("redirect_uri", input.redirectUri);

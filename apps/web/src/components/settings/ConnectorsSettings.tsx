@@ -30,6 +30,7 @@ import {
 import type { EnvironmentPresentation } from "../../state/environments";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ConnectorIcon } from "../connectors/ConnectorIcon";
+import { ConnectorClientDialog } from "../connectors/ConnectorClientDialog";
 import { ConnectorKeyDialog } from "../connectors/ConnectorKeyDialog";
 import { PendingSignInNote } from "../connectors/PendingSignInNote";
 import { TurnOnForBotsDialog } from "../connectors/TurnOnForBotsDialog";
@@ -168,6 +169,14 @@ function EnvironmentConnectors({ environment }: { readonly environment: Environm
           })
         }
       />
+      {signIn.clientPrompt !== null ? (
+        <ConnectorClientDialog
+          prompt={signIn.clientPrompt}
+          busy={signIn.busy}
+          onSubmit={signIn.submitClient}
+          onClose={signIn.closeClientPrompt}
+        />
+      ) : null}
       {signIn.keyPrompt !== null ? (
         <ConnectorKeyDialog
           prompt={signIn.keyPrompt}
@@ -507,7 +516,9 @@ function ConnectorGallery(props: {
                     <p className="truncate text-sm font-medium">{entry.name}</p>
                     <p className="truncate text-xs text-muted-foreground">
                       {entry.auth.kind === "oauth"
-                        ? "Sign in"
+                        ? entry.auth.clientSetup !== undefined
+                          ? "Your OAuth client"
+                          : "Sign in"
                         : entry.auth.kind === "api-key"
                           ? "API key"
                           : "No sign-in"}

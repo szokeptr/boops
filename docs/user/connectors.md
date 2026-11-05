@@ -12,6 +12,8 @@ Open **Settings → Connectors**. The same page is in the mobile app under Setti
   - Services that sign in open their sign-in page in the browser. Finish there; the page updates
     by itself when you're done.
   - Services that use an API key ask for it, with a link to where you get one.
+  - Services that need an OAuth client of your own, such as Google's, ask for its client ID and
+    secret first. See [Google Workspace](#google-workspace).
   - Open services are added straight away.
 - **Add custom** takes the URL of any remote MCP server. The server is asked how it signs in.
 
@@ -19,6 +21,32 @@ After connecting, pick the bots that should use it. A bot gets the new tools fro
 
 You can connect the same service more than once, for example a work and a personal account, and
 rename each connection.
+
+## Google Workspace
+
+Gmail, Google Calendar, Drive, Docs, Sheets, Slides, Chat and Contacts are in the gallery. Google
+doesn't let apps register themselves for sign-in, so you create an OAuth client in your own Google
+Cloud project once, and every Google connection uses it. The servers are a Google Workspace
+Developer Preview, which your account must be part of.
+
+1. In a [Google Cloud](https://console.cloud.google.com/) project, enable the API and the MCP API
+   for each product, for example **Gmail API** and **Gmail MCP API**. Contacts needs only the
+   **People API**. Chat also needs a Chat app set up under **Google Chat API → Configuration**.
+2. Under **Google Auth Platform**, set up the consent screen. Pick **Internal** for a Workspace
+   account. Otherwise pick **External** and add yourself as a test user. Under **Data Access**, add
+   the scopes the connect form lists.
+3. Create an OAuth client of type **Web application**, tick **Use this client for an AI-powered
+   agent**, and add the redirect URI from the connect form. It is the server's address followed by
+   `/oauth/connectors/callback`, for example `http://localhost:3773/oauth/connectors/callback`.
+   Add one for each address you sign in from.
+4. Choose **Connect** on a Google service and paste the client ID and secret. The secret stays on
+   the server.
+
+While an External app is in **Testing**, Google ends its sign-ins after 7 days, so the connection
+asks you to sign in again every week. Publishing the app under **Audience → In production** avoids
+that. An app Google hasn't verified shows a warning on the sign-in page; you can continue past it.
+
+Google's full guide: [Configure the Google Workspace MCP servers](https://developers.google.com/workspace/guides/configure-mcp-servers).
 
 ## Turn connections on per bot
 

@@ -24,6 +24,12 @@ Tokens, client secrets and API keys live in `ServerSecretStore` (`connector-<id>
 registrations are cached per authorization server and redirect URI
 (`connector-client-<hash>`). Metadata lives in the `connector_connections` table.
 
+An authorization server without dynamic registration (Google) fails `startOAuth` with
+`oauth_client_required`, and the client asks the user for an OAuth client they created. That client
+is stored in the connection's own credential, marked `userProvided`, and survives Disconnect. A new
+connection to the same issuer reuses the newest such client, so one Google client serves every
+Google connector.
+
 Agents cannot turn connections on. `connectionIds` is not in `ProjectUpdatePayload`, so
 `t3_project_update` and `projects.mutate` cannot set it; only the `Connectors` service writes it,
 behind `settings:write` RPCs or the user's answer to a connection card.
@@ -42,6 +48,8 @@ drops sign-ins in progress.
   registration. Sign in from the machine itself or through T3 Connect instead.
 - Each distinct origin gets its own client registration, and a connection signed in through one
   origin refreshes without it.
+- A user's own OAuth client works only from the origins whose redirect URI they registered with
+  the provider. The client form shows the URI for the origin in use.
 
 ## Changes reach the next turn
 

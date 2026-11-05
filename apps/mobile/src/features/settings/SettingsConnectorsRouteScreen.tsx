@@ -38,6 +38,7 @@ import {
 } from "../../state/connectors";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ConnectorIcon } from "../connectors/ConnectorIcon";
+import { ConnectorClientSheet } from "../connectors/ConnectorClientSheet";
 import { ConnectorKeySheet } from "../connectors/ConnectorKeySheet";
 import { TurnOnForBotsSheet } from "../connectors/TurnOnForBotsSheet";
 import { useConnectorSignIn } from "../connectors/useConnectorSignIn";
@@ -234,6 +235,14 @@ function EnvironmentConnectors(props: {
           />
         </View>
       </SettingsSection>
+      {signIn.clientPrompt !== null ? (
+        <ConnectorClientSheet
+          prompt={signIn.clientPrompt}
+          busy={signIn.busy}
+          onSubmit={signIn.submitClient}
+          onClose={signIn.closeClientPrompt}
+        />
+      ) : null}
       {signIn.keyPrompt !== null ? (
         <ConnectorKeySheet
           prompt={signIn.keyPrompt}
