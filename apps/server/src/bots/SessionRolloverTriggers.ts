@@ -10,16 +10,16 @@ import * as DateTime from "effect/DateTime";
  * window is this full again at the end of a turn, since summaries of summaries lose more than the
  * bot's own notes do.
  */
-export const CONTEXT_ROLLOVER_RATIO = 0.85;
+const CONTEXT_ROLLOVER_RATIO = 0.85;
 /** A session that never reports a compaction still rolls over before the window is exhausted. */
-export const CONTEXT_ROLLOVER_BACKSTOP_RATIO = 0.95;
+const CONTEXT_ROLLOVER_BACKSTOP_RATIO = 0.95;
 /**
  * Four times the longest prompt cache (1h), so the next turn would pay a full uncached read of the
  * session anyway; shorter than the 6h heartbeat, so a quiet bot rolls over between heartbeats.
  */
 export const IDLE_ROLLOVER_AFTER_MS = 4 * 60 * 60_000;
 /** Below this a resume is cheap and keeps the working context, so an idle session stays. */
-export const IDLE_ROLLOVER_MIN_TOKENS = 100_000;
+const IDLE_ROLLOVER_MIN_TOKENS = 100_000;
 
 export type SessionRolloverRecords = Pick<
   OrchestrationV2ThreadProjection,

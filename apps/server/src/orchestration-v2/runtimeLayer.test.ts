@@ -84,6 +84,7 @@ import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "../project/ScratchThreadPromotion.ts";
 import * as Bots from "../bots/Bots.ts";
+import * as BotFamily from "../bots/botFamily.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as FileSystem from "effect/FileSystem";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
@@ -8783,6 +8784,236 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
         const idle = yield* orchestrator.getThreadProjection(quiet.mainThreadId);
         assert.lengthOf(idle.runs, 0);
         assert.lengthOf(idle.messages, 0);
+      }).pipe(Effect.scoped),
+  );
+});
+
+it.layer(layerBotsTest)("bot families", (it) => {
+  const inHome = <A, E, R>(home: string, effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(Effect.provideService(HostProcess.HomeDirectory, home));
+  const approveAll = () => Effect.succeed(true);
+
+  it.effect("a child asks the user unless its parent may create bots without asking", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const bots = yield* Bots.Bots;
+      const projects = yield* ProjectService.ProjectService;
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-family-" });
+      const parent = yield* inHome(home, bots.create({ name: "Wren", modelSelection }));
+      const asked: Array<Bots.BotChildApproval> = [];
+      const answer = (approved: boolean) => (approval: Bots.BotChildApproval) =>
+        Effect.sync(() => {
+          asked.push(approval);
+          return approved;
+        });
+      const child = (
+        name: string,
+        askUser: (approval: Bots.BotChildApproval) => Effect.Effect<boolean>,
+      ) =>
+        inHome(
+          home,
+          bots.createChild({ parentProjectId: parent.projectId, name, mode: "interview" }, askUser),
+        );
+
+      const declined = yield* child("Pace", answer(false)).pipe(Effect.flip);
+      assert.deepInclude(declined, { _tag: "BotFamilyError", reason: "declined" });
+      assert.deepEqual(asked, [{ parentName: "Wren", childName: "Pace", mode: "interview" }]);
+      assert.lengthOf(yield* bots.childrenOf(parent.projectId), 0);
+
+      const approved = yield* child("Pace", answer(true));
+      assert.lengthOf(asked, 2);
+      const childProject = Option.getOrThrow(yield* projects.getById(approved.projectId));
+      assert.equal(childProject.parentBotProjectId, parent.projectId);
+      assert.deepEqual(childProject.defaultModelSelection, modelSelection);
+
+      yield* projects.update({
+        commandId: CommandId.make("family-bypass"),
+        projectId: parent.projectId,
+        canCreateBotsWithoutAsking: true,
+      });
+      yield* child("Tally", () => Effect.die("the bypass must not ask"));
+      assert.lengthOf(asked, 2);
+      assert.sameMembers(
+        (yield* bots.childrenOf(parent.projectId)).map((shell) => shell.title),
+        ["Pace", "Tally"],
+      );
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("a brief child starts from its parent's brief; an interview child hatches", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const bots = yield* Bots.Bots;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-family-" });
+      const parent = yield* inHome(
+        home,
+        bots.create({ name: "Wren", modelSelection, hatch: false }),
+      );
+      const brief = "You are Pace, Dana's marathon coach. Check in every Sunday evening.";
+      const briefed = yield* inHome(
+        home,
+        bots.createChild(
+          { parentProjectId: parent.projectId, name: "Pace", mode: "brief", brief },
+          approveAll,
+        ),
+      );
+      const interviewing = yield* inHome(
+        home,
+        bots.createChild(
+          { parentProjectId: parent.projectId, name: "Tally", mode: "interview" },
+          approveAll,
+        ),
+      );
+      const briefless = yield* inHome(
+        home,
+        bots.createChild(
+          { parentProjectId: parent.projectId, name: "Nope", mode: "brief" },
+          approveAll,
+        ),
+      ).pipe(Effect.flip);
+      assert.deepInclude(briefless, { reason: "invalid" });
+      yield* worker.drain();
+
+      const fromBrief = yield* orchestrator.getThreadProjection(briefed.mainThreadId);
+      assert.lengthOf(fromBrief.runs, 1);
+      assert.deepInclude(fromBrief.messages[0], {
+        role: "user",
+        text: Bots.childBriefKickoffText("Wren", brief),
+        createdBy: "agent",
+        senderThreadId: parent.mainThreadId,
+      });
+      const hatching = yield* orchestrator.getThreadProjection(interviewing.mainThreadId);
+      assert.lengthOf(hatching.runs, 1);
+      assert.deepInclude(hatching.messages[0], {
+        text: Bots.childHatchKickoffText("Wren"),
+        createdBy: "system",
+      });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("only a direct parent and child reach each other", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const bots = yield* Bots.Bots;
+      const projects = yield* ProjectService.ProjectService;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-family-" });
+      const quiet = (name: string) =>
+        inHome(home, bots.create({ name, modelSelection, hatch: false }));
+      const quietChild = (parentProjectId: ProjectId, name: string) =>
+        inHome(home, bots.createChild({ parentProjectId, name, mode: "interview" }, approveAll));
+      const parent = yield* quiet("Wren");
+      const stranger = yield* quiet("Stranger");
+      const child = yield* quietChild(parent.projectId, "Pace");
+      const grandchild = yield* quietChild(child.projectId, "Stride");
+      const plain = yield* projects.create({
+        commandId: CommandId.make("family-plain-project"),
+        projectId: ProjectId.make("family-plain-project"),
+        title: "Plain",
+        workspaceRoot: home,
+      });
+
+      yield* bots.messageChild({
+        parentProjectId: parent.projectId,
+        childProjectId: child.projectId,
+        text: "How was the long run?",
+      });
+      yield* bots.reportToParent({ childProjectId: child.projectId, text: "Dana ran 14 km." });
+      const childMessages = (yield* orchestrator.getThreadProjection(child.mainThreadId)).messages;
+      const sent = childMessages.find((message) => message.senderThreadId === parent.mainThreadId);
+      assert.isTrue(sent?.text.endsWith("How was the long run?"));
+      assert.include(sent?.text, "Wren");
+      const report = (yield* orchestrator.getThreadProjection(parent.mainThreadId)).messages.find(
+        (message) => message.senderThreadId === child.mainThreadId,
+      );
+      assert.deepInclude(report, { role: "user", createdBy: "agent" });
+      assert.isTrue(report?.text.endsWith("Dana ran 14 km."));
+
+      const read = yield* bots.readChild({
+        parentProjectId: parent.projectId,
+        childProjectId: child.projectId,
+        limit: 20,
+      });
+      // The hatching kickoff, then the parent's message.
+      assert.deepEqual(
+        read.map((message) => message.author),
+        ["system", "you"],
+      );
+
+      const refusals = yield* Effect.all([
+        bots
+          .messageChild({
+            parentProjectId: stranger.projectId,
+            childProjectId: child.projectId,
+            text: "hi",
+          })
+          .pipe(Effect.flip),
+        bots
+          .messageChild({
+            parentProjectId: parent.projectId,
+            childProjectId: grandchild.projectId,
+            text: "hi",
+          })
+          .pipe(Effect.flip),
+        bots
+          .readChild({
+            parentProjectId: stranger.projectId,
+            childProjectId: child.projectId,
+            limit: 5,
+          })
+          .pipe(Effect.flip),
+        bots.reportToParent({ childProjectId: stranger.projectId, text: "hi" }).pipe(Effect.flip),
+      ]);
+      assert.deepEqual(
+        refusals.map((error) => error.reason),
+        ["unrelated", "unrelated", "unrelated", "not-found"],
+      );
+
+      const mayTalk = (from: ProjectId, to: ProjectId) =>
+        BotFamily.assertBotsMayTalk(from, to).pipe(
+          Effect.as("allowed"),
+          Effect.catchTags({ BotFamilyError: (error) => Effect.succeed(error.reason) }),
+        );
+      assert.deepEqual(
+        yield* Effect.all([
+          mayTalk(parent.projectId, child.projectId),
+          mayTalk(child.projectId, parent.projectId),
+          mayTalk(parent.projectId, parent.projectId),
+          mayTalk(stranger.projectId, child.projectId),
+          mayTalk(parent.projectId, grandchild.projectId),
+          mayTalk(stranger.projectId, plain.id),
+        ]),
+        ["allowed", "allowed", "allowed", "unrelated", "unrelated", "allowed"],
+      );
+    }).pipe(Effect.scoped),
+  );
+
+  // Approvals and secret cards record on the asking thread, so a top-level child keeps its own.
+  it.effect(
+    "a child is its own top-level bot, so its requests reach the user, not its parent",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const bots = yield* Bots.Bots;
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-family-" });
+        const parent = yield* inHome(
+          home,
+          bots.create({ name: "Wren", modelSelection, hatch: false }),
+        );
+        const child = yield* inHome(
+          home,
+          bots.createChild(
+            { parentProjectId: parent.projectId, name: "Pace", mode: "interview" },
+            approveAll,
+          ),
+        );
+        const shell = yield* orchestrator.getThreadShell(child.mainThreadId);
+        assert.equal(shell?.projectId, child.projectId);
+        assert.deepInclude(shell?.lineage, { parentThreadId: null, relationshipToParent: null });
+        assert.deepEqual(yield* orchestrator.listAppOwnedChildThreadIds(parent.mainThreadId), []);
       }).pipe(Effect.scoped),
   );
 });

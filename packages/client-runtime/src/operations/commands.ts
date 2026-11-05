@@ -67,6 +67,7 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly avatar?: ProjectAvatar | null;
   readonly mainThreadId?: ThreadId | null;
   readonly autonomy?: BotAutonomy | null;
+  readonly canCreateBotsWithoutAsking?: boolean;
 }
 
 export interface DeleteProjectInput extends CommandMetadata {
@@ -392,6 +393,9 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
     ...(input.avatar === undefined ? {} : { avatar: input.avatar }),
     ...(input.mainThreadId === undefined ? {} : { mainThreadId: input.mainThreadId }),
     ...(input.autonomy === undefined ? {} : { autonomy: input.autonomy }),
+    ...(input.canCreateBotsWithoutAsking === undefined
+      ? {}
+      : { canCreateBotsWithoutAsking: input.canCreateBotsWithoutAsking }),
   });
 });
 

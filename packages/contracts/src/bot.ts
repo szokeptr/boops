@@ -21,6 +21,71 @@ export const BotCreateResult = Schema.Struct({
 });
 export type BotCreateResult = typeof BotCreateResult.Type;
 
+/** How a bot another bot creates starts: interviewing the user, or setting itself up from a brief. */
+export const BotChildStart = Schema.Literals(["interview", "brief"]);
+export type BotChildStart = typeof BotChildStart.Type;
+
+const ChildBotProject = ProjectId.annotate({ description: "The child's projectId." });
+const BotMessageText = TrimmedNonEmptyString.check(Schema.isMaxLength(20_000));
+
+export const BotMcpCreateChildInput = Schema.Struct({
+  name: BotCreateInput.fields.name,
+  mode: BotChildStart.annotate({
+    description: "interview: it asks the user who to be. brief: it sets itself up from `brief`.",
+  }),
+  brief: Schema.optional(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(8_000)).annotate({
+      description: "For brief: who it is, its job, what to do on its own.",
+    }),
+  ),
+});
+export type BotMcpCreateChildInput = typeof BotMcpCreateChildInput.Type;
+
+export const BotMcpChild = Schema.Struct({
+  projectId: ProjectId,
+  name: Schema.String,
+  archived: Schema.Boolean,
+});
+export type BotMcpChild = typeof BotMcpChild.Type;
+
+export const BotMcpListChildrenResult = Schema.Struct({ children: Schema.Array(BotMcpChild) });
+export type BotMcpListChildrenResult = typeof BotMcpListChildrenResult.Type;
+
+export const BotMcpReadChildInput = Schema.Struct({
+  projectId: ChildBotProject,
+  limit: Schema.optional(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 })).annotate({
+      description: "Latest messages to return, 1-50. Default 20.",
+    }),
+  ),
+});
+export type BotMcpReadChildInput = typeof BotMcpReadChildInput.Type;
+
+/** Who wrote a message in a child's conversation, as its parent sees it. */
+export const BotFamilyAuthor = Schema.Literals(["user", "you", "child", "routine", "system"]);
+export type BotFamilyAuthor = typeof BotFamilyAuthor.Type;
+
+export const BotMcpReadChildResult = Schema.Struct({
+  messages: Schema.Array(
+    Schema.Struct({ author: BotFamilyAuthor, text: Schema.String, createdAt: Schema.String }),
+  ),
+});
+export type BotMcpReadChildResult = typeof BotMcpReadChildResult.Type;
+
+export const BotMcpMessageChildInput = Schema.Struct({
+  projectId: ChildBotProject,
+  message: BotMessageText,
+});
+export type BotMcpMessageChildInput = typeof BotMcpMessageChildInput.Type;
+
+export const BotMcpReportToParentInput = Schema.Struct({ message: BotMessageText });
+export type BotMcpReportToParentInput = typeof BotMcpReportToParentInput.Type;
+
+export const BotMcpDelivery = Schema.Struct({
+  delivery: Schema.Literals(["started", "queued", "steered", "restarted"]),
+});
+export type BotMcpDelivery = typeof BotMcpDelivery.Type;
+
 type Timestamp = string | DateTime.DateTime;
 
 const epochMillis = (at: Timestamp) =>

@@ -49,7 +49,8 @@ export function BotList(props: BotListProps) {
 function botRowLabel(row: BotRow): string {
   const status =
     row.status === "needs-you" ? "needs you" : row.status === "working" ? "working" : null;
-  return [row.name, status, row.unread ? "unread" : null, row.lastMessagePreview]
+  const madeBy = row.madeBy === null ? null : `made by ${row.madeBy}`;
+  return [row.name, madeBy, status, row.unread ? "unread" : null, row.lastMessagePreview]
     .filter((part) => part !== null)
     .join(", ");
 }
@@ -84,6 +85,11 @@ function BotListRow(props: {
           >
             {row.name}
           </span>
+          {row.madeBy === null ? null : (
+            <span className="min-w-0 max-w-[45%] truncate text-2xs text-sidebar-muted-foreground">
+              made by {row.madeBy}
+            </span>
+          )}
           <span className="shrink-0 text-2xs text-sidebar-muted-foreground tabular-nums">
             {props.jumpLabel ?? <RelativeTime timestamp={row.lastActivityAt} />}
           </span>

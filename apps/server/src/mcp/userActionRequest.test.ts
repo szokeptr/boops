@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { McpSchema } from "effect/ai";
 
-import { requestUserAction } from "./userActionRequest.ts";
+import { approveChildBot, requestUserAction } from "./userActionRequest.ts";
 
 const input = {
   title: "Log in to Acme Supplies",
@@ -34,7 +34,7 @@ const harness = (options: {
     } as McpSchema.McpReverseClient),
   });
 
-it.effect("maps the card's answer to done or declined", () =>
+it.effect("maps the card's answer to done or declined, and a child bot's to approved or not", () =>
   Effect.gen(function* () {
     const asked: Array<string> = [];
     const done = yield* requestUserAction(input).pipe(
@@ -46,6 +46,19 @@ it.effect("maps the card's answer to done or declined", () =>
       Effect.provide(harness({ elicitation: true, action: "decline" })),
     );
     assert.deepEqual(declined, { status: "declined" });
+
+    const brief = "You are Pace, Dana's marathon coach.";
+    const child = { parentName: "Wren", childName: "Pace", mode: "brief", brief } as const;
+    assert.isTrue(
+      yield* approveChildBot(child).pipe(Effect.provide(harness({ elicitation: true, asked }))),
+    );
+    assert.include(asked[1], "Pace");
+    assert.include(asked[1], brief);
+    assert.isFalse(
+      yield* approveChildBot(child).pipe(
+        Effect.provide(harness({ elicitation: true, action: "decline" })),
+      ),
+    );
   }),
 );
 
