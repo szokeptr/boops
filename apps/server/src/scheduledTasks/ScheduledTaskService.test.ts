@@ -4,6 +4,7 @@ import * as NodeUtil from "node:util";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it, vi } from "@effect/vitest";
 import {
+  type OrchestrationV2ServerCommand,
   ProjectId,
   ProviderInstanceId,
   ScheduledTaskError,
@@ -640,12 +641,14 @@ it.effect("every trigger kind queues the prompt into the routine's thread with i
             text: input.text,
             mode: input.mode,
             routine: input.routine,
+            sessionRollover: input.sessionRollover,
           },
           {
             threadId,
             text: `Run ${title}`,
             mode: "queue",
             routine: { taskId: ScheduledTaskId.make(`task:${title}`), name: title, trigger },
+            sessionRollover: undefined,
           },
           title,
         );
@@ -668,70 +671,125 @@ it.effect("every trigger kind queues the prompt into the routine's thread with i
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
-it.effect("ensureDefaultHeartbeat adds one editable Heartbeat per project", () =>
-  Effect.gen(function* () {
-    const projectId = ProjectId.make("project:bot");
-    const threadId = ThreadId.make("thread:bot");
-    const otherThreadId = ThreadId.make("thread:elsewhere");
-    const layer = ScheduledTaskService.layer.pipe(
-      Layer.provide(
-        routineDependencies(
-          {
-            getThreadShell: (id) =>
-              Effect.succeed(
-                id === threadId || id === otherThreadId
-                  ? ({
-                      id,
-                      projectId: id === threadId ? projectId : ProjectId.make("project:other"),
-                      deletedAt: null,
-                      modelSelection: routineModelSelection,
-                      runtimeMode: "approval-required",
-                      interactionMode: "default",
-                    } as never)
-                  : null,
-              ),
-          },
-          new Map(),
+it.effect(
+  "ensureDefaultHeartbeat runs one editable Heartbeat in the bot's own background thread",
+  () =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("project:bot");
+      const mainThreadId = ThreadId.make("thread:bot");
+      const otherThreadId = ThreadId.make("thread:elsewhere");
+      const heartbeatThreadId = ScheduledTaskService.heartbeatThreadId(projectId);
+      const created = yield* Ref.make<ReadonlyArray<OrchestrationV2ServerCommand>>([]);
+      const sent = yield* Ref.make<
+        ReadonlyArray<ThreadManagementService.ThreadManagementSendInput>
+      >([]);
+      const shell = (id: ThreadId, inProject: ProjectId) =>
+        ({
+          id,
+          projectId: inProject,
+          deletedAt: null,
+          modelSelection: routineModelSelection,
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+        }) as never;
+      const layer = ScheduledTaskService.layer.pipe(
+        Layer.provide(
+          routineDependencies(
+            {
+              getThreadShell: (id) =>
+                id === mainThreadId
+                  ? Effect.succeed(shell(id, projectId))
+                  : id === otherThreadId
+                    ? Effect.succeed(shell(id, ProjectId.make("project:other")))
+                    : Ref.get(created).pipe(
+                        Effect.map((commands) =>
+                          commands.some(
+                            (command) =>
+                              command.type === "thread.create" && command.threadId === id,
+                          )
+                            ? shell(id, projectId)
+                            : null,
+                        ),
+                      ),
+              dispatch: (command) =>
+                Ref.update(created, (all) => [...all, command]).pipe(Effect.as({} as never)),
+              sendToThread: (input) =>
+                Ref.update(sent, (all) => [...all, input]).pipe(Effect.as({} as never)),
+            },
+            new Map(),
+          ),
         ),
-      ),
-    );
-    yield* Effect.gen(function* () {
-      const service = yield* ScheduledTaskService.ScheduledTaskService;
-      const misplaced = yield* service
-        .ensureDefaultHeartbeat({ projectId, threadId: otherThreadId })
-        .pipe(Effect.flip);
-      assert.include(misplaced.message, "not in this project");
+      );
+      yield* Effect.gen(function* () {
+        const service = yield* ScheduledTaskService.ScheduledTaskService;
+        const misplaced = yield* service
+          .ensureDefaultHeartbeat({ projectId, mainThreadId: otherThreadId })
+          .pipe(Effect.flip);
+        assert.include(misplaced.message, "not in this project");
 
-      const { task } = yield* service.ensureDefaultHeartbeat({ projectId, threadId });
-      assert.deepInclude(task, {
-        title: "Heartbeat",
-        prompt: ScheduledTaskService.DEFAULT_HEARTBEAT_PROMPT,
-        enabled: true,
-        schedule: { type: "interval", everyMs: 6 * 60 * 60 * 1000 },
-        projectId,
-        threadId,
-        runtimeMode: "approval-required",
-      });
-      assert.isNotNull(task.nextRunAt);
+        const { task } = yield* service.ensureDefaultHeartbeat({ projectId, mainThreadId });
+        assert.deepInclude(task, {
+          title: "Heartbeat",
+          prompt: ScheduledTaskService.DEFAULT_HEARTBEAT_PROMPT,
+          enabled: true,
+          schedule: { type: "interval", everyMs: 6 * 60 * 60 * 1000 },
+          projectId,
+          threadId: heartbeatThreadId,
+          runtimeMode: "approval-required",
+        });
+        assert.isNotNull(task.nextRunAt);
+        assert.deepEqual(
+          (yield* Ref.get(created)).map((command) =>
+            command.type === "thread.create"
+              ? [command.threadId, command.projectId, command.title, command.createdBy]
+              : command.type,
+          ),
+          [[heartbeatThreadId, projectId, "Heartbeat", "system"]],
+        );
 
-      const again = yield* service.ensureDefaultHeartbeat({ projectId, threadId });
-      assert.equal(again.task.id, task.id);
-      assert.lengthOf((yield* service.list()).tasks, 1);
+        const again = yield* service.ensureDefaultHeartbeat({ projectId, mainThreadId });
+        assert.equal(again.task.id, task.id);
+        assert.lengthOf((yield* service.list()).tasks, 1);
+        assert.lengthOf(yield* Ref.get(created), 1);
 
-      // An edit survives later calls; it is a routine like any other.
-      yield* service.upsert({
-        ...task,
-        threadId,
-        title: "Slow heartbeat",
-        schedule: { type: "interval", everyMs: 12 * 60 * 60 * 1000 },
-        requireExisting: true,
-      });
-      const edited = yield* service.ensureDefaultHeartbeat({ projectId, threadId });
-      assert.equal(edited.task.title, "Slow heartbeat");
-      assert.lengthOf((yield* service.list()).tasks, 1);
+        // A run lands in the heartbeat thread, and its session ends with it.
+        yield* service.runNow({ id: task.id });
+        assert.deepEqual(
+          (yield* Ref.get(sent)).map((input) => [input.threadId, input.sessionRollover]),
+          [[heartbeatThreadId, { reason: "heartbeat" }]],
+        );
 
-      yield* service.delete({ id: task.id });
-      assert.lengthOf((yield* service.list()).tasks, 0);
-    }).pipe(Effect.provide(layer));
-  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+        // A heartbeat made when it ran in the main conversation moves, prompt and all.
+        const legacyPrompt =
+          "Heartbeat. Check your memory notes and the commitments you made to the user, and do anything that is due. Tell the user only what needs them; if nothing does, reply in one short line.";
+        yield* service.upsert({
+          ...task,
+          threadId: mainThreadId,
+          prompt: legacyPrompt,
+          requireExisting: true,
+        });
+        yield* service.moveHeartbeatOffMainThread({ projectId, mainThreadId });
+        const [moved] = (yield* service.list()).tasks;
+        assert.deepInclude(moved, {
+          threadId: heartbeatThreadId,
+          prompt: ScheduledTaskService.DEFAULT_HEARTBEAT_PROMPT,
+        });
+
+        // An edit survives later calls; a renamed one is the user's and stays where they put it.
+        yield* service.upsert({
+          ...task,
+          threadId: mainThreadId,
+          title: "Slow heartbeat",
+          schedule: { type: "interval", everyMs: 12 * 60 * 60 * 1000 },
+          requireExisting: true,
+        });
+        yield* service.moveHeartbeatOffMainThread({ projectId, mainThreadId });
+        const edited = yield* service.ensureDefaultHeartbeat({ projectId, mainThreadId });
+        assert.deepInclude(edited.task, { title: "Slow heartbeat", threadId: mainThreadId });
+        assert.lengthOf((yield* service.list()).tasks, 1);
+
+        yield* service.delete({ id: task.id });
+        assert.lengthOf((yield* service.list()).tasks, 0);
+      }).pipe(Effect.provide(layer));
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );

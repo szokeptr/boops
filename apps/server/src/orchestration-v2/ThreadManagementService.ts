@@ -27,6 +27,7 @@ import {
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2CreationSource,
   type OrchestrationV2Run,
+  type OrchestrationV2SessionRollover,
   type OrchestrationV2ThreadShellSnapshot,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadTranscript,
@@ -145,6 +146,8 @@ export interface ThreadManagementSendInput {
   readonly senderThreadId?: ThreadId;
   /** Set when the message is one bot's to its parent or child bot. */
   readonly bot?: BotMessageOrigin;
+  /** Ends the provider session when this message's run ends. */
+  readonly sessionRollover?: OrchestrationV2SessionRollover;
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly modelSelection?: ModelSelection;
@@ -852,6 +855,7 @@ const make = Effect.gen(function* () {
       messageId: input.messageId,
       ...(input.routine === undefined ? {} : { routine: input.routine }),
       ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
+      ...(input.sessionRollover === undefined ? {} : { sessionRollover: input.sessionRollover }),
       text: input.text,
       ...(input.bot === undefined
         ? {}

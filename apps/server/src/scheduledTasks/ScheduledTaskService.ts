@@ -80,7 +80,17 @@ const PROMPT_TOO_LONG = "The filled-in prompt is too long.";
 // Bots share the user's provider subscription rate limits, so the default wakes rarely.
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export const DEFAULT_HEARTBEAT_PROMPT =
+  "Heartbeat. This runs in your background Heartbeat thread, which the user does not read. Check your memory notes and the commitments you made to the user, and do anything that is due. If nothing needs the user, end in one short line. If something does, call tell_main_conversation once with a short note of what needs them.";
+// Heartbeats made before they moved off the main conversation; retargeting swaps it for the default.
+const LEGACY_HEARTBEAT_PROMPT =
   "Heartbeat. Check your memory notes and the commitments you made to the user, and do anything that is due. Tell the user only what needs them; if nothing does, reply in one short line.";
+const HEARTBEAT_TITLE = "Heartbeat";
+
+export const heartbeatTaskId = (projectId: ProjectId) =>
+  ScheduledTaskId.make(`heartbeat:${projectId}`);
+
+/** One background thread per bot, so its heartbeat runs never show in the main conversation. */
+export const heartbeatThreadId = (projectId: ProjectId) => ThreadId.make(`heartbeat:${projectId}`);
 const NO_TARGET_THREAD =
   "This routine has no target thread. Edit it to post into a bot's conversation.";
 const WEBHOOK_DELIVERY_RETENTION = 50;
@@ -290,13 +300,19 @@ export class ScheduledTaskService extends Context.Service<
       request: WebhookTriggerRequest,
     ) => Effect.Effect<WebhookTriggerResult, ScheduledTaskError>;
     /**
-     * Creates the project's Heartbeat routine on `threadId`, or returns the one it already has.
-     * Users and bots edit or delete it like any routine.
+     * Creates the bot's Heartbeat routine on its own background thread, or returns the one it
+     * already has, moving one that still targets the main thread. Users and bots edit or delete
+     * it like any routine.
      */
     readonly ensureDefaultHeartbeat: (input: {
       readonly projectId: ProjectId;
-      readonly threadId: ThreadId;
+      readonly mainThreadId: ThreadId;
     }) => Effect.Effect<ScheduledTaskMutationResult, ScheduledTaskError>;
+    /** Moves a Heartbeat routine that still targets the main thread; creates nothing. */
+    readonly moveHeartbeatOffMainThread: (input: {
+      readonly projectId: ProjectId;
+      readonly mainThreadId: ThreadId;
+    }) => Effect.Effect<void, ScheduledTaskError>;
   }
 >()("boops/scheduledTasks/ScheduledTaskService") {}
 
@@ -931,6 +947,10 @@ export const layer = Layer.effect(
               threadId,
               messageId,
               routine,
+              // Each heartbeat starts a fresh session; its notes, not the last run, carry over.
+              ...(threadId === heartbeatThreadId(projectId)
+                ? { sessionRollover: { reason: "heartbeat" as const } }
+                : {}),
               text: prompt,
               attachments: [],
               mode: "queue",
@@ -2476,37 +2496,106 @@ export const layer = Layer.effect(
     });
     yield* scheduler.register("webhook-coalescing", dispatchPending());
 
+    const readMainThread = Effect.fn("ScheduledTaskService.readMainThread")(function* (input: {
+      readonly projectId: ProjectId;
+      readonly mainThreadId: ThreadId;
+    }) {
+      const taskId = heartbeatTaskId(input.projectId);
+      const thread = yield* threadManagement
+        .getThreadShell(input.mainThreadId)
+        .pipe(
+          Effect.mapError((cause) =>
+            taskError("Could not read the bot's conversation.", { taskId, cause }),
+          ),
+        );
+      if (thread === null || thread.deletedAt !== null || thread.projectId !== input.projectId) {
+        return yield* taskError("The bot's conversation is not in this project.", { taskId });
+      }
+      return thread;
+    });
+
+    // A fixed id makes a retried create find the thread instead of adding a second one.
+    const ensureHeartbeatThread = Effect.fn("ScheduledTaskService.ensureHeartbeatThread")(
+      function* (input: { readonly projectId: ProjectId; readonly mainThreadId: ThreadId }) {
+        const taskId = heartbeatTaskId(input.projectId);
+        const threadId = heartbeatThreadId(input.projectId);
+        const fail = (cause: unknown) =>
+          taskError("Could not create the heartbeat's thread.", { taskId, cause });
+        const existing = yield* threadManagement
+          .getThreadShell(threadId)
+          .pipe(Effect.mapError(fail));
+        if (existing !== null) {
+          if (existing.deletedAt !== null || existing.projectId !== input.projectId) {
+            return yield* taskError("The heartbeat's thread was deleted.", { taskId });
+          }
+          return threadId;
+        }
+        const main = yield* readMainThread(input);
+        yield* threadManagement
+          .dispatch({
+            type: "thread.create",
+            commandId: CommandId.make(`heartbeat-thread:${input.projectId}`),
+            threadId,
+            projectId: input.projectId,
+            title: HEARTBEAT_TITLE,
+            modelSelection: main.modelSelection,
+            runtimeMode: main.runtimeMode,
+            interactionMode: main.interactionMode,
+            branch: null,
+            worktreePath: null,
+            createdBy: "system",
+            creationSource: "server",
+          })
+          .pipe(Effect.mapError(fail));
+        return threadId;
+      },
+    );
+
+    // Only the untouched default: a renamed routine or one already moved stays where it is.
+    const retargetHeartbeat = Effect.fn("ScheduledTaskService.retargetHeartbeat")(function* (
+      task: ScheduledTask,
+      input: { readonly projectId: ProjectId; readonly mainThreadId: ThreadId },
+    ) {
+      if (task.title !== HEARTBEAT_TITLE || task.threadId !== input.mainThreadId) return task;
+      const threadId = yield* ensureHeartbeatThread(input);
+      const moved = yield* upsert({
+        ...task,
+        threadId,
+        prompt: task.prompt === LEGACY_HEARTBEAT_PROMPT ? DEFAULT_HEARTBEAT_PROMPT : task.prompt,
+        requireExisting: true,
+      });
+      return moved.task;
+    });
+
     const ensureDefaultHeartbeat: ScheduledTaskService["Service"]["ensureDefaultHeartbeat"] =
       Effect.fn("ScheduledTaskService.ensureDefaultHeartbeat")(function* (input) {
         // One id per project, so repeated calls find the routine instead of adding another.
-        const id = ScheduledTaskId.make(`heartbeat:${input.projectId}`);
+        const id = heartbeatTaskId(input.projectId);
         const existing = yield* findTask(id);
-        if (existing !== null) return { task: existing };
-        const thread = yield* threadManagement
-          .getThreadShell(input.threadId)
-          .pipe(
-            Effect.mapError((cause) =>
-              taskError("Could not read the heartbeat's thread.", { taskId: id, cause }),
-            ),
-          );
-        if (thread === null || thread.deletedAt !== null || thread.projectId !== input.projectId) {
-          return yield* taskError("The heartbeat's thread is not in this project.", { taskId: id });
-        }
+        if (existing !== null) return { task: yield* retargetHeartbeat(existing, input) };
+        const main = yield* readMainThread(input);
+        const threadId = yield* ensureHeartbeatThread(input);
         return yield* upsert({
           id,
-          title: "Heartbeat",
+          title: HEARTBEAT_TITLE,
           prompt: DEFAULT_HEARTBEAT_PROMPT,
           enabled: true,
           schedule: { type: "interval", everyMs: DEFAULT_HEARTBEAT_INTERVAL_MS },
           projectId: input.projectId,
-          threadId: input.threadId,
+          threadId,
           workspaceStrategy: { type: "root" },
-          modelSelection: thread.modelSelection,
-          runtimeMode: thread.runtimeMode,
-          interactionMode: thread.interactionMode,
+          modelSelection: main.modelSelection,
+          runtimeMode: main.runtimeMode,
+          interactionMode: main.interactionMode,
           createdBy: "system",
           creationSource: "server",
         });
+      });
+
+    const moveHeartbeatOffMainThread: ScheduledTaskService["Service"]["moveHeartbeatOffMainThread"] =
+      Effect.fn("ScheduledTaskService.moveHeartbeatOffMainThread")(function* (input) {
+        const existing = yield* findTask(heartbeatTaskId(input.projectId));
+        if (existing !== null) yield* retargetHeartbeat(existing, input);
       });
 
     return ScheduledTaskService.of({
@@ -2526,6 +2615,7 @@ export const layer = Layer.effect(
       getWebhookDelivery,
       triggerWebhook,
       ensureDefaultHeartbeat,
+      moveHeartbeatOffMainThread,
     });
   }),
 );

@@ -81,6 +81,9 @@ export type BotMcpMessageChildInput = typeof BotMcpMessageChildInput.Type;
 export const BotMcpReportToParentInput = Schema.Struct({ message: BotMessageText });
 export type BotMcpReportToParentInput = typeof BotMcpReportToParentInput.Type;
 
+export const BotMcpTellMainConversationInput = Schema.Struct({ text: BotMessageText });
+export type BotMcpTellMainConversationInput = typeof BotMcpTellMainConversationInput.Type;
+
 export const BotMcpDelivery = Schema.Struct({
   delivery: Schema.Literals(["started", "queued", "steered", "restarted"]),
 });

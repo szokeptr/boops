@@ -482,7 +482,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ? null
       : scopeProjectRef(ctx.activeThreadEnvironmentId, senderBotProjectId),
   );
-  const senderBotName = senderBot?.title ?? userMessage.bot?.name;
+  // A background thread's note names the thread; a family bot shows its current name.
+  const senderBotName = userMessage.bot?.background
+    ? userMessage.bot.name
+    : (senderBot?.title ?? userMessage.bot?.name);
   const resolvedContext = resolveUserMessageContext({ ...row.message, text: userMessage.text });
   const onEditMessage = ctx.onEditMessage;
   const editable =

@@ -202,6 +202,7 @@ import * as ThreadSettlementService from "./orchestration-v2/ThreadSettlementSer
 import * as IdleCompactionService from "./orchestration-v2/IdleCompactionService.ts";
 import * as SessionRolloverService from "./bots/SessionRolloverService.ts";
 import * as BotPersona from "./bots/BotPersona.ts";
+import * as Bots from "./bots/Bots.ts";
 import * as ThreadPullRequestService from "./orchestration-v2/ThreadPullRequestService.ts";
 import * as RunFinalizationService from "./orchestration-v2/RunFinalizationService.ts";
 import * as ProjectionMaintenance from "./orchestration-v2/ProjectionMaintenance.ts";
@@ -596,6 +597,14 @@ const layerSessionRolloverWorker = Layer.effectDiscard(
   SessionRolloverService.make.pipe(Effect.flatMap((service) => service.start())),
 ).pipe(Layer.provide(ProjectionStoreV2.layer));
 
+// Heartbeats made before they ran in their own thread still post into the main conversation.
+const layerBotHeartbeatMove = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const bots = yield* Bots.Bots;
+    yield* ServerActivation.forkParked(bots.moveHeartbeatsOffMainThreads());
+  }),
+);
+
 const layerBotPersonaWorker = Layer.effectDiscard(
   BotPersona.make.pipe(Effect.flatMap((service) => service.start())),
 ).pipe(Layer.provide(ProjectionStoreV2.layer));
@@ -643,6 +652,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerIdleCompactionWorker,
   layerSessionRolloverWorker,
   layerBotPersonaWorker,
+  layerBotHeartbeatMove,
   StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
   DatabaseStorage.layer.pipe(Layer.provide(ProjectionMaintenance.layer)),
   layerThreadPullRequestWorker,

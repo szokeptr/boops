@@ -2011,7 +2011,10 @@ function renderFeedEntry(
           ) : null}
           {presentation.bot !== undefined ? (
             <View className="mb-1 flex-row items-center gap-1.5 pr-1">
-              <BotAvatarSlot avatar={null} name={presentation.bot.name} status="idle" size={16} />
+              {/* A look drawn from "From Heartbeat" would pass for some other bot. */}
+              {presentation.bot.background ? null : (
+                <BotAvatarSlot avatar={null} name={presentation.bot.name} status="idle" size={16} />
+              )}
               <Text className="font-t3-medium text-2xs text-foreground-muted">
                 {presentation.bot.name}
               </Text>

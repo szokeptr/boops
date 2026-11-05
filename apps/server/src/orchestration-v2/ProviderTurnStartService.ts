@@ -102,7 +102,7 @@ class WorktreeRecreateNoBaseError extends Schema.TaggedError<WorktreeRecreateNoB
 const isProviderTurnStartError = Schema.is(ProviderTurnStartError);
 
 /** The agent reads the routine label from this line; people see it on the message row. */
-const routineHeader = (routine: OrchestrationV2RoutineLabel): string =>
+export const routineHeader = (routine: OrchestrationV2RoutineLabel): string =>
   `[Routine "${routine.name}", trigger: ${routine.trigger}. Sent by a routine, not typed by the user.]`;
 const isProviderAdapterOpenSessionError = Schema.is(
   ProviderAdapter.ProviderAdapterOpenSessionError,
