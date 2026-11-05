@@ -570,6 +570,9 @@ function ThreadDetailBody(
   const unsettleThread = useAtomCommand(threadEnvironment.unsettle, { reportFailure: false });
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
+  const editSentMessage = useAtomCommand(threadEnvironment.editSentMessage, {
+    reportFailure: false,
+  });
   const anyRunStop = useAtomValue(
     props.selectedThreadDetailRef === null
       ? NO_RUN_STOP_ATOM
@@ -587,6 +590,31 @@ function ThreadDetailBody(
     useAtomValue(orchestrationEnvironment.forceStopThread.permissionAtom(props.environmentId)) &&
     props.serverConfig?.environment.capabilities.threadForceStop === true;
   const [forceStoppingKey, setForceStoppingKey] = useState<string | null>(null);
+  const handleEditSentMessage = (message: { readonly id: MessageId; readonly text: string }) => {
+    const threadId = props.selectedThread.id;
+    Dialog.prompt({
+      title: "Edit message",
+      message:
+        "Sending replaces this message and drops everything after it. Files stay as they are.",
+      initialValue: message.text,
+      confirmText: "Send",
+      onConfirm: (text) => {
+        if (text.trim().length === 0 || text.trim() === message.text.trim()) return;
+        void editSentMessage({
+          environmentId: props.environmentId,
+          input: { threadId, messageId: message.id, text },
+        }).then((result) => {
+          if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            Dialog.alert(
+              "Could not edit the message",
+              error instanceof Error ? error.message : undefined,
+            );
+          }
+        });
+      },
+    });
+  };
   // The run that ignored Stop, so a confirmation left open cannot hit a newer run.
   const forceStop = async (runId: RunId | undefined) => {
     const threadKey = selectedThreadKey;
@@ -1454,6 +1482,9 @@ function ThreadDetailBody(
                 // Cancel on the edit banner would discard it.
                 onEditPendingMessage={
                   isProviderSubagent || pendingMessageEditBlocked ? null : handleEditPendingMessage
+                }
+                onEditSentMessage={
+                  isProviderSubagent || !props.canOperateThread ? null : handleEditSentMessage
                 }
                 contentPresentation={props.contentPresentation}
                 threadTitle={props.selectedThread.title}
