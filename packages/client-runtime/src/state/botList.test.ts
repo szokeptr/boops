@@ -162,6 +162,30 @@ describe("deriveBotList", () => {
     });
   });
 
+  it("badges a child with its maker, and its pending approval stays on the child", () => {
+    const childOf = (id: string, title: string, parent: string) => ({
+      ...project(laptop, id, title),
+      parentBotProjectId: ProjectId.make(parent),
+    });
+    const rows = deriveBotList({
+      projects: [
+        project(laptop, "wren", "Wren"),
+        childOf("pace", "Pace", "wren"),
+        childOf("orphan", "Orphan", "deleted-parent"),
+        // Project ids are per environment: the VPS's "wren" is another bot.
+        childOf("stride", "Stride", "wren-on-vps"),
+        project(vps, "wren-on-vps", "VPS Wren"),
+      ],
+      threads: [thread(laptop, "pace", "pace-main", pendingRequest("command"))],
+      machineLabels,
+    });
+    const byId = Object.fromEntries(rows.map((row) => [row.projectId, row]));
+    expect(byId.wren).toMatchObject({ madeBy: null, status: "hatching" });
+    expect(byId.pace).toMatchObject({ madeBy: "Wren", status: "needs-you" });
+    expect(byId.orphan?.madeBy).toBeNull();
+    expect(byId.stride?.madeBy).toBeNull();
+  });
+
   it("orders bots by their main thread's latest message across environments", () => {
     const projects = [
       project(laptop, "quiet", "Quiet"),

@@ -52,6 +52,8 @@ export interface BotRow {
   readonly lastActivityAt: string;
   /** Live threads besides the main one, which the bot's activity view lists. */
   readonly activityThreadCount: number;
+  /** Name of the bot that created this one, for the "made by" badge. */
+  readonly madeBy: string | null;
 }
 
 export interface BotListInput {
@@ -176,6 +178,14 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
     else threadsByProjectKey.set(key, [thread]);
   }
 
+  // Archived parents still name their children; a deleted one leaves no badge.
+  const titlesByProjectKey = new Map(
+    input.projects.map((project) => [
+      scopedProjectKey({ environmentId: project.environmentId, projectId: project.id }),
+      project.title,
+    ]),
+  );
+
   const rows: BotRow[] = [];
   for (const project of input.projects) {
     if (project.archivedAt != null || project.isScratch) continue;
@@ -216,6 +226,15 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
       unread: main !== null && isThreadUnread(main, input.localLastVisitedAt),
       lastActivityAt,
       activityThreadCount: threads.filter((thread) => thread.id !== mainThreadId).length,
+      madeBy:
+        project.parentBotProjectId == null
+          ? null
+          : (titlesByProjectKey.get(
+              scopedProjectKey({
+                environmentId: project.environmentId,
+                projectId: project.parentBotProjectId,
+              }),
+            ) ?? null),
     });
   }
   return rows.sort((a, b) => compareByActivity(a, b, a.key, b.key));
