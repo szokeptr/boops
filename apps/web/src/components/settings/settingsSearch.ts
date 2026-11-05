@@ -928,14 +928,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["address bar duckduckgo google bing brave kagi ecosia custom url"],
   },
   {
-    id: "pull-request-links-open-in-app",
-    title: "Open pull requests in Boops",
-    to: "/settings/diffs",
-    searchTerms: [
-      `pr commit links ${SOURCE_CONTROL_HOST_LABELS} browser external click default pull request view panel`,
-    ],
-  },
-  {
     id: "browser-auto-show-floating-preview",
     title: "Auto-show floating preview",
     to: "/settings/browser",

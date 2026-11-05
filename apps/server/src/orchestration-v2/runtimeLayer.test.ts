@@ -9017,3 +9017,164 @@ it.layer(layerBotsTest)("bot families", (it) => {
       }).pipe(Effect.scoped),
   );
 });
+
+it.layer(layerBotsTest)("archiving and deleting a bot", (it) => {
+  it.effect("archive pauses its routines; unarchive resumes only the ones it paused", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const bots = yield* Bots.Bots;
+      const projects = yield* ProjectService.ProjectService;
+      const tasks = yield* ScheduledTaskService.ScheduledTaskService;
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
+      const bot = yield* bots
+        .create({ name: "Archivist", modelSelection, hatch: false })
+        .pipe(Effect.provideService(HostProcess.HomeDirectory, home));
+      const heartbeat = (yield* tasks.list()).tasks.find(
+        (task) => task.projectId === bot.projectId,
+      )!;
+      const { task: paused } = yield* tasks.upsert({
+        title: "Paused by the user",
+        prompt: "Tidy the notes.",
+        enabled: false,
+        schedule: { type: "interval", everyMs: 3_600_000 },
+        projectId: bot.projectId,
+        threadId: bot.mainThreadId,
+        workspaceStrategy: { type: "root" },
+        modelSelection,
+        runtimeMode: heartbeat.runtimeMode,
+        interactionMode: heartbeat.interactionMode,
+      });
+      const routines = () =>
+        tasks
+          .list()
+          .pipe(
+            Effect.map((result) =>
+              Object.fromEntries(
+                result.tasks
+                  .filter((task) => task.projectId === bot.projectId)
+                  .map((task) => [task.id, task]),
+              ),
+            ),
+          );
+      const archivedAt = () =>
+        projects
+          .getById(bot.projectId)
+          .pipe(Effect.map((project) => Option.getOrThrow(project).archivedAt ?? null));
+
+      assert.deepEqual(yield* bots.archive({ projectId: bot.projectId }), {
+        projectIds: [bot.projectId],
+      });
+      const whileArchived = yield* routines();
+      assert.isNotNull(yield* archivedAt());
+      assert.isFalse(whileArchived[heartbeat.id]!.enabled);
+      assert.isNull(whileArchived[heartbeat.id]!.nextRunAt);
+      assert.isFalse(whileArchived[paused.id]!.enabled);
+
+      yield* bots.unarchive({ projectId: bot.projectId });
+      const restored = yield* routines();
+      assert.isNull(yield* archivedAt());
+      assert.isTrue(restored[heartbeat.id]!.enabled);
+      assert.isNotNull(restored[heartbeat.id]!.nextRunAt);
+      assert.isFalse(restored[paused.id]!.enabled);
+
+      // A routine the user switches off while archived stays off after unarchiving.
+      yield* bots.archive({ projectId: bot.projectId });
+      yield* tasks.setEnabled({ id: heartbeat.id, enabled: true });
+      yield* tasks.setEnabled({ id: heartbeat.id, enabled: false });
+      yield* bots.unarchive({ projectId: bot.projectId });
+      assert.isFalse((yield* routines())[heartbeat.id]!.enabled);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("includeChildren archives the live bots below it and pauses their routines", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const bots = yield* Bots.Bots;
+      const projects = yield* ProjectService.ProjectService;
+      const tasks = yield* ScheduledTaskService.ScheduledTaskService;
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
+      const inHome = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        effect.pipe(Effect.provideService(HostProcess.HomeDirectory, home));
+      const approve = () => Effect.succeed(true);
+      const parent = yield* inHome(bots.create({ name: "Wren", modelSelection, hatch: false }));
+      const child = yield* inHome(
+        bots.createChild(
+          { parentProjectId: parent.projectId, name: "Pace", mode: "interview" },
+          approve,
+        ),
+      );
+      const grandchild = yield* inHome(
+        bots.createChild(
+          { parentProjectId: child.projectId, name: "Stride", mode: "interview" },
+          approve,
+        ),
+      );
+
+      assert.deepEqual(yield* bots.archive({ projectId: parent.projectId }), {
+        projectIds: [parent.projectId],
+      });
+      yield* bots.unarchive({ projectId: parent.projectId });
+      assert.deepEqual(
+        yield* bots.archive({ projectId: parent.projectId, includeChildren: true }),
+        { projectIds: [parent.projectId, child.projectId, grandchild.projectId] },
+      );
+      const routines = (yield* tasks.list()).tasks;
+      for (const bot of [parent, child, grandchild]) {
+        const project = Option.getOrThrow(yield* projects.getById(bot.projectId));
+        assert.isNotNull(project.archivedAt ?? null);
+        assert.isTrue(
+          routines
+            .filter((task) => task.projectId === bot.projectId)
+            .every((task) => !task.enabled),
+        );
+      }
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "delete removes the project, threads and routines, and the folder only when asked",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const bots = yield* Bots.Bots;
+        const projects = yield* ProjectService.ProjectService;
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const tasks = yield* ScheduledTaskService.ScheduledTaskService;
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
+        const inHome = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+          effect.pipe(Effect.provideService(HostProcess.HomeDirectory, home));
+        const kept = yield* inHome(bots.create({ name: "Kept", modelSelection, hatch: false }));
+        const gone = yield* inHome(bots.create({ name: "Gone", modelSelection, hatch: false }));
+
+        for (const [bot, removeHomeFolder] of [
+          [kept, false],
+          [gone, true],
+        ] as const) {
+          yield* inHome(bots.delete({ projectId: bot.projectId, removeHomeFolder }));
+          assert.isTrue(Option.isNone(yield* projects.getById(bot.projectId)));
+          assert.isNotNull((yield* orchestrator.getThreadShell(bot.mainThreadId))?.deletedAt);
+          assert.isEmpty(
+            (yield* tasks.list()).tasks.filter((task) => task.projectId === bot.projectId),
+          );
+        }
+        assert.isTrue(yield* fileSystem.exists(path.join(home, "pocks", "kept", "memory")));
+        assert.isFalse(yield* fileSystem.exists(path.join(home, "pocks", "gone")));
+
+        // A project rooted outside ~/pocks keeps both its folder and its project.
+        const outside = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-outside-" });
+        const project = yield* projects.create({
+          commandId: CommandId.make("bot-outside-pocks"),
+          projectId: ProjectId.make("bot-outside-pocks"),
+          title: "Outside",
+          workspaceRoot: outside,
+        });
+        const refused = yield* inHome(
+          bots.delete({ projectId: project.id, removeHomeFolder: true }),
+        ).pipe(Effect.flip);
+        assert.equal(refused._tag, "BotFolderNotRemovableError");
+        assert.isTrue(Option.isSome(yield* projects.getById(project.id)));
+        assert.isTrue(yield* fileSystem.exists(outside));
+      }).pipe(Effect.scoped),
+  );
+});

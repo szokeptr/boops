@@ -14,6 +14,7 @@ import {
   botMonogram,
   deriveBotActivity,
   deriveBotList,
+  liveBotDescendants,
   resolveBotMainThreadId,
 } from "./botList.ts";
 import { presentThreadShell, scopeProject } from "./models.ts";
@@ -113,6 +114,9 @@ describe("deriveBotList", () => {
       project(laptop, "new"),
       project(laptop, "empty"),
       project(laptop, "dozing"),
+      // Servers that record the persona: replies alone do not finish hatching.
+      { ...project(laptop, "interviewing"), personaReady: false },
+      { ...project(laptop, "hatched"), personaReady: true },
     ];
     const lastWord = message("see you", "2026-06-10T00:00:00.000Z");
     const threads = [
@@ -135,6 +139,12 @@ describe("deriveBotList", () => {
       thread(laptop, "approval", "approval-main", pendingRequest("command")),
       thread(laptop, "input", "input-main", pendingRequest("user_input")),
       thread(laptop, "background", "background-main", { latestRunId: runId, status: "completed" }),
+      thread(laptop, "interviewing", "interviewing-main", {
+        latestRunId: runId,
+        status: "completed",
+        ...message("what should I call myself?", "2026-06-11T00:00:00.000Z"),
+      }),
+      thread(laptop, "hatched", "hatched-main", message("hi", "2026-06-11T00:00:00.000Z")),
       thread(laptop, "background", "background-run", {
         createdAt: at("2026-06-05T00:00:00.000Z"),
         ...pendingRequest("command"),
@@ -159,6 +169,8 @@ describe("deriveBotList", () => {
       new: "hatching",
       empty: "hatching",
       dozing: "dozing",
+      interviewing: "hatching",
+      hatched: "idle",
     });
   });
 
@@ -184,6 +196,17 @@ describe("deriveBotList", () => {
     expect(byId.pace).toMatchObject({ madeBy: "Wren", status: "needs-you" });
     expect(byId.orphan?.madeBy).toBeNull();
     expect(byId.stride?.madeBy).toBeNull();
+    // Archiving Wren with its children takes Pace and Pace's own child, not the VPS's bots.
+    const projects = [
+      project(laptop, "wren", "Wren"),
+      childOf("pace", "Pace", "wren"),
+      childOf("lap", "Lap", "pace"),
+      { ...childOf("old", "Old", "wren"), archivedAt: "2026-06-02T00:00:00.000Z" },
+      childOf("stride", "Stride", "wren-on-vps"),
+    ];
+    expect(
+      liveBotDescendants(projects, { environmentId: laptop, projectId: ProjectId.make("wren") }),
+    ).toEqual(["pace", "lap"]);
   });
 
   it("orders bots by their main thread's latest message across environments", () => {

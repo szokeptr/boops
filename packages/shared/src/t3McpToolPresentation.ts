@@ -368,7 +368,12 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   t3_project_read: tool(["Read", "Reading", "Read", "a project"], "project-read"),
   t3_project_create: tool(["Register", "Registering", "Registered", "a project"], "project-create"),
   t3_project_update: tool(["Update", "Updating", "Updated", "a project"], "project-update"),
-  t3_project_delete: tool(["Delete", "Deleting", "Deleted", "a project"], "project-delete"),
+  t3_bot_archive: tool(
+    ["Suggest archiving", "Suggesting archiving", "Suggested archiving", "a bot"],
+    "project-update",
+  ),
+  t3_bot_unarchive: tool(["Unarchive", "Unarchiving", "Unarchived", "a bot"], "project-update"),
+  t3_bot_delete: tool(["Delete", "Deleting", "Deleted", "a bot"], "project-delete"),
   t3_project_clone: tool(["Clone", "Cloning", "Cloned", "a repository"], "project-clone"),
   t3_attachment_prepare_upload: tool(
     ["Prepare", "Preparing", "Prepared", "an attachment upload"],

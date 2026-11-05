@@ -29,9 +29,9 @@ import * as ThreadLaunchService from "../../../orchestration-v2/ThreadLaunchServ
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
+import * as Bots from "../../../bots/Bots.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
-import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
@@ -88,12 +88,14 @@ const ProjectCreateTool = Tool.make("t3_project_create", {
 }).annotate(Tool.Destructive, true);
 // Bot identity is set from the clients until agents get an approval gate for it. Autonomy and
 // the bot family fields stay client-only for good: a bot must not lift its own limits.
+// Archiving goes through t3_bot_archive, which pauses routines and asks the user first.
 const {
   avatar: _avatar,
   mainThreadId: _mainThreadId,
   autonomy: _autonomy,
   parentBotProjectId: _parentBotProjectId,
   canCreateBotsWithoutAsking: _canCreateBotsWithoutAsking,
+  archived: _archived,
   ...projectUpdateFields
 } = ProjectUpdatePayload.fields;
 const ProjectUpdateTool = Tool.make("t3_project_update", {
@@ -105,16 +107,52 @@ const ProjectUpdateTool = Tool.make("t3_project_update", {
     ...projectUpdateFields,
   }),
 }).annotate(Tool.Destructive, true);
-const ProjectDeleteTool = Tool.make("t3_project_delete", {
+const BotArchiveTool = Tool.make("t3_bot_archive", {
   ...shared,
-  description: "Delete one project. Nonempty needs `force: true`. Folder on disk stays.",
+  description:
+    "Ask the user to archive a bot: you, or one you created. They approve or decline on a card. Archiving pauses its routines and hides it; its conversation and folder stay. Bots cannot delete bots.",
   parameters: Schema.Struct({
-    environmentId: OrchestratorMcpEnvironmentTarget,
-    projectId: ProjectId,
-    force: Schema.optionalKey(Schema.Boolean),
+    projectId: Schema.optional(
+      ProjectId.annotate({ description: "The bot's project. Omit for yourself." }),
+    ),
+    includeChildren: Schema.optional(
+      Schema.Boolean.annotate({ description: "Also archive the bots it created." }),
+    ),
+    reason: TrimmedNonEmptyString.check(Schema.isMaxLength(500)).annotate({
+      description: "Why, shown on the card.",
+    }),
   }),
-  dependencies: [...shared.dependencies, ProjectCloneTracker.ProjectCloneTracker],
-}).annotate(Tool.Destructive, true);
+  success: Schema.Struct({
+    status: Schema.Literals(["archived", "declined"]),
+    projectIds: Schema.Array(ProjectId),
+  }),
+  dependencies: [...shared.dependencies, Bots.Bots],
+})
+  .annotate(Tool.Title, "Suggest archiving a bot")
+  .annotate(Tool.Destructive, false);
+// Unarchive and delete are the user's: outside MCP clients see them, bots never do.
+const BotUnarchiveTool = Tool.make("t3_bot_unarchive", {
+  ...shared,
+  description: "Unarchive a bot and resume the routines archiving paused.",
+  parameters: Schema.Struct({ projectId: ProjectId }),
+  success: Schema.Struct({ projectId: ProjectId }),
+  dependencies: [...shared.dependencies, Bots.Bots],
+})
+  .annotate(Tool.Destructive, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromThreads);
+const BotDeleteTool = Tool.make("t3_bot_delete", {
+  ...shared,
+  description:
+    "Delete a bot's routines, threads and project. `removeHomeFolder` also deletes its ~/pocks folder. Permanent.",
+  parameters: Schema.Struct({
+    projectId: ProjectId,
+    removeHomeFolder: Schema.optional(Schema.Boolean),
+  }),
+  success: Schema.Struct({ projectId: ProjectId }),
+  dependencies: [...shared.dependencies, Bots.Bots],
+})
+  .annotate(Tool.Destructive, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromThreads);
 const ProjectCloneTool = Tool.make("t3_project_clone", {
   ...shared,
   description:
@@ -194,6 +232,8 @@ export const ProjectToolkit = Toolkit.make(
   ProjectReadTool,
   ProjectCreateTool,
   ProjectUpdateTool,
-  ProjectDeleteTool,
+  BotArchiveTool,
+  BotUnarchiveTool,
+  BotDeleteTool,
   ProjectCloneTool,
 );

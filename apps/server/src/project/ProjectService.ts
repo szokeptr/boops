@@ -43,6 +43,8 @@ export interface ProjectCreateInput extends ProjectCreatePayload {
 export interface ProjectUpdateInput extends ProjectUpdatePayload {
   readonly commandId: CommandId;
   readonly projectId: ProjectId;
+  /** Server-only: clients and agents cannot claim a bot has hatched. */
+  readonly personaReady?: boolean;
 }
 
 export interface ProjectBootstrapInput extends ProjectCreateInput {}
@@ -186,6 +188,7 @@ export const make = Effect.gen(function* () {
     autonomy: row.autonomy,
     parentBotProjectId: row.parentBotProjectId,
     canCreateBotsWithoutAsking: row.canCreateBotsWithoutAsking,
+    personaReady: row.personaReady,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -407,6 +410,7 @@ export const make = Effect.gen(function* () {
         ...(input.canCreateBotsWithoutAsking === undefined
           ? {}
           : { canCreateBotsWithoutAsking: input.canCreateBotsWithoutAsking }),
+        ...(input.personaReady === undefined ? {} : { personaReady: input.personaReady }),
       });
       if (workspaceRoot !== previousRoot) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);

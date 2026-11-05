@@ -470,9 +470,12 @@ const pastedSecret = (name: string, input: Readonly<Record<string, unknown>>) =>
 const hiddenFromSubagents = enabledWhen(McpInvocationContext.hiddenFromSubagents);
 // The Linked environments beta starts off, and T3 lists its tools only while it is on.
 const hiddenWhileLinksOff = enabledWhen(McpInvocationContext.hiddenWhileLinksOff);
+// Every eval agent runs in a thread, so it never sees the user's own tools, such as deleting a bot.
+const hiddenFromThreads = enabledWhen(McpInvocationContext.hiddenFromThreads);
 const visibleT3Tools = (options: { readonly subagent?: boolean; readonly links?: boolean }) =>
   t3Tools.filter(
     (tool) =>
+      !hiddenFromThreads.has(tool.name) &&
       (options.links === true || !hiddenWhileLinksOff.has(tool.name)) &&
       !(options.subagent === true && hiddenFromSubagents.has(tool.name)),
   );

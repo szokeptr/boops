@@ -48,6 +48,13 @@ const state = vi.hoisted(() => ({
         input: DeleteProjectInput;
       }) => Promise<AsyncResult.Success<void>>
     >(),
+  archiveBot:
+    vi.fn<
+      (request: {
+        environmentId: EnvironmentId;
+        input: { projectId: ProjectId };
+      }) => Promise<AsyncResult.Success<{ projectIds: ProjectId[] }>>
+    >(),
   confirm: vi.fn<() => Promise<boolean>>(),
   releaseUploads: vi.fn(),
   clearDraft: vi.fn(),
@@ -92,12 +99,13 @@ vi.mock(import("~/state/projects"), async (original) => {
       ...actual.projectEnvironment,
       update: "update",
       delete: "delete",
+      archiveBot: "archiveBot",
     } as unknown as typeof actual.projectEnvironment,
   };
 });
 vi.mock(import("~/state/use-atom-command"), async (original) => ({
   ...(await original()),
-  useAtomCommand: ((command: "update" | "delete") => state[command]) as never,
+  useAtomCommand: ((command: "update" | "delete" | "archiveBot") => state[command]) as never,
 }));
 vi.mock(import("~/hooks/useSettings"), async (original) => ({
   ...(await original()),
@@ -208,6 +216,9 @@ function setup() {
     return AsyncResult.success(undefined);
   });
   state.delete.mockResolvedValue(AsyncResult.success(undefined));
+  state.archiveBot.mockImplementation(async ({ input }) =>
+    AsyncResult.success({ projectIds: [input.projectId] }),
+  );
   state.confirm.mockResolvedValue(true);
   useComposerDraftStore.setState({ clearProjectDraftThreadId: state.clearDraft });
 }
@@ -334,13 +345,12 @@ describe("project organization", () => {
     setup();
     await using _screen = await mountPanel({ machine: primaryId });
     await userEvent.click(page.getByRole("button", { name: "Archive" }));
-    await vi.waitFor(() => expect(state.update).toHaveBeenCalledTimes(2));
-    expect(
-      state.update.mock.calls.map(([request]) => [request.environmentId, request.input.archived]),
-    ).toEqual([
-      [primaryId, true],
-      [remoteId, true],
+    await vi.waitFor(() => expect(state.archiveBot).toHaveBeenCalledTimes(2));
+    expect(state.archiveBot.mock.calls.map(([request]) => request.environmentId)).toEqual([
+      primaryId,
+      remoteId,
     ]);
+    expect(state.update).not.toHaveBeenCalled();
   });
 });
 
@@ -647,24 +657,8 @@ describe("project settings scope", () => {
       .toBeVisible();
     await expect.element(page.getByText(message, { exact: true })).not.toBeInTheDocument();
     await expect
-      .element(page.getByRole("button", { name: "Remove project", exact: true }))
+      .element(page.getByRole("button", { name: "Delete bot", exact: true }))
       .toBeEnabled();
-  });
-});
-
-it("returns to the project overview after removal, clearing the selection but keeping the environment", async () => {
-  setup();
-  state.projects = [state.projects[1]!];
-  await using screen = await mountPanel({ machine: remoteId, checkout: "remote:/work/remote" });
-  const removeProject = [...screen.container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Remove project",
-  )!;
-
-  await userEvent.click(removeProject);
-
-  await vi.waitFor(() => {
-    expect(screen.router.state.location.pathname).toBe("/settings/projects");
-    expect(screen.router.state.location.search).toEqual({ machine: remoteId });
   });
 });
 

@@ -71,3 +71,19 @@ export const requestUserAction = Effect.fn("McpUserActionRequest.request")(funct
 /** The card a parent bot's turn shows before it creates a child, unless it may skip asking. */
 export const approveChildBot = (approval: BotChildApproval) =>
   askWithCard(childBotCardMessage(approval));
+
+const archiveCardMessage = (input: {
+  readonly name: string;
+  readonly reason: string;
+  readonly includeChildren: boolean;
+}) =>
+  [
+    `Archive ${input.name}${input.includeChildren ? " and the bots it created" : ""}?`,
+    input.reason,
+    "Archiving pauses its routines and hides it from your bots. Its conversation and home folder stay, and you can unarchive it from Settings.",
+    "Approve to archive, or Decline.",
+  ].join("\n\n");
+
+/** The card a bot's suggestion to archive itself, or a bot it created, shows. True to archive. */
+export const approveBotArchive = (input: Parameters<typeof archiveCardMessage>[0]) =>
+  askWithCard(archiveCardMessage(input));

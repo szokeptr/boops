@@ -4906,6 +4906,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             activityRunStatus: shell?.activityRunStatus ?? null,
             activeRunId: shell?.activeRunId ?? null,
             latestUserMessageAt: shell?.latestUserMessageAt != null,
+            latestVisibleMessage: shell?.latestVisibleMessage?.text ?? null,
           }));
         });
         const visible = {
@@ -4913,12 +4914,14 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           activityRunStatus: "running" as const,
           activeRunId: runId,
           latestUserMessageAt: true,
+          latestVisibleMessage: text as string | null,
         };
         const hidden = {
           latestRunId: null,
           activityRunStatus: null,
           activeRunId: null,
           latestUserMessageAt: false,
+          latestVisibleMessage: null,
         };
         assert.deepStrictEqual(yield* presented, [
           silent ? hidden : visible,
@@ -4973,8 +4976,35 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         assert.deepStrictEqual(
           yield* presented,
           [visible, visible].map((shell) =>
-            silent ? { ...shell, latestUserMessageAt: false } : shell,
+            silent ? { ...shell, latestUserMessageAt: false, latestVisibleMessage: null } : shell,
           ),
+        );
+
+        // Bot rows preview the conversation's last word, which is usually the reply.
+        const replyAt = DateTime.add(now, { seconds: 1 });
+        yield* projectionStore.apply({
+          id: EventId.make(`event:projection-shell-silent:${key}:reply`),
+          type: "message.updated",
+          threadId,
+          occurredAt: replyAt,
+          payload: {
+            createdBy: "agent",
+            creationSource: "server",
+            id: MessageId.make(`message:projection-shell-silent:${key}:reply`),
+            threadId,
+            runId,
+            nodeId: null,
+            role: "assistant",
+            text: "Done.",
+            attachments: [],
+            streaming: false,
+            createdAt: replyAt,
+            updatedAt: replyAt,
+          },
+        });
+        assert.deepStrictEqual(
+          (yield* presented).map((shell) => shell.latestVisibleMessage),
+          ["Done.", "Done."],
         );
       }),
   );

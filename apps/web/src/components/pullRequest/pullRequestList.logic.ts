@@ -1,6 +1,5 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 
-import { resolvePullRequestAuthorFilter } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   PullRequestListEntry,
@@ -14,7 +13,6 @@ import type {
   PullRequestInvolvement,
   PullRequestLabel,
   PullRequestListCursors,
-  PullRequestListFilters,
   PullRequestListState,
   PullRequestState,
 } from "@t3tools/contracts";
@@ -73,54 +71,6 @@ function normalize(value: string | null | undefined): string | null {
 export function pullRequestLabelColor(color: string | null): string | null {
   const hex = color?.trim().replace(/^#/, "") ?? "";
   return /^[0-9a-fA-F]{6}$/.test(hex) ? `#${hex}` : null;
-}
-
-export function collectPullRequestListFacets(
-  entries: ReadonlyArray<PullRequestListEntry>,
-  state: PullRequestListState,
-) {
-  const authors = new Map<string, PullRequestAuthorFacet>();
-  const labels = new Map<string, PullRequestLabelFacet>();
-  const uniqueEntries = new Map(entries.map((entry) => [pullRequestEntryKey(entry), entry]));
-  for (const entry of uniqueEntries.values()) {
-    const inState = state === "all" || entry.state === state;
-    if (entry.author !== null) {
-      const key = normalize(entry.author.login);
-      if (key !== null) {
-        const held = authors.get(key);
-        authors.set(key, {
-          actor: held?.actor ?? entry.author,
-          count: (held?.count ?? 0) + Number(inState),
-          mergedCount: (held?.mergedCount ?? 0) + Number(entry.state === "merged"),
-        });
-      }
-    }
-    if (!inState) continue;
-    for (const label of entry.labels) {
-      const key = normalize(label.name);
-      if (key === null) continue;
-      const held = labels.get(key);
-      labels.set(key, {
-        ...label,
-        name: held?.name ?? label.name,
-        color: held?.color ?? label.color,
-        count: (held?.count ?? 0) + 1,
-      });
-    }
-  }
-  return {
-    authors: [...authors.values()]
-      .filter((author) => author.count > 0)
-      .toSorted(
-        (left, right) =>
-          right.mergedCount - left.mergedCount ||
-          right.count - left.count ||
-          left.actor.login.localeCompare(right.actor.login),
-      ),
-    labels: [...labels.values()].toSorted(
-      (left, right) => right.count - left.count || left.name.localeCompare(right.name),
-    ),
-  };
 }
 
 /**
@@ -201,10 +151,7 @@ export function pullRequestLabelChoices(
   return [...loaded, ...added];
 }
 
-export function pullRequestEntryViewer(
-  entry: ScopedEntry,
-  viewers: PullRequestViewers,
-): string | null {
+function pullRequestEntryViewer(entry: ScopedEntry, viewers: PullRequestViewers): string | null {
   return normalize(viewers[pullRequestViewerKey(entry)] ?? viewers[entry.host]);
 }
 
@@ -233,43 +180,6 @@ export function filterPullRequestsByInvolvement<Entry extends ScopedEntry>(
     return entries.filter((entry) => isAuthoredByViewer(entry, viewers));
   }
   return entries;
-}
-
-export function narrowPullRequestsToFilters<Entry extends PullRequestListEntry>(
-  entries: ReadonlyArray<Entry>,
-  filters: {
-    readonly state: PullRequestListState;
-    readonly projectId: string | undefined;
-    readonly host: string | undefined;
-  },
-): ReadonlyArray<Entry> {
-  return entries.filter(
-    (entry) =>
-      (filters.state === "all" || entry.state === filters.state) &&
-      (filters.projectId === undefined || entry.projectId === filters.projectId) &&
-      (filters.host === undefined || entry.host === filters.host),
-  );
-}
-
-export function matchesPullRequestFilters(
-  entry: PullRequestListEntry,
-  filters: PullRequestListFilters,
-  viewer?: string | null,
-): boolean {
-  const labels = entry.labels.map((label) => label.name.trim().toLowerCase());
-  const holds = (label: string) => labels.includes(label.trim().toLowerCase());
-  return (
-    (filters.draft === undefined || entry.isDraft === (filters.draft === "only")) &&
-    (filters.review === undefined ||
-      (filters.review === "none"
-        ? entry.reviewDecision === undefined
-        : entry.reviewDecision === filters.review)) &&
-    (filters.labels === undefined || filters.labels.every((group) => group.some(holds))) &&
-    (filters.excludedLabels === undefined || !filters.excludedLabels.some(holds)) &&
-    (filters.author === undefined ||
-      entry.author?.login.toLowerCase() ===
-        resolvePullRequestAuthorFilter(filters.author, viewer).toLowerCase())
-  );
 }
 
 export function groupPullRequestsByInvolvement<Entry extends ScopedEntry>(
@@ -385,7 +295,7 @@ export function pullRequestStatsBatches(
 }
 
 /** Size sorting needs all loaded rows' stats; other modes need only nearby rows. */
-export function pullRequestStatsRequestBatches({
+function pullRequestStatsRequestBatches({
   entriesByKey,
   candidateKeys,
   policy,
@@ -430,18 +340,6 @@ export function pullRequestStatsRefreshBatches({
     activeBatches: [],
     statsByRow,
     refresh: true,
-  });
-}
-
-export function retainVisiblePullRequestStatsBatches(
-  batches: ReadonlyArray<PullRequestStatsBatch>,
-  visibleKeys: ReadonlySet<string>,
-): ReadonlyArray<PullRequestStatsBatch> {
-  return batches.filter((batch) => {
-    for (const key of batch.keys) {
-      if (visibleKeys.has(key)) return true;
-    }
-    return false;
   });
 }
 
@@ -513,7 +411,7 @@ export function mergePullRequestDiffStats(
   return next;
 }
 
-export const pullRequestDiffStatKey = (row: {
+const pullRequestDiffStatKey = (row: {
   readonly environmentId: string;
   readonly projectId: string;
   readonly number: number;
@@ -577,22 +475,9 @@ export function mergePullRequestLists(
   };
 }
 
-export const pullRequestEnvironmentSetKey = (environmentIds: ReadonlyArray<string>): string =>
-  [...environmentIds].sort((left, right) => left.localeCompare(right)).join(",");
-
 export interface PullRequestPartitionsSnapshot {
   readonly authored: ReadonlyArray<EnvironmentPullRequestEntry>;
   readonly reviewing: ReadonlyArray<EnvironmentPullRequestEntry>;
-}
-
-/** Retain project scope during reconnect until projects arrive. */
-export function resolveProjectScope<Id extends string>(
-  projectId: Id | undefined,
-  projects: ReadonlyArray<{ readonly id: string }>,
-  projectsKnown: boolean,
-): Id | undefined {
-  if (projectId === undefined || !projectsKnown) return projectId;
-  return projects.some((project) => project.id === projectId) ? projectId : undefined;
 }
 
 export function findScopedProject<
@@ -640,7 +525,7 @@ export function resolveSelectedEnvironmentId<Id extends string>(
 }
 
 /** Host search also matches bodies and commits absent from visible row fields. */
-export function scorePullRequestMatch(entry: PullRequestListEntry, query: string): number {
+function scorePullRequestMatch(entry: PullRequestListEntry, query: string): number {
   const needle = query.trim().toLowerCase();
   if (needle.length === 0) return 0;
   const number = needle.replace(/^#/u, "");
@@ -690,10 +575,7 @@ export function rankPullRequestsByMergeReadiness<Entry extends PullRequestListEn
   });
 }
 
-export function comparePullRequestsByRecency(
-  left: PullRequestListEntry,
-  right: PullRequestListEntry,
-) {
+function comparePullRequestsByRecency(left: PullRequestListEntry, right: PullRequestListEntry) {
   const leftUpdated = toSortableTimestamp(left.updatedAt);
   const rightUpdated = toSortableTimestamp(right.updatedAt);
   const measured = Number(leftUpdated === null) - Number(rightUpdated === null);
@@ -785,46 +667,12 @@ export function sortPullRequestGroups<Entry extends PullRequestListEntry>(
   );
 }
 
-export function withDiffStat<
-  Entry extends PullRequestListEntry & { readonly environmentId: string },
->(
-  entry: Entry,
-  statsByRow: ReadonlyMap<string, { readonly additions: number; readonly deletions: number }>,
-): Entry {
-  if (entry.additions !== 0 || entry.deletions !== 0) return entry;
-  const stat = statsByRow.get(pullRequestDiffStatKey(entry));
-  return stat === undefined ? entry : { ...entry, ...stat };
-}
-
 export interface PullRequestListOverride {
   readonly state: PullRequestState;
   readonly isDraft?: boolean;
   readonly updatedAt: string;
   readonly token: number;
   readonly at: number;
-}
-
-export function pullRequestOverrideAfterAction(
-  entry: Pick<PullRequestListEntry, "state" | "isDraft">,
-  action: PullRequestAction,
-  now: Date,
-  token: number,
-): PullRequestListOverride | null {
-  const stamp = { updatedAt: now.toISOString(), token, at: now.getTime() };
-  switch (action) {
-    case "close":
-      return { state: "closed", ...stamp };
-    case "reopen":
-      return { state: "open", ...stamp };
-    case "merge":
-      return { state: "merged", ...stamp };
-    case "draft":
-      return { state: entry.state, isDraft: true, ...stamp };
-    case "ready":
-      return { state: entry.state, isDraft: false, ...stamp };
-    default:
-      return null;
-  }
 }
 
 export function applyPullRequestOverrides<Entry extends PullRequestListEntry>(

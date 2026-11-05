@@ -205,7 +205,7 @@ export function startAppServices(): AppRouter {
     shellStateAtom: environmentShell.stateAtom,
   });
   startMainAppLocationTracking(router);
-  startWorkspaceFocus(router);
+  startWorkspaceFocus();
   startBackgroundThreadAnnouncements(appAtomRegistry, router);
   startThreadVisitedMigration(appAtomRegistry);
   startSshPasswordPromptQueue();
@@ -216,7 +216,7 @@ export function startAppServices(): AppRouter {
   startLegacyThreadMigrationToast();
   startPermissionUpdateNotices(router);
   startThreadNotifications(appAtomRegistry, router);
-  startGuideRunNotifications(appAtomRegistry, router);
+  startGuideRunNotifications(appAtomRegistry);
   if (isElectron) startDesktopUpdateLaunchNotice();
 
   return router;

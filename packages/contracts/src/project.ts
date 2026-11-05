@@ -223,6 +223,8 @@ export const Project = Schema.Struct({
   autonomy: Schema.optional(BotAutonomy),
   parentBotProjectId: Schema.optional(Schema.NullOr(ProjectId)),
   canCreateBotsWithoutAsking: Schema.optional(Schema.Boolean),
+  /** Server-kept: the bot's home folder has a PERSONA.md, so it has hatched. Absent from older servers. */
+  personaReady: Schema.optional(Schema.Boolean),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),

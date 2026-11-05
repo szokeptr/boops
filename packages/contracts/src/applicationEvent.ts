@@ -68,6 +68,7 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   autonomy: Schema.optional(BotAutonomy),
   parentBotProjectId: Schema.optional(Schema.NullOr(ProjectId)),
   canCreateBotsWithoutAsking: Schema.optional(Schema.Boolean),
+  personaReady: Schema.optional(Schema.Boolean),
   updatedAt: IsoDateTime,
 });
 export type ApplicationProjectMetaUpdatedPayload = typeof ApplicationProjectMetaUpdatedPayload.Type;

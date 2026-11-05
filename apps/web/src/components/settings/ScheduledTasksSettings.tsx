@@ -15,7 +15,6 @@ import { type ReactNode, useRef, useState } from "react";
 import type {
   EnvironmentId,
   ModelSelection,
-  OrchestrationV2ThreadLaunchWorkspaceStrategy,
   ProjectId,
   ScheduledTask,
   ScheduledTaskId,
@@ -46,7 +45,6 @@ import {
 
 import { formatRelativeTime } from "../../timestampFormat";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
-import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import { providerInstanceEntriesFor } from "../../providerInstances";
 import { usePrimaryCloudLinkState } from "../../cloud/primaryCloudLinkState";
 import { requestConfirmDialog } from "../../confirmDialog";
@@ -66,7 +64,6 @@ import { formatEnvironmentQueryError, useEnvironmentQuery } from "../../state/qu
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { threadFamilies } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { WorktreeBaseBranchPicker } from "../WorktreeBaseBranchPicker";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ConnectionStatusDot, connectionPhaseDotClassName } from "../ConnectionStatusDot";
 import {
@@ -74,7 +71,6 @@ import {
   clampManagedRuntimeMode,
   managedCapabilityDenial,
 } from "@t3tools/contracts";
-import { resolvePastedPath } from "@t3tools/shared/path";
 import { useManagedPolicy } from "~/state/managedPolicy";
 import { ManagedNotice } from "../ManagedPolicy";
 import { readEnvironmentScope } from "~/state/session";
@@ -94,13 +90,11 @@ import {
   taskToDraft,
   type DraftState,
   type ScheduleMode,
-  type WorkspaceMode,
 } from "./scheduledTasksSettings.logic";
 import { Label } from "../ui/label";
 import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/menu";
 import { ToggleGroup, Toggle } from "../ui/toggle-group";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "../ui/empty";
-import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import {
@@ -119,22 +113,11 @@ import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  SettingsPageContainer,
-  SettingsRow,
-  SettingsSection,
-  SETTINGS_PICKER_TRIGGER_CLASSNAME,
-} from "./settingsLayout";
+import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const WEEKDAY_SHORT = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] as const;
-
-const WORKSPACE_MODE_LABELS: Record<WorkspaceMode, string> = {
-  worktree: "Create a new worktree",
-  root: "Use the project checkout",
-  existing_worktree: "Use a specific checkout",
-};
 
 const EMPTY_DRAFT: DraftState = {
   editingId: null,
@@ -1251,22 +1234,12 @@ function ScheduledTaskEditorForm({
     selectedProject?.id ?? null,
   );
 
-  const firstInstance = instanceEntries[0];
   const draftSelection = draft.modelKey ? splitModelKey(draft.modelKey) : null;
   const activeSelection =
     draftSelection &&
     instanceEntries.some((entry) => entry.instanceId === draftSelection.instanceId && entry.enabled)
       ? draftSelection
       : scheduledTaskDefaultModel(settings, selectedProject ?? null, instanceEntries);
-  const activeInstanceId =
-    activeSelection?.instanceId ?? firstInstance?.instanceId ?? ("" as ProviderInstanceId);
-  const activeModel = activeSelection?.model ?? "";
-  const modelOptionsByInstance = getCustomModelOptionsByInstance(
-    settings,
-    providers,
-    activeInstanceId,
-    activeModel,
-  );
 
   const reportFailure = (title: string, error: unknown) => {
     toastManager.add(
@@ -1295,7 +1268,7 @@ function ScheduledTaskEditorForm({
       !projects.some((project) => project.id === selectedProjectId) ||
       selection === null
     ) {
-      reportFailure("Scheduled task is incomplete", "Add a title, prompt, project, and model.");
+      reportFailure("Scheduled task is incomplete", "Add a title, prompt, and project.");
       return;
     }
     if (targetThreadId === null) {
@@ -1339,26 +1312,12 @@ function ScheduledTaskEditorForm({
       );
       return;
     }
-    if (draft.workspaceMode === "existing_worktree" && !draft.existingWorktreePath.trim()) {
-      reportFailure("Checkout path is required", "Enter the path of the checkout to run in.");
-      return;
-    }
     const modelSelection =
       draft.baseModelSelection !== null &&
       draft.baseModelSelection.instanceId === selection.instanceId &&
       draft.baseModelSelection.model === selection.model
         ? draft.baseModelSelection
         : selection;
-    const workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy =
-      draft.workspaceMode === "root"
-        ? { type: "root" }
-        : draft.workspaceMode === "existing_worktree"
-          ? { type: "existing_worktree", worktreePath: draft.existingWorktreePath.trim() }
-          : {
-              type: "worktree",
-              baseRef: draft.baseRef.trim() || "main",
-              startFromOrigin: draft.startFromOrigin,
-            };
     const input: ScheduledTaskUpsertInput = {
       ...(draft.editingId ? { id: draft.editingId as ScheduledTaskId, requireExisting: true } : {}),
       title: draft.title.trim(),
@@ -1367,7 +1326,8 @@ function ScheduledTaskEditorForm({
       schedule,
       projectId: selectedProjectId as ProjectId,
       threadId: targetThreadId,
-      workspaceStrategy,
+      // Runs post into the bot's thread, which owns its workspace and model.
+      workspaceStrategy: { type: "root" },
       modelSelection,
       // Tasks have no mode picker; a mode above the administrator's ceiling would fail every run.
       runtimeMode:
@@ -1492,91 +1452,34 @@ function ScheduledTaskEditorForm({
 
           <ScheduledTaskDestination environmentId={environmentId} threadId={targetThreadId} />
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Project" htmlFor="scheduled-task-project">
-              <Select
-                value={selectedProjectId}
-                onValueChange={(projectId) =>
-                  setDraft((current) => ({ ...current, projectId: projectId ?? "" }))
-                }
-              >
-                <SelectTrigger size="sm" id="scheduled-task-project">
-                  <SelectValue placeholder="Select a project">{selectedProject?.title}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id} label={project.title}>
-                      <span className="block truncate">{project.title}</span>
-                      {allProjects.some(
-                        (other) =>
-                          other.title === project.title &&
-                          (other.environmentId !== project.environmentId ||
-                            other.id !== project.id),
-                      ) ? (
-                        <span className="block max-w-72 truncate text-xs text-muted-foreground">
-                          {project.workspaceRoot}
-                        </span>
-                      ) : null}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            </Field>
-
-            <Field label="Workspace" htmlFor="scheduled-task-workspace">
-              <Select
-                value={draft.workspaceMode}
-                onValueChange={(value) =>
-                  setDraft((current) => ({ ...current, workspaceMode: value as WorkspaceMode }))
-                }
-              >
-                <SelectTrigger size="sm" id="scheduled-task-workspace">
-                  <SelectValue>{WORKSPACE_MODE_LABELS[draft.workspaceMode]}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup>
-                  <SelectItem value="worktree">Create a new worktree</SelectItem>
-                  <SelectItem value="root">Use the project checkout</SelectItem>
-                  <SelectItem value="existing_worktree">Use a specific checkout</SelectItem>
-                </SelectPopup>
-              </Select>
-            </Field>
-          </div>
-
-          {draft.workspaceMode === "worktree" ? (
-            <Field label="Base branch" htmlFor="scheduled-task-base-ref">
-              <WorktreeBaseBranchPicker
-                key={`${environmentId}:${selectedProjectId}`}
-                id="scheduled-task-base-ref"
-                environmentId={environmentId}
-                cwd={selectedProject?.workspaceRoot ?? null}
-                value={draft.baseRef}
-                onValueChange={(baseRef) => setDraft((current) => ({ ...current, baseRef }))}
-                startFromOrigin={draft.startFromOrigin}
-                onStartFromOriginChange={(startFromOrigin) =>
-                  setDraft((current) => ({ ...current, startFromOrigin }))
-                }
-                disabled={saving || !connected}
-              />
-            </Field>
-          ) : null}
-          {draft.workspaceMode === "existing_worktree" ? (
-            <Field label="Checkout path" htmlFor="scheduled-task-checkout">
-              <Input
-                id="scheduled-task-checkout"
-                value={draft.existingWorktreePath}
-                placeholder="/path/to/checkout"
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    existingWorktreePath: resolvePastedPath(
-                      current.existingWorktreePath,
-                      event.target.value,
-                    ),
-                  }))
-                }
-              />
-            </Field>
-          ) : null}
+          <Field label="Project" htmlFor="scheduled-task-project">
+            <Select
+              value={selectedProjectId}
+              onValueChange={(projectId) =>
+                setDraft((current) => ({ ...current, projectId: projectId ?? "" }))
+              }
+            >
+              <SelectTrigger size="sm" id="scheduled-task-project">
+                <SelectValue placeholder="Select a project">{selectedProject?.title}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                {projects.map((project) => (
+                  <SelectItem key={project.id} value={project.id} label={project.title}>
+                    <span className="block truncate">{project.title}</span>
+                    {allProjects.some(
+                      (other) =>
+                        other.title === project.title &&
+                        (other.environmentId !== project.environmentId || other.id !== project.id),
+                    ) ? (
+                      <span className="block max-w-72 truncate text-xs text-muted-foreground">
+                        {project.workspaceRoot}
+                      </span>
+                    ) : null}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </Field>
 
           <Field label="Prompt" htmlFor="scheduled-task-prompt">
             <Textarea
@@ -1588,25 +1491,6 @@ function ScheduledTaskEditorForm({
                 setDraft((current) => ({ ...current, prompt: event.target.value }))
               }
             />
-          </Field>
-
-          <Field label="Model">
-            <div>
-              <ProviderModelPicker
-                environmentId={environmentId}
-                disabled={saving || !connected}
-                activeInstanceId={activeInstanceId}
-                model={activeModel}
-                lockedProvider={null}
-                instanceEntries={instanceEntries}
-                modelOptionsByInstance={modelOptionsByInstance}
-                isComposerOwned={false}
-                triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                onInstanceModelChange={(instanceId, model) =>
-                  setDraft((current) => ({ ...current, modelKey: `${instanceId}:${model}` }))
-                }
-              />
-            </div>
           </Field>
 
           <div className="space-y-3">

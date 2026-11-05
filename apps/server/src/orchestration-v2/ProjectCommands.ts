@@ -49,6 +49,7 @@ export interface ProjectMetaUpdateCommand {
   readonly autonomy?: BotAutonomy | null;
   readonly parentBotProjectId?: ProjectId | null;
   readonly canCreateBotsWithoutAsking?: boolean;
+  readonly personaReady?: boolean;
 }
 
 export interface ProjectDeleteCommand {
@@ -238,6 +239,7 @@ export function planProjectCommand(input: {
           ...(command.canCreateBotsWithoutAsking === undefined
             ? {}
             : { canCreateBotsWithoutAsking: command.canCreateBotsWithoutAsking }),
+          ...(command.personaReady === undefined ? {} : { personaReady: command.personaReady }),
           updatedAt: occurredAt,
         },
       });

@@ -138,7 +138,6 @@ export function makeReplayServerConfig(
       tailscaleServeEnabled: false,
       tailscaleServePort: 443,
       desktopBootstrapToken: undefined,
-      autoBootstrapProjectFromCwd: false,
       logWebSocketEvents: false,
       stateDir,
       dbPath: path.join(stateDir, "state.sqlite"),

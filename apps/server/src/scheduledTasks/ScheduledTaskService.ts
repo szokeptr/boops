@@ -255,6 +255,15 @@ export class ScheduledTaskService extends Context.Service<
     ) => Effect.Effect<ScheduledTaskDeleteResult, ScheduledTaskError>;
     /** Deletes only tasks that still target this thread, including their webhook deliveries. */
     readonly deleteForThread: (threadId: ThreadId) => Effect.Effect<void, ScheduledTaskError>;
+    /**
+     * Pauses the project's enabled routines and marks them, so `resumeForProject` turns back on
+     * only those. Routines already paused stay unmarked.
+     */
+    readonly pauseForProject: (projectId: ProjectId) => Effect.Effect<void, ScheduledTaskError>;
+    /** Re-enables the routines `pauseForProject` paused; one that can no longer run stays paused. */
+    readonly resumeForProject: (projectId: ProjectId) => Effect.Effect<void, ScheduledTaskError>;
+    /** Deletes every routine of the project, bound to a thread or not, with its webhook deliveries. */
+    readonly deleteForProject: (projectId: ProjectId) => Effect.Effect<void, ScheduledTaskError>;
     /** Points tasks bound to these threads at the project the threads moved to. */
     readonly moveThreadTasks: (input: {
       readonly threadIds: ReadonlyArray<ThreadId>;
@@ -679,6 +688,11 @@ export const layer = Layer.effect(
           interaction_mode = excluded.interaction_mode,
           creation_source = excluded.creation_source,
           updated_at = excluded.updated_at,
+          -- Switching it on or off is the user's call, which unarchiving must not undo.
+          paused_by_archive = CASE
+            WHEN scheduled_tasks.enabled = excluded.enabled THEN scheduled_tasks.paused_by_archive
+            ELSE 0
+          END,
           -- Keep a next_run_at that a finishing run moved during this save, unless
           -- another edit changed the schedule or enabled state meanwhile.
           next_run_at = CASE
@@ -1365,6 +1379,7 @@ export const layer = Layer.effect(
           UPDATE scheduled_tasks
           SET enabled = ${input.enabled ? 1 : 0},
               next_run_at = ${next},
+              paused_by_archive = 0,
               updated_at = ${iso(now)}
           WHERE task_id = ${input.id}
           RETURNING task_id
@@ -1441,6 +1456,76 @@ export const layer = Layer.effect(
         .pipe(
           Effect.mapError((cause) =>
             taskError("Could not delete thread's schedule tasks.", { cause }),
+          ),
+        );
+      yield* Effect.forEach(removed, ({ task_id }) => forgetWebhookTask(task_id), {
+        discard: true,
+      });
+      if (removed.length > 0) yield* notifyChanged;
+    });
+
+    const pauseForProject = Effect.fn("ScheduledTaskService.pauseForProject")(function* (
+      projectId: ProjectId,
+    ) {
+      const now = yield* localNow;
+      const paused = yield* sql<{ task_id: ScheduledTaskId }>`
+        UPDATE scheduled_tasks
+        SET enabled = 0, next_run_at = NULL, paused_by_archive = 1, updated_at = ${iso(now)}
+        WHERE project_id = ${projectId} AND enabled = 1
+        RETURNING task_id
+      `.pipe(
+        Effect.mapError((cause) => taskError("Could not pause the project's routines.", { cause })),
+      );
+      if (paused.length > 0) yield* notifyChanged;
+    });
+
+    const resumeForProject = Effect.fn("ScheduledTaskService.resumeForProject")(function* (
+      projectId: ProjectId,
+    ) {
+      const marked = yield* sql<{ task_id: ScheduledTaskId }>`
+        SELECT task_id FROM scheduled_tasks
+        WHERE project_id = ${projectId} AND paused_by_archive = 1
+      `.pipe(
+        Effect.mapError((cause) => taskError("Could not read the project's routines.", { cause })),
+      );
+      yield* Effect.forEach(
+        marked,
+        ({ task_id }) =>
+          setEnabled({ id: task_id, enabled: true }).pipe(
+            // A once-routine whose time passed, or a webhook a policy now blocks, stays paused.
+            Effect.catch((cause) =>
+              Effect.logWarning("Could not resume a routine", { taskId: task_id, cause }).pipe(
+                Effect.andThen(
+                  sql`UPDATE scheduled_tasks SET paused_by_archive = 0 WHERE task_id = ${task_id}`,
+                ),
+                Effect.mapError((cause) =>
+                  taskError("Could not resume the routine.", { taskId: task_id, cause }),
+                ),
+              ),
+            ),
+          ),
+        { discard: true },
+      );
+    });
+
+    const deleteForProject = Effect.fn("ScheduledTaskService.deleteForProject")(function* (
+      projectId: ProjectId,
+    ) {
+      const removed = yield* sql
+        .withTransaction(
+          Effect.gen(function* () {
+            yield* sql`
+            DELETE FROM scheduled_task_webhook_deliveries
+            WHERE task_id IN (SELECT task_id FROM scheduled_tasks WHERE project_id = ${projectId})
+          `;
+            return yield* sql<{ task_id: ScheduledTaskId }>`
+            DELETE FROM scheduled_tasks WHERE project_id = ${projectId} RETURNING task_id
+          `;
+          }),
+        )
+        .pipe(
+          Effect.mapError((cause) =>
+            taskError("Could not delete the project's routines.", { cause }),
           ),
         );
       yield* Effect.forEach(removed, ({ task_id }) => forgetWebhookTask(task_id), {
@@ -2431,6 +2516,9 @@ export const layer = Layer.effect(
       setEnabled,
       delete: deleteTask,
       deleteForThread,
+      pauseForProject,
+      resumeForProject,
+      deleteForProject,
       moveThreadTasks,
       runNow,
       rotateWebhookToken,

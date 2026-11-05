@@ -261,6 +261,7 @@ function makeHarness(options: HarnessOptions = {}) {
               autonomy: "full",
               parentBotProjectId: null,
               canCreateBotsWithoutAsking: false,
+              personaReady: false,
               createdAt: project.createdAt,
               updatedAt: project.updatedAt,
               deletedAt: project.deletedAt,
