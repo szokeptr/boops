@@ -287,7 +287,7 @@ function ConnectionRow(props: {
               </Button>
             ) : (
               <Button size="xs" variant="ghost" disabled={disabled} onClick={props.onChooseBots}>
-                Bots…
+                Turn on for…
               </Button>
             )}
             <Menu>

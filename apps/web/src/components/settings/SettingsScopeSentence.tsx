@@ -54,6 +54,9 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/settings/about",
 ]);
 
+// Connections belong to the environment, so these pages pick an environment but no project.
+const SETTINGS_ENVIRONMENT_ONLY_PATHS: ReadonlySet<string> = new Set(["/settings/connectors"]);
+
 interface SettingsScopeMenuProps {
   readonly value: SettingsScopeSearch;
   readonly groups: readonly SidebarProjectSnapshot[];
@@ -74,6 +77,14 @@ export function SettingsScopeSentence() {
     environments,
     onChange: scope.selectScope,
   };
+  if (SETTINGS_ENVIRONMENT_ONLY_PATHS.has(pathname)) {
+    return (
+      <p className="flex min-w-0 items-center gap-1.5 px-3 text-sm text-muted-foreground sm:px-4">
+        <span className="shrink-0">Applying settings on</span>
+        <EnvironmentScopeMenu {...props} />
+      </p>
+    );
+  }
   return (
     <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 px-3 text-sm text-muted-foreground sm:px-4">
       <span className="flex min-w-0 items-center gap-1.5">

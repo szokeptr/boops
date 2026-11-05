@@ -179,7 +179,7 @@ export function connectionCardCopy(
       };
     case "connected":
       return {
-        status: `Connected ✓ · ${state.connection.displayName}`,
+        status: `${state.connection.displayName} connected`,
         action: null,
         declinable: false,
       };
@@ -246,7 +246,7 @@ export function connectorRedirectOrigin(
 }
 
 export const INSECURE_REDIRECT_WARNING =
-  "This app reaches the server over plain http, which most services refuse for sign-in. Sign in from the server's machine, or connect to it through T3 Connect.";
+  "This app reaches the server over plain http, which most services refuse for sign-in. Sign in from the server's machine, or connect to it through Boops Connect.";
 
 /** The bots a connection is on for, by name, for its row and for the remove confirmation. */
 export function botsUsingConnection<

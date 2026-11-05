@@ -52,4 +52,4 @@ Each connection shows whether it works, how many tools it has and which bots use
 Sign-in sends your browser back to the server's own address. When you reach the server over plain
 `http://` from another device, for example a LAN or Tailscale address, most services refuse the
 sign-in, and the app warns you. Sign in from the machine the server runs on, or reach it through
-[T3 Connect](./remote-access.md), which uses https. API-key and open services work from anywhere.
+[Boops Connect](./remote-access.md), which uses https. API-key and open services work from anywhere.

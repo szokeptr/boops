@@ -128,7 +128,7 @@ it("follows the live connections from not connected to connected and back", asyn
   mocks.live.botConnectionIds = [linearId];
   const answered = card({ connectionStatus: "connected", connectionId: linearId });
   await screen.rerender(view(answered));
-  await expect.element(screen.getByText("Connected ✓ · Linear")).toBeVisible();
+  await expect.element(screen.getByText("Linear connected")).toBeVisible();
   await expect.element(screen.getByRole("button", { name: "Not now" })).not.toBeInTheDocument();
 
   // Turned off later: the card offers it again, now without answering the closed record.
