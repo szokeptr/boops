@@ -19,7 +19,8 @@ import {
   type RunId,
   ThreadId,
 } from "@t3tools/contracts";
-import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
+import { parseScopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { useProject, useQuietThreadShell } from "../../state/entities";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRuntime";
 import { observeResize } from "~/lib/observeResize";
@@ -462,6 +463,13 @@ const ConversationTimeline = memo(function ConversationTimeline({
   }
   const citationThreadRef = parseScopedThreadKey(routeThreadKey);
   const openPullRequest = useOpenPrLink(citationThreadRef ?? undefined);
+  const threadShell = useQuietThreadShell(citationThreadRef);
+  const assistantName =
+    useProject(
+      threadShell === null
+        ? null
+        : scopeProjectRef(threadShell.environmentId, threadShell.projectId),
+    )?.title ?? "Assistant";
   const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
   const [disclosureToggleSettling, setDisclosureToggleSettling] = useState(false);
   const disclosureAnchorKeyRef = useRef<string | null>(null);
@@ -1016,6 +1024,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     timestampFormat,
     routeThreadKey,
     threadRef: citationThreadRef,
+    assistantName,
     markdownCwd,
     resolvedTheme,
     workspaceRoot,

@@ -445,6 +445,9 @@ function QueuedMessage(props: {
       {presentation?.guestName === undefined ? null : (
         <GuestMessageName name={presentation.guestName} />
       )}
+      {presentation?.bot === undefined ? null : (
+        <p className="me-1 text-2xs text-muted-foreground">{presentation.bot.name}</p>
+      )}
       {/* Dashed and unfilled: a turn that has not been sent yet. */}
       <div
         className={cn(

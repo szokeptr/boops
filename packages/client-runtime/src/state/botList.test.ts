@@ -11,6 +11,7 @@ import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  botMessagePreview,
   botMonogram,
   deriveBotActivity,
   deriveBotList,
@@ -80,6 +81,25 @@ function message(text: string, updatedAt: string, role: "user" | "assistant" = "
     },
   };
 }
+
+describe("botMessagePreview", () => {
+  it.each([
+    ["**Habits:** 2 litres of _water_ a day", "Habits: 2 litres of water a day"],
+    ["## Today\n\n- [x] ran 5 km\n- read `Dune`\n1. sleep", "Today ran 5 km read Dune sleep"],
+    ["> quoted *idea* and ~~old~~ new", "quoted idea and old new"],
+    [
+      "See [the plan](https://x.test/plan) and ![chart](c.png) <https://x.test>",
+      "See the plan and chart https://x.test",
+    ],
+    ["```ts\nconst a = 1;\n```\n---\ndone", "const a = 1; done"],
+    ["| day | km |\n| --- | --- |\n| Mon | 5 |", "day km Mon 5"],
+    ["snake_case_name and 2 * 3 * 4 stay", "snake_case_name and 2 * 3 * 4 stay"],
+    ["**", "**"],
+    ["  \n\n ", null],
+  ])("turns %j into plain text", (markdown, preview) => {
+    expect(botMessagePreview(markdown)).toBe(preview);
+  });
+});
 
 describe("resolveBotMainThreadId", () => {
   it("reads the recorded main thread, else this environment's oldest live thread", () => {

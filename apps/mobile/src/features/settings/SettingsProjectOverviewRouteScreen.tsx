@@ -17,7 +17,7 @@ import {
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useNavigation } from "@react-navigation/native";
 import { useRef, useState } from "react";
-import { Platform, Pressable, View } from "react-native";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { projectEnvironment } from "../../state/projects";
@@ -29,11 +29,7 @@ import {
   findNewTaskDraftKeys,
   waitForComposerDraftsLoaded,
 } from "../../state/use-composer-drafts";
-import {
-  readEnvironmentScope,
-  useEnvironmentScope,
-  useEnvironmentsWithScope,
-} from "../../state/session";
+import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotConnectorsSection } from "../connectors/BotConnectorsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -91,7 +87,7 @@ export function SettingsProjectOverviewRouteScreen() {
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Projects" menus={[environmentMenu]}>
+      <SettingsScreen title="Bots" menus={[environmentMenu]}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
@@ -101,12 +97,12 @@ export function SettingsProjectOverviewRouteScreen() {
         >
           {selectedProjectKey === null ? (
             <Text className="px-2 text-base text-foreground-muted">
-              Choose a project with the filter above to manage its name, checkouts and removal.
+              Choose a bot with the filter above to manage its name, connectors, archive and
+              deletion.
             </Text>
           ) : !group || members.length === 0 ? (
             <Text className="px-2 text-base text-foreground-muted">
-              This project has no checkout on the selected connected environments. Change the filter
-              above.
+              This bot is not on the selected connected environments. Change the filter above.
             </Text>
           ) : (
             <ProjectOverviewContent
@@ -132,7 +128,7 @@ export function SettingsProjectOverviewRouteScreen() {
 
 function ProjectOverviewContent(props: {
   readonly members: readonly EnvironmentProject[];
-  /** Pin and archive belong to the whole project, even when the filter picks one machine. */
+  /** Archive belongs to the whole bot, even when the filter picks one machine. */
   readonly group: ProjectGroup;
   readonly connectedTargets: readonly SettingsTarget[];
   readonly environments: readonly SettingsTarget[];
@@ -157,7 +153,7 @@ function ProjectOverviewContent(props: {
   );
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
   const updateProject = useAtomCommand(projectEnvironment.update, {
-    label: "project name update",
+    label: "bot name update",
     reportFailure: true,
   });
   const organizeProject = useAtomCommand(projectEnvironment.update, {
@@ -169,7 +165,7 @@ function ProjectOverviewContent(props: {
     props.connectedTargets.find((entry) => entry.environmentId === member.environmentId),
   );
   const offline = memberTargets.some((target) => target === undefined);
-  // Older servers drop pin and archive, so their projects do not offer them.
+  // Older servers drop archive, so their projects do not offer it.
   // Offline members are checked when the write runs, so their reason can show.
   const canOrganize =
     allMembers.every(
@@ -183,7 +179,6 @@ function ProjectOverviewContent(props: {
     );
   // One machine at a time, stopping at the first failure, as web does.
   const organize = async (input: {
-    readonly pinned?: boolean;
     readonly autonomy?: BotAutonomy;
     readonly canCreateBotsWithoutAsking?: boolean;
   }) => {
@@ -377,18 +372,24 @@ function ProjectOverviewContent(props: {
           <Text className="text-xl font-t3-semibold text-foreground" numberOfLines={2}>
             {displayName}
           </Text>
-          <Text className="text-sm text-foreground-muted">
-            {props.members.length === 1 ? "1 checkout" : `${props.members.length} checkouts`}
+          <Text className="text-sm text-foreground-muted" numberOfLines={1}>
+            {props.members
+              .map(
+                (member) =>
+                  props.environments.find((entry) => entry.environmentId === member.environmentId)
+                    ?.label ?? "Environment",
+              )
+              .join(", ")}
           </Text>
         </View>
       </View>
 
-      <SettingsSection title="Project">
+      <SettingsSection title="Bot">
         <View className="gap-3 p-4">
           <Text className="text-sm font-t3-medium text-foreground-muted">Name</Text>
           <View className="flex-row items-center gap-3">
             <AppTextInput
-              accessibilityLabel="Project name"
+              accessibilityLabel="Bot name"
               className="min-h-11 min-w-0 flex-1 rounded-xl border-continuous bg-card px-3 text-base text-foreground"
               value={draftName ?? displayName}
               onChangeText={setDraftName}
@@ -399,7 +400,7 @@ function ProjectOverviewContent(props: {
             {canSave ? (
               <Button
                 label="Save"
-                accessibilityHint="Save project name"
+                accessibilityHint="Save bot name"
                 tone="secondary"
                 onPress={saveName}
               />
@@ -454,18 +455,6 @@ function ProjectOverviewContent(props: {
 
       {canOrganize ? (
         <SettingsSection title="Organize">
-          <SettingsSwitchRow
-            icon="pin"
-            label="Pin"
-            subtitle={
-              offline
-                ? "Connect every machine with this project to change this."
-                : "Pinned projects come first in project pickers."
-            }
-            value={props.group.pinned}
-            disabled={isOrganizing || offline}
-            onValueChange={(pinned) => void organize({ pinned })}
-          />
           <SettingsActionRow
             icon="archivebox"
             label={props.group.archived ? "Unarchive bot" : "Archive bot"}
@@ -480,44 +469,6 @@ function ProjectOverviewContent(props: {
         </SettingsSection>
       ) : null}
 
-      <SettingsSection title="Checkouts">
-        {props.members.map((member, index) => {
-          const environment = props.environments.find(
-            (entry) => entry.environmentId === member.environmentId,
-          );
-          return (
-            <View
-              key={`${member.environmentId}:${member.id}`}
-              className={index === 0 ? "gap-1 p-4" : "gap-1 border-t border-border-subtle p-4"}
-            >
-              <Text
-                className={
-                  Platform.OS === "android"
-                    ? "text-base text-foreground"
-                    : "text-lg text-foreground"
-                }
-              >
-                {environment?.label ?? "Environment"}
-              </Text>
-              {environment?.displayUrl ? (
-                <Text className="text-sm leading-normal text-foreground-muted">
-                  {environment.displayUrl}
-                </Text>
-              ) : null}
-              <Text className="text-sm leading-normal text-foreground-muted" selectable>
-                {member.workspaceRoot}
-              </Text>
-              {props.members.length > 1 || props.hasOtherMembers ? (
-                <RemoveCheckoutAction
-                  member={member}
-                  disabled={isRemoving}
-                  onPress={() => removeMembers([member])}
-                />
-              ) : null}
-            </View>
-          );
-        })}
-      </SettingsSection>
       <SettingsSection title="Danger">
         {props.members.length === 1 && !props.hasOtherMembers ? (
           <DeleteBotRow
@@ -637,24 +588,5 @@ function DeleteBotRow(props: {
         />
       </View>
     </>
-  );
-}
-
-function RemoveCheckoutAction(props: {
-  readonly member: EnvironmentProject;
-  readonly disabled: boolean;
-  readonly onPress: () => void;
-}) {
-  const canRemove = useEnvironmentScope(props.member.environmentId, AuthOrchestrationOperateScope);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Remove checkout ${props.member.workspaceRoot}`}
-      disabled={props.disabled || !canRemove}
-      onPress={props.onPress}
-      className="self-start rounded-full border border-border bg-card px-3 py-1.5 disabled:opacity-40"
-    >
-      <Text className="font-t3-medium text-xs text-danger-foreground">Remove checkout</Text>
-    </Pressable>
   );
 }

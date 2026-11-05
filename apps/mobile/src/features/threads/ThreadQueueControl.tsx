@@ -73,7 +73,7 @@ function QueuedRunSender(props: {
   readonly environmentId: EnvironmentId;
   readonly message: QueuedRunMessage;
 }) {
-  const { attribution, routine } = resolveUserMessagePresentation(props.message);
+  const { attribution, routine, bot } = resolveUserMessagePresentation(props.message);
   const senderThreadId = attribution === "agent" ? props.message.senderThreadId : undefined;
   const senderShell = useQuietThreadShell(
     senderThreadId ? scopeThreadRef(props.environmentId, senderThreadId) : null,
@@ -91,7 +91,9 @@ function QueuedRunSender(props: {
           }
         : attribution === "t3code"
           ? { icon: null, label: "Sent by Boops" }
-          : null;
+          : bot !== undefined
+            ? { icon: null, label: bot.name }
+            : null;
   if (sender === null) return null;
   return (
     <View className="flex-row items-center gap-1">

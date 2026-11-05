@@ -261,7 +261,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
         page(
           "SettingsProjectOverview",
           "folder",
-          "Projects",
+          "Bots",
           selectedProjectKey !== null ? { value: projectLabel } : undefined,
         ),
       ],

@@ -40,7 +40,18 @@ function BotHome() {
       className="h-dvh min-h-0 overflow-hidden overscroll-y-none"
     >
       <WorkspacePageHeader electron={isElectron}>
-        {isMobile ? <h1 className="text-sm font-medium">Bots</h1> : null}
+        {isMobile ? (
+          <>
+            <h1 className="min-w-0 flex-1 truncate text-sm font-medium">Bots</h1>
+            {/* With no bots, the empty state below offers it. */}
+            {hasBots ? (
+              <Button size="sm" variant="outline" onClick={openCreateBotDialog}>
+                <PlusIcon className="size-4" />
+                Add bot
+              </Button>
+            ) : null}
+          </>
+        ) : null}
       </WorkspacePageHeader>
       {isMobile && hasBots ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">

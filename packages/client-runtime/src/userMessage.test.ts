@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ComposerContextId, GuestMessageId, ScheduledTaskId } from "@t3tools/contracts";
+import { ComposerContextId, GuestMessageId, ProjectId, ScheduledTaskId } from "@t3tools/contracts";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 
 import {
@@ -231,6 +231,45 @@ describe("resolveUserMessagePresentation", () => {
         text: "You were just created. Start hatching.",
       }),
     ).toMatchObject({ attribution: "system" });
+  });
+
+  it("shows a parent or child bot's message as that bot's, without its routing line", () => {
+    const fromBot = { role: "user", createdBy: "agent", creationSource: "server" } as const;
+    expect(
+      resolveUserMessagePresentation({
+        ...fromBot,
+        text: "Dana ran 14 km.",
+        context: {
+          bot: { projectId: ProjectId.make("pace"), name: "Pace", relation: "child" },
+        },
+      }),
+    ).toEqual({
+      text: "Dana ran 14 km.",
+      attribution: "bot",
+      routine: undefined,
+      bot: { name: "Pace", projectId: "pace" },
+    });
+    // Older messages carried the routing line in their text.
+    for (const routing of [
+      "[From Wren, your parent bot. Answer with report_to_parent.]",
+      "[From Pace, a bot you created. Answer with message_child_bot.]",
+    ]) {
+      expect(
+        resolveUserMessagePresentation({ ...fromBot, text: `${routing}\n\nHow was the run?` }),
+      ).toMatchObject({
+        text: "How was the run?",
+        attribution: "bot",
+        bot: { name: routing.includes("Wren") ? "Wren" : "Pace", projectId: null },
+      });
+    }
+    // The user typing the same words is still the user.
+    expect(
+      resolveUserMessagePresentation({
+        role: "user",
+        createdBy: "user",
+        text: "[From Wren, your parent bot. Answer with report_to_parent.]\n\nhi",
+      }),
+    ).toMatchObject({ attribution: null });
   });
 
   it("labels a routine message with the routine's name and trigger", () => {

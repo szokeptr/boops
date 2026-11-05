@@ -7,6 +7,7 @@ import {
   GuestShareId,
   NonNegativeInt,
   PositiveInt,
+  ProjectId,
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
@@ -280,10 +281,24 @@ export const GuestMessageAttribution = Schema.Struct({
 });
 export type GuestMessageAttribution = typeof GuestMessageAttribution.Type;
 
+/**
+ * Marks a message a bot sent its parent or child bot. The message `text` is the sender's words;
+ * the server adds a routing line from this when it hands the text to the agent. Only the server
+ * sets it.
+ */
+export const BotMessageOrigin = Schema.Struct({
+  projectId: ProjectId,
+  name: TrimmedNonEmptyString,
+  /** What the sender is to the bot that receives the message. */
+  relation: Schema.Literals(["parent", "child"]),
+});
+export type BotMessageOrigin = typeof BotMessageOrigin.Type;
+
 /** Structured context riding on a user message. Undecodable records are dropped, not fatal. */
 export const OrchestrationMessageContext = Schema.Struct({
   version: Schema.Literal(1),
   guest: Schema.optional(GuestMessageAttribution),
+  bot: Schema.optional(BotMessageOrigin),
   records: Schema.Array(Schema.Unknown)
     .check(
       Schema.isMaxLength(COMPOSER_CONTEXT_MAX_RECORDS),

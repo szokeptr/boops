@@ -9,6 +9,7 @@ import type {
   ShellSnapshotOptions,
 } from "./ProjectionStore.ts";
 import {
+  type BotMessageOrigin,
   type ChatAttachment,
   CommandId,
   isListedThreadLineage,
@@ -142,6 +143,8 @@ export interface ThreadManagementSendInput {
   readonly messageId: MessageId;
   readonly routine?: OrchestrationV2RoutineLabel;
   readonly senderThreadId?: ThreadId;
+  /** Set when the message is one bot's to its parent or child bot. */
+  readonly bot?: BotMessageOrigin;
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly modelSelection?: ModelSelection;
@@ -850,6 +853,9 @@ const make = Effect.gen(function* () {
       ...(input.routine === undefined ? {} : { routine: input.routine }),
       ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
       text: input.text,
+      ...(input.bot === undefined
+        ? {}
+        : { context: { version: 1 as const, records: [], bot: input.bot } }),
       attachments: input.attachments,
       ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
       dispatchMode,

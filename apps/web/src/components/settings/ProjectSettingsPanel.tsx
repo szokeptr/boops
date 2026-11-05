@@ -5,7 +5,7 @@ import { useEnvironmentsWithScope } from "../../state/session";
 import { mapAtomCommandResult, settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
-import { type EnvironmentId, type SidebarProjectGroupingMode } from "@t3tools/contracts";
+import { type EnvironmentId } from "@t3tools/contracts";
 import {
   checkProjectAccess,
   reportProjectFailure,
@@ -18,12 +18,8 @@ import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
-import { persistClientSettingsUpdate, useClientSettings } from "../../hooks/useSettings";
 import { readLocalApi } from "../../localApi";
-import { derivePhysicalProjectKey } from "@t3tools/client-runtime/state/project-grouping";
 import {
-  PROJECT_GROUPING_MODE_LABELS,
-  withProjectGroupingOverride,
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
@@ -36,10 +32,8 @@ import { BotConnectorsSection } from "../connectors/BotConnectorsSection";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
-import { stackedThreadToast, toastManager } from "../ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { toastManager } from "../ui/toast";
 import {
   SettingResetButton,
   SettingsPageContainer,
@@ -59,85 +53,12 @@ import {
 } from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
-import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 
 const ProjectIconPickerDialog = lazy(() =>
   import("./ProjectIconPickerDialog").then((module) => ({
     default: module.ProjectIconPickerDialog,
   })),
 );
-
-function isGroupingSelection(value: unknown): value is SidebarProjectGroupingMode | "inherit" {
-  return (
-    value === "inherit" ||
-    value === "repository" ||
-    value === "repository_path" ||
-    value === "separate"
-  );
-}
-
-// Grouping overrides are client settings, so they stay editable without project write access.
-function CheckoutGroupingSelect({ member }: { member: SidebarProjectGroupMember }) {
-  const overrideKey = derivePhysicalProjectKey(member);
-  const globalMode = useClientSettings((settings) => settings.sidebarProjectGroupingMode);
-  const selection = useClientSettings(
-    (settings) => settings.sidebarProjectGroupingOverrides?.[overrideKey] ?? "inherit",
-  );
-  return (
-    <Select
-      value={selection}
-      onValueChange={(value) => {
-        if (!isGroupingSelection(value)) return;
-        persistClientSettingsUpdate((current) => ({
-          ...current,
-          sidebarProjectGroupingOverrides: withProjectGroupingOverride(
-            current.sidebarProjectGroupingOverrides,
-            overrideKey,
-            value,
-          ),
-        })).catch((error) => {
-          console.error("Failed to save checkout grouping rule", error);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not save grouping rule",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
-        });
-      }}
-    >
-      <SelectTrigger
-        size="sm"
-        aria-label={`Grouping rule for ${member.workspaceRoot} on ${
-          member.environmentLabel
-            ? `${member.environmentLabel} (${member.environmentId})`
-            : member.environmentId
-        }`}
-      >
-        <SelectValue>
-          {selection === "inherit"
-            ? `Default (${PROJECT_GROUPING_MODE_LABELS[globalMode]})`
-            : PROJECT_GROUPING_MODE_LABELS[selection]}
-        </SelectValue>
-      </SelectTrigger>
-      <SelectPopup align="end" alignItemWithTrigger={false}>
-        <SelectItem hideIndicator value="inherit">
-          Use global default
-        </SelectItem>
-        <SelectItem hideIndicator value="repository">
-          {PROJECT_GROUPING_MODE_LABELS.repository}
-        </SelectItem>
-        <SelectItem hideIndicator value="repository_path">
-          {PROJECT_GROUPING_MODE_LABELS.repository_path}
-        </SelectItem>
-        <SelectItem hideIndicator value="separate">
-          {PROJECT_GROUPING_MODE_LABELS.separate}
-        </SelectItem>
-      </SelectPopup>
-    </Select>
-  );
-}
 
 export type ProjectSettingsCategory = "general" | "source-control" | "project";
 
@@ -258,7 +179,7 @@ function ProjectDetail({
   hasOtherMembers,
 }: {
   group: SidebarProjectSnapshot;
-  /** Pin and archive belong to the whole project, even when one machine is picked. */
+  /** Archive belongs to the whole bot, even when one machine is picked. */
   allMembers: ReadonlyArray<SidebarProjectGroupMember>;
   hasOtherMembers: boolean;
 }) {
@@ -303,11 +224,6 @@ function ProjectDetail({
     allMembers.every((member) => editableIds.has(member.environmentId)) &&
     canOrganizeProjectGroup(allMembers);
   const [isOrganizing, setIsOrganizing] = useState(false);
-  const organize = async (input: ProjectGroupUpdate, failureTitle: string) => {
-    setIsOrganizing(true);
-    await updateProjectGroup(allMembers, input, failureTitle);
-    setIsOrganizing(false);
-  };
 
   const { archiveBot, unarchiveBot } = useBotArchive();
   const setArchived = async (archived: boolean) => {
@@ -324,7 +240,7 @@ function ProjectDetail({
   const renameGroup = async (nextTitle: string, wasEdited: boolean) => {
     const title = nextTitle.trim();
     if (!title) {
-      toastManager.add({ type: "warning", title: "Project title cannot be empty" });
+      toastManager.add({ type: "warning", title: "Bot name cannot be empty" });
       return;
     }
     if (
@@ -336,7 +252,7 @@ function ProjectDetail({
     ) {
       return;
     }
-    await updateAllMembers({ title }, "Failed to rename project");
+    await updateAllMembers({ title }, "Failed to rename bot");
   };
 
   const [faviconPickerOpen, setFaviconPickerOpen] = useComposerMenuState(!canEditGroup);
@@ -418,134 +334,33 @@ function ProjectDetail({
     }
   };
 
-  const checkoutsByEnvironment = new Map<EnvironmentId, SidebarProjectGroupMember[]>();
-  for (const member of group.memberProjects) {
-    const members = checkoutsByEnvironment.get(member.environmentId);
-    if (members) members.push(member);
-    else checkoutsByEnvironment.set(member.environmentId, [member]);
-  }
-  // A lone checkout is removed from the Danger section, but it still needs its grouping
-  // rule here so "Keep separate" can be undone.
-  const checkoutControls = (member: SidebarProjectGroupMember) => (
-    <div className="flex w-full min-w-0 items-center gap-2 @min-[32rem]/settings-row:w-auto">
-      <div className="min-w-0 flex-1 @min-[32rem]/settings-row:w-72 @min-[32rem]/settings-row:flex-none">
-        <CheckoutGroupingSelect member={member} />
-      </div>
-      {hasMultipleCheckouts ? (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!editableIds.has(member.environmentId)}
-          onClick={() => void removeMembers([member])}
-          aria-label={`Remove checkout ${member.workspaceRoot}`}
-        >
-          Remove
-        </Button>
-      ) : null}
-    </div>
-  );
-  const checkoutChoices = (
-    <SettingsSection title="Checkouts">
-      <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
-        Grouping rule decides how each checkout joins project groups in the sidebar. Changing it can
-        move a checkout to a different project.
-      </p>
-      {Array.from(checkoutsByEnvironment, ([environmentId, members]) => {
-        if (checkoutsByEnvironment.size === 1) {
-          return members.map((member) => (
-            <SettingsRow
-              key={member.physicalProjectKey}
-              title={member.environmentLabel ?? "Environment"}
-              description={member.workspaceRoot}
-              control={checkoutControls(member)}
-            />
-          ));
-        }
-        const firstMember = members[0]!;
-        const hasMultiple = members.length > 1;
-        const environment = environmentById.get(environmentId);
-        const labels = environment
-          ? settingsScopeEnvironmentLabels(environment, environments)
-          : { primary: firstMember.environmentLabel ?? "Environment", secondary: environmentId };
-        return (
-          <SettingsRow
-            key={environmentId}
-            title={labels.primary}
-            description={
-              <>
-                {labels.secondary ? (
-                  <span className="block truncate">{labels.secondary}</span>
-                ) : null}
-                {!hasMultiple ? (
-                  <Tooltip>
-                    <TooltipTrigger render={<span className="block truncate" />}>
-                      {firstMember.workspaceRoot}
-                    </TooltipTrigger>
-                    <TooltipPopup>{firstMember.workspaceRoot}</TooltipPopup>
-                  </Tooltip>
-                ) : null}
-              </>
-            }
-            control={hasMultiple ? undefined : checkoutControls(firstMember)}
-          >
-            {hasMultiple ? (
-              <div className="space-y-3 pb-2 pt-1">
-                {members.map((member) => (
-                  <div
-                    key={member.physicalProjectKey}
-                    className="flex min-w-0 flex-col gap-1.5 @min-[36rem]/settings-row:flex-row @min-[36rem]/settings-row:items-center @min-[36rem]/settings-row:justify-between @min-[36rem]/settings-row:gap-3"
-                  >
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <span className="min-w-0 max-w-full truncate text-xs text-muted-foreground/80" />
-                        }
-                      >
-                        {member.workspaceRoot}
-                      </TooltipTrigger>
-                      <TooltipPopup>{member.workspaceRoot}</TooltipPopup>
-                    </Tooltip>
-                    <div className="shrink-0">{checkoutControls(member)}</div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </SettingsRow>
-        );
-      })}
-    </SettingsSection>
-  );
-
   return (
     <>
       <SettingsPageContainer className="gap-6">
         <Alert variant="info">
           <InfoIcon aria-hidden />
           <AlertDescription>
-            Can't find a setting? Keep this project picked above and hop to any other settings page.
+            Can't find a setting? Keep this bot picked above and hop to any other settings page.
           </AlertDescription>
         </Alert>
-        <SettingsSection id="project-overview" title="Project" hideTitle>
+        <SettingsSection id="project-overview" title="Bot" hideTitle>
           {!canEditGroup ? (
             <p className="px-3 py-2 text-sm text-muted-foreground sm:px-4">
               {group.memberProjects.length > 1
                 ? "Shared settings require permission to change every checkout in this group."
-                : "This connection cannot change this project."}
+                : "This connection cannot change this bot."}
             </p>
           ) : null}
           <SettingsRow
             title="Name"
-            description="The shared name for this project group in the sidebar and thread lists."
+            description="How the bot is called in the bot list and its conversation."
             resetAction={
               canResetScratchTitle ? (
                 <SettingResetButton
                   label="project name"
                   disabled={!canEditGroup}
                   onClick={() =>
-                    void updateAllMembers(
-                      { title: SCRATCH_PROJECT_TITLE },
-                      "Failed to rename project",
-                    )
+                    void updateAllMembers({ title: SCRATCH_PROJECT_TITLE }, "Failed to rename bot")
                   }
                 />
               ) : null
@@ -555,7 +370,7 @@ function ProjectDetail({
                 key={`${group.projectKey}:${group.displayName}`}
                 size="sm"
                 className="w-full sm:w-64"
-                aria-label="Project name"
+                aria-label="Bot name"
                 disabled={!canEditGroup}
                 defaultValue={group.displayName}
                 onChange={() => {
@@ -658,23 +473,6 @@ function ProjectDetail({
           {canOrganize ? (
             <>
               <SettingsRow
-                title="Pin"
-                description="Pinned projects come first in project pickers."
-                control={
-                  <Switch
-                    checked={group.pinned}
-                    disabled={isOrganizing}
-                    onCheckedChange={(checked) =>
-                      void organize(
-                        { pinned: Boolean(checked) },
-                        checked ? "Failed to pin project" : "Failed to unpin project",
-                      )
-                    }
-                    aria-label="Pin project"
-                  />
-                }
-              />
-              <SettingsRow
                 title="Archive"
                 description={
                   group.archived
@@ -703,7 +501,6 @@ function ProjectDetail({
           />
         ))}
         <ProjectDefaultsSettings category="project" />
-        {checkoutChoices}
         <SettingsSection title="Danger">
           {!hasMultipleCheckouts && !hasOtherMembers ? (
             <SettingsRow

@@ -88,7 +88,7 @@ export interface SettingsSearchAvailability {
 
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/diagnostics": "Diagnostics",
-  "/settings/projects": "Projects",
+  "/settings/projects": "Bots",
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/chat": "Chat",
@@ -271,9 +271,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "project-overview",
-    title: "Project overview",
+    title: "Bot overview",
     to: "/settings/projects",
-    searchTerms: ["name icon emoji image checkout remove delete"],
+    searchTerms: ["bot project name icon emoji image archive remove delete"],
   },
   {
     id: "default-model",

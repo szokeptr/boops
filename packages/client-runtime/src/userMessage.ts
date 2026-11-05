@@ -1,4 +1,5 @@
 import {
+  type BotMessageOrigin,
   type ChatAttachment,
   type ChatFileAttachment,
   type GuestMessageAttribution,
@@ -31,6 +32,9 @@ export const IDLE_COMPACTION_TITLES = {
 } satisfies Record<OrchestrationV2IdleCompaction, string>;
 
 const LEGACY_AUTOMATION_PREFIX = /^\[Triggered by schedule task: [^\r\n]+\]\r?\n\r?\n/;
+// Bot-to-bot messages sent before `context.bot` carried the routing line in their text.
+const LEGACY_BOT_MESSAGE_PREFIX =
+  /^\[From ([^\r\n]+?), (?:your parent bot\. Answer with report_to_parent|a bot you created\. Answer with message_child_bot)\.\]\r?\n\r?\n/;
 const LEGACY_AUTOMATION_MESSAGE_ID = /^scheduled-task-message:(.+):\d+:(?:scheduled|manual)$/;
 
 const ROUTINE_TRIGGER_LABELS = {
@@ -79,14 +83,24 @@ export function resolveUserMessagePresentation(message: {
   readonly createdBy?: OrchestrationV2Actor;
   readonly creationSource?: OrchestrationV2CreationSource;
   readonly routine?: OrchestrationV2RoutineLabel | undefined;
-  readonly context?: { readonly guest?: GuestMessageAttribution | undefined } | undefined;
+  readonly context?:
+    | {
+        readonly guest?: GuestMessageAttribution | undefined;
+        readonly bot?: BotMessageOrigin | undefined;
+      }
+    | undefined;
 }): {
   readonly text: string;
   /** "system" is a server event such as a bot's hatching kickoff; it renders as a divider. */
-  readonly attribution: "automation" | "agent" | "t3code" | "guest" | "system" | null;
+  readonly attribution: "automation" | "agent" | "t3code" | "guest" | "bot" | "system" | null;
   readonly routine: OrchestrationV2RoutineLabel | undefined;
   /** Set when `attribution` is "guest". */
   readonly guestName?: string;
+  /** Set when `attribution` is "bot". Messages from before the typed origin have no project. */
+  readonly bot?: {
+    readonly name: string;
+    readonly projectId: BotMessageOrigin["projectId"] | null;
+  };
 } {
   if (message.role !== "user") {
     return { text: message.text, attribution: null, routine: undefined };
@@ -99,6 +113,26 @@ export function resolveUserMessagePresentation(message: {
       attribution: "guest",
       routine: undefined,
       guestName: guest.name,
+    };
+  }
+  // The agent reads a routing line the server adds; people see the sender's words.
+  const bot = message.context?.bot;
+  if (bot !== undefined) {
+    return {
+      text: message.text,
+      attribution: "bot",
+      routine: undefined,
+      bot: { name: bot.name, projectId: bot.projectId },
+    };
+  }
+  const legacyBot =
+    message.createdBy === "agent" ? LEGACY_BOT_MESSAGE_PREFIX.exec(message.text) : null;
+  if (legacyBot !== null) {
+    return {
+      text: message.text.slice(legacyBot[0].length),
+      attribution: "bot",
+      routine: undefined,
+      bot: { name: legacyBot[1]!, projectId: null },
     };
   }
   if (message.routine !== undefined) {

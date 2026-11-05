@@ -148,7 +148,9 @@ export function ComposerControlsBar(props: {
     overflowShowsPermissions,
     pickerOwnsModeShortcut,
   } = resolveComposerControlsOwnership({
-    matchesDefault: accessMatchesDefault || props.permissionsShownInStrip,
+    // A home-folder bot names its limit even at the default mode, or it reads as full access.
+    matchesDefault:
+      (accessMatchesDefault && props.accessLimitLabel === null) || props.permissionsShownInStrip,
     planModeUiEnabled,
     collapsed: composerControlsCollapsed,
     measuredHiddenBlockCount,

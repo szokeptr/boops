@@ -20,6 +20,7 @@ import {
   ThreadHandoffRow,
   ThreadModelSwitchDivider,
 } from "./thread-handoff-row";
+import { BotAvatarSlot } from "../bots/BotAvatarSlot";
 import { GuestBubbleTint, GuestMessageName } from "./guestMessageStyle";
 import { ThreadGuestPendingMessage, useThreadGuestShare } from "./ThreadGuestShareBar";
 import { ConnectionRequestCard } from "./ConnectionRequestCard";
@@ -1992,6 +1993,14 @@ function renderFeedEntry(
           ) : null}
           {presentation.guestName !== undefined ? (
             <GuestMessageName name={presentation.guestName} />
+          ) : null}
+          {presentation.bot !== undefined ? (
+            <View className="mb-1 flex-row items-center gap-1.5 pr-1">
+              <BotAvatarSlot avatar={null} name={presentation.bot.name} status="idle" size={16} />
+              <Text className="font-t3-medium text-2xs text-foreground-muted">
+                {presentation.bot.name}
+              </Text>
+            </View>
           ) : null}
           {mediaAttachments.length + pendingMedia.length > 0 ? (
             <View

@@ -4,12 +4,14 @@ import {
 } from "@t3tools/client-runtime/state/thread-requests";
 import { ShieldIcon } from "lucide-react";
 import { memo, use } from "react";
+import ChatMarkdown from "../ChatMarkdown";
 import { type PendingApproval } from "../../session-logic";
 import { InlineButton } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { ToolActivityIconView, type WorkEntryIconName } from "./TimelineToolActivityIcon";
 import { TimelineRowCtx } from "./timelineRowContext";
+import { MESSAGE_HEADING_LEVEL } from "./TimelineRowParts";
 import { WorkLogRow } from "./WorkLog";
 
 const APPROVAL_PRESENTATION = {
@@ -23,8 +25,8 @@ const APPROVAL_PRESENTATION = {
   },
   "mcp-elicitation": {
     icon: "hammer",
-    label: "App access approval",
-    detailLabel: "App access request",
+    label: "Approval request",
+    detailLabel: "Request",
   },
 } satisfies Record<
   PendingApproval["requestKind"],
@@ -36,7 +38,8 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
 }: {
   approval: PendingApproval;
 }) {
-  const { respondingRequestIds, canOperateThread, onRespondToApproval } = use(TimelineRowCtx);
+  const { respondingRequestIds, canOperateThread, onRespondToApproval, markdownCwd, threadRef } =
+    use(TimelineRowCtx);
   const presentation = APPROVAL_PRESENTATION[approval.requestKind];
   const canRespond = approval.responseCapability === "live";
   return (
@@ -54,14 +57,31 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
         />
       }
       label={
-        <code
-          aria-label={presentation.detailLabel}
-          className="block max-h-40 min-w-0 overflow-auto whitespace-pre-wrap font-mono text-xs leading-5 text-foreground select-text! wrap-anywhere [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-          data-approval-detail="complete"
-          tabIndex={0}
-        >
-          {approval.detail || presentation.label}
-        </code>
+        // A tool's question to the user is prose, such as a bot's brief for a new bot.
+        approval.requestKind === "mcp-elicitation" && approval.detail ? (
+          <div
+            aria-label={presentation.detailLabel}
+            className="block max-h-80 min-w-0 overflow-auto text-sm text-foreground select-text! wrap-anywhere [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+            data-approval-detail="complete"
+            tabIndex={0}
+          >
+            <ChatMarkdown
+              text={approval.detail}
+              cwd={markdownCwd}
+              threadRef={threadRef ?? undefined}
+              headingLevelOffset={MESSAGE_HEADING_LEVEL}
+            />
+          </div>
+        ) : (
+          <code
+            aria-label={presentation.detailLabel}
+            className="block max-h-40 min-w-0 overflow-auto whitespace-pre-wrap font-mono text-xs leading-5 text-foreground select-text! wrap-anywhere [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+            data-approval-detail="complete"
+            tabIndex={0}
+          >
+            {approval.detail || presentation.label}
+          </code>
+        )
       }
     >
       <div className="ms-7.5 flex min-w-0 flex-col gap-1 pb-1 text-xs">

@@ -1,8 +1,4 @@
-import type {
-  EnvironmentId,
-  ScopedProjectRef,
-  SidebarProjectGroupingMode,
-} from "@t3tools/contracts";
+import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 import {
   buildProjectGroups,
   derivePhysicalProjectKey,
@@ -10,23 +6,6 @@ import {
   type ProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
 import type { Project } from "./types";
-
-export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
-  repository: "Group by repository",
-  repository_path: "Group by repository path",
-  separate: "Keep separate",
-};
-
-export function withProjectGroupingOverride(
-  overrides: Readonly<Record<string, SidebarProjectGroupingMode>> | undefined,
-  overrideKey: string,
-  selection: SidebarProjectGroupingMode | "inherit",
-): Record<string, SidebarProjectGroupingMode> {
-  const next = { ...overrides };
-  if (selection === "inherit") delete next[overrideKey];
-  else next[overrideKey] = selection;
-  return next;
-}
 
 export type EnvironmentPresence = "local-only" | "remote-only" | "mixed";
 

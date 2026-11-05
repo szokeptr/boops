@@ -96,6 +96,11 @@ const T3_MCP_SERVER_ALIASES = new Set([
   "t3_code_direct",
 ]);
 
+/** Whether an MCP server name is the app's own, which users should not see as a third party. */
+export function isT3McpServerName(name: string): boolean {
+  return T3_MCP_SERVER_ALIASES.has(name.trim().toLowerCase());
+}
+
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   link_pull_request: tool(
     ["Link", "Linking", "Linked", "a pull request"],
