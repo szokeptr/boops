@@ -183,7 +183,7 @@ const projectOf = (
 ): Project => ({
   id,
   title: id,
-  workspaceRoot: `/home/user/pocks/${id}`,
+  workspaceRoot: `/home/user/boops/${id}`,
   defaultModelSelection: null,
   scripts: [],
   connectionIds,

@@ -580,7 +580,7 @@ function DeleteBotRow(props: {
       <SettingsSwitchRow
         icon="folder"
         label="Also delete its home folder"
-        subtitle="Removes its files and memory from ~/pocks on its machine. Off keeps the folder."
+        subtitle="Removes its files and memory from its machine. Off keeps the folder."
         value={removeHomeFolder}
         disabled={deleting}
         onValueChange={setRemoveHomeFolder}
