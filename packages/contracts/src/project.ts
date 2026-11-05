@@ -3,6 +3,7 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import {
+  ConnectorConnectionId,
   CommandId,
   ForwardCompatibleUnion,
   isUnknownUnionMember,
@@ -221,6 +222,7 @@ export const Project = Schema.Struct({
   avatar: Schema.optional(ReceivedProjectAvatar),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   autonomy: Schema.optional(BotAutonomy),
+  connectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),

@@ -156,11 +156,24 @@ describe("command permissions", () => {
     ),
   );
 
-  it.effect("requires the destination settings grant to check OTLP endpoints", () =>
+  // Connections hold third-party credentials and decide what bots reach, as settings do.
+  it.effect.each([
+    WS_METHODS.serverCheckOtlpEndpoint,
+    WS_METHODS.connectorsStartOAuth,
+    WS_METHODS.connectorsAddConnection,
+    WS_METHODS.connectorsRename,
+    WS_METHODS.connectorsReauthenticate,
+    WS_METHODS.connectorsDisconnect,
+    WS_METHODS.connectorsRemove,
+    WS_METHODS.connectorsTest,
+    WS_METHODS.connectorsDetectAuth,
+    WS_METHODS.connectorsSetBotConnection,
+    WS_METHODS.connectorsAnswerRequest,
+  ])("requires the destination settings grant for %s", (method) =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
-        const check = createCommandPermissions(runtime, WS_METHODS.serverCheckOtlpEndpoint);
+        const check = createCommandPermissions(runtime, method);
         registry.set(sessions(env), AsyncResult.success(grant(true)));
         expect(registry.get(check.permissionAtom(env))).toBe(false);
         registry.set(

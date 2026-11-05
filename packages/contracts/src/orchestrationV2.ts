@@ -8,6 +8,7 @@ import * as SchemaGetter from "effect/SchemaGetter";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import {
+  ConnectorConnectionId,
   CheckpointId,
   CheckpointRef,
   CheckpointScopeId,
@@ -1610,6 +1611,35 @@ const OrchestrationV2LinkRequestFields = {
   failure: Schema.optional(Schema.String),
 } as const;
 
+export const OrchestrationV2ConnectionRequestStatus = Schema.Literals([
+  "pending",
+  "connected",
+  "declined",
+  "cancelled",
+  "failed",
+]);
+export type OrchestrationV2ConnectionRequestStatus =
+  typeof OrchestrationV2ConnectionRequestStatus.Type;
+
+/**
+ * A bot asked the user to connect a connector. The card closes once a connection is signed in
+ * and turned on for the bot; credentials never pass through orchestration. The record is final
+ * once answered; live connection status comes from `connectors.subscribe`.
+ */
+const OrchestrationV2ConnectionRequestFields = {
+  type: Schema.Literal("connection_request"),
+  catalogId: Schema.optional(TrimmedNonEmptyString),
+  /** The server URL the bot named, when it is not in the catalog. */
+  url: Schema.optional(TrimmedNonEmptyString),
+  /** What the card calls it: the catalog name, or the server's host. */
+  label: Schema.String,
+  reason: Schema.String,
+  connectionStatus: OrchestrationV2ConnectionRequestStatus,
+  /** The connection the card resolved to. */
+  connectionId: Schema.optional(ConnectorConnectionId),
+  failure: Schema.optional(Schema.String),
+} as const;
+
 export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1806,6 +1836,10 @@ export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
     ...OrchestrationV2LinkRequestFields,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemBaseFields,
+    ...OrchestrationV2ConnectionRequestFields,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2635,6 +2669,10 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
     ...OrchestrationV2LinkRequestFields,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemJsonBaseFields,
+    ...OrchestrationV2ConnectionRequestFields,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -3576,6 +3614,32 @@ const OrchestrationV2InternalCommand = Schema.Union([
     linkedAccess: Schema.optional(AuthMcpClientAccess),
     failure: Schema.optional(Schema.String),
     /** Tells the agent how the card ended, in the same commit that closes it. */
+    wake: Schema.optional(
+      Schema.Struct({
+        messageId: MessageId,
+        text: Schema.String,
+        notification: OrchestrationV2Notification,
+      }),
+    ),
+  }),
+  /**
+   * Records or updates a connector card. Internal so no client can mark a request connected
+   * without a connection being signed in and turned on for the bot.
+   */
+  Schema.Struct({
+    type: Schema.Literal("connection_request.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
+    nodeId: NodeId,
+    turnItemId: TurnItemId,
+    catalogId: Schema.optional(TrimmedNonEmptyString),
+    url: Schema.optional(TrimmedNonEmptyString),
+    label: Schema.String,
+    reason: Schema.String,
+    connectionStatus: OrchestrationV2ConnectionRequestStatus,
+    connectionId: Schema.optional(ConnectorConnectionId),
+    failure: Schema.optional(Schema.String),
     wake: Schema.optional(
       Schema.Struct({
         messageId: MessageId,

@@ -1,6 +1,12 @@
 import * as Schema from "effect/Schema";
 
-import { IsoDateTime, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  ConnectorConnectionId,
+  IsoDateTime,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import {
@@ -29,6 +35,8 @@ export const OrchestrationProjectShell = Schema.Struct({
   avatar: Schema.optional(ReceivedProjectAvatar),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   autonomy: Schema.optional(BotAutonomy),
+  /** Connections turned on for this bot; only the user turns them on, through `connectors.*`. */
+  connectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
