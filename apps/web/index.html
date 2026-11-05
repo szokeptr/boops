@@ -434,9 +434,10 @@
       }
 
       #boot-shell-logo {
-        width: 64px;
-        height: 64px;
+        width: 72px;
+        height: 72px;
         object-fit: contain;
+        image-rendering: pixelated;
       }
 
       /* App CSS locks body and #root scrolling once main loads, so the error screen scrolls itself. */
@@ -674,7 +675,10 @@
     <div id="root">
       <div id="boot-shell">
         <div id="boot-shell-card" aria-label="Boops splash screen">
-          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="Boops" />
+          <picture>
+            <source srcset="/apple-touch-icon.png" media="(prefers-reduced-motion: reduce)" />
+            <img id="boot-shell-logo" src="/boops-splash.png" alt="Boops" />
+          </picture>
         </div>
       </div>
     </div>
