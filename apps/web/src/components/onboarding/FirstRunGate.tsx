@@ -26,8 +26,6 @@ import { environmentShell } from "../../state/shell";
 import { environmentThreadShells } from "../../state/threads";
 import { Button } from "../ui/button";
 
-/** Pending blocks all rendering, including EventRouter welcome navigation. */
-
 const FIRST_RUN_DECISION_TIMEOUT_MS = 4_000;
 
 const primaryShellLiveAtom = Atom.make((get) => {

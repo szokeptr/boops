@@ -1,4 +1,3 @@
-import type { AnyRouter } from "@tanstack/react-router";
 import {
   EnvironmentId,
   ProjectId,
@@ -49,7 +48,7 @@ function setup() {
     refresh.mock.calls.flatMap(([atom]) =>
       [1, 2].filter((number) => atom === guideAtom(`${environmentId}:${number}`)).map(String),
     );
-  const stop = startGuideRunNotifications(registry, { navigate: vi.fn() } as unknown as AnyRouter);
+  const stop = startGuideRunNotifications(registry);
   const watch = (number: number, since = 0) =>
     useGuideRunStore.getState().watch({
       environmentId,

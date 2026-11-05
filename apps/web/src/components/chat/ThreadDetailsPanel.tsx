@@ -1,15 +1,8 @@
-import type {
-  EditorId,
-  EnvironmentId,
-  ResolvedKeybindingsConfig,
-  ThreadId,
-} from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import type { DraftId } from "../../composerDraftStore";
 import { useState, type ComponentProps } from "react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
-import { OpenInPicker } from "./OpenInPicker";
-import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 import { ThreadServersPanel } from "./ThreadServersPanel";
@@ -37,11 +30,6 @@ interface ThreadDetailsPanelProps extends Pick<
   environmentId: EnvironmentId;
   threadId: ThreadId;
   draftId?: DraftId;
-  keybindings: ResolvedKeybindingsConfig;
-  availableEditors: ReadonlyArray<EditorId>;
-  showOpenInPicker: boolean;
-  openInShortcutEnabled: boolean;
-  openInCwd: string | null;
   usage: ThreadDetailsUsageInput;
 }
 
@@ -77,30 +65,9 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       }}
     >
       {(density) => {
-        const showOpenIn = density !== "essential" && visible.openIn && props.showOpenInPicker;
         return (
           <>
             <div className="group/details-items">
-              {showOpenIn ? (
-                <ThreadDetailsSection
-                  headingId="thread-details-workspace-heading"
-                  title="Workspace"
-                  separated={false}
-                  showHeading={false}
-                >
-                  <div className="flex flex-col">
-                    <OpenInPicker
-                      keybindings={props.keybindings}
-                      environmentId={props.environmentId}
-                      availableEditors={props.availableEditors}
-                      openInCwd={props.openInCwd}
-                      enableShortcut={props.openInShortcutEnabled}
-                      displayMode="panel"
-                    />
-                  </div>
-                </ThreadDetailsSection>
-              ) : null}
-
               {density === "full" && !props.draftId && visible.servers ? (
                 <ThreadServersPanel environmentId={props.environmentId} threadId={props.threadId} />
               ) : null}

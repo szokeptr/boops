@@ -60,6 +60,8 @@ export function ComposerControlsBar(props: {
   compatibleRuntimeMode: RuntimeMode;
   defaultRuntimeMode: RuntimeMode | undefined;
   compatibleRuntimeModeOptions: ReadonlyArray<RuntimeModeOption>;
+  /** The bot's own limit, which the chip names instead of the mode when it is narrower. */
+  accessLimitLabel: string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   composerControlsCollapsed: boolean;
@@ -176,6 +178,7 @@ export function ComposerControlsBar(props: {
               interactionMode={interactionMode}
               runtimeMode={compatibleRuntimeMode}
               runtimeModeOptions={compatibleRuntimeModeOptions}
+              accessLimitLabel={props.accessLimitLabel}
               size={controlSize}
               hidden={composerControlsHidden || restingHiddenBlockCount > 0}
               accessDisplay={accessDisplay}

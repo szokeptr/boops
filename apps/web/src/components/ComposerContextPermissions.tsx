@@ -1,4 +1,5 @@
-import type { EnvironmentId, RuntimeMode } from "@t3tools/contracts";
+import type { BotAutonomy, EnvironmentId, RuntimeMode } from "@t3tools/contracts";
+import { botAccessLimitLabel } from "@t3tools/client-runtime/state/bot-list";
 import { useAtomValue } from "@effect/atom-react";
 
 import { shortcutLabelForCommand } from "../keybindings";
@@ -19,6 +20,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 export function ComposerContextPermissions(props: {
   environmentId: EnvironmentId | null;
   runtimeMode: RuntimeMode;
+  autonomy?: BotAutonomy | undefined;
   supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
@@ -32,7 +34,8 @@ export function ComposerContextPermissions(props: {
   );
   const options = resolveRuntimeModeOptions(modes, useManagedPolicy(props.environmentId));
   const composerMenuProps = useComposerMenuProps();
-  const { icon: Icon, label } = runtimeModeConfig[mode];
+  const { icon: Icon, label: modeLabel } = runtimeModeConfig[mode];
+  const label = botAccessLimitLabel(props.autonomy, mode) ?? modeLabel;
   return (
     <Menu>
       <Tooltip>

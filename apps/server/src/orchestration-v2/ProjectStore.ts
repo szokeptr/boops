@@ -51,6 +51,7 @@ export const ProjectRow = Schema.Struct({
   autonomy: BotAutonomy,
   parentBotProjectId: Schema.NullOr(ProjectId),
   canCreateBotsWithoutAsking: Schema.Boolean,
+  personaReady: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -76,6 +77,7 @@ const ProjectDbRow = Schema.Struct({
   defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
   autoPull: Schema.BooleanFromBit,
   canCreateBotsWithoutAsking: Schema.BooleanFromBit,
+  personaReady: Schema.BooleanFromBit,
   projectIcon: Schema.NullOr(Schema.fromJsonString(StoredProjectIcon)),
   scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
 });
@@ -99,6 +101,7 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
     autonomy: row.autonomy,
     parentBotProjectId: row.parentBotProjectId,
     canCreateBotsWithoutAsking: row.canCreateBotsWithoutAsking,
+    personaReady: row.personaReady,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -161,6 +164,7 @@ export const make = Effect.gen(function* () {
         autonomy,
         parent_bot_project_id AS "parentBotProjectId",
         can_create_bots_without_asking AS "canCreateBotsWithoutAsking",
+        persona_ready AS "personaReady",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
         deleted_at AS "deletedAt"
@@ -198,6 +202,7 @@ export const make = Effect.gen(function* () {
             autonomy,
             parent_bot_project_id,
             can_create_bots_without_asking,
+            persona_ready,
             created_at,
             updated_at,
             deleted_at
@@ -219,6 +224,7 @@ export const make = Effect.gen(function* () {
             ${encoded.autonomy},
             ${encoded.parentBotProjectId},
             ${encoded.canCreateBotsWithoutAsking},
+            ${encoded.personaReady},
             ${encoded.createdAt},
             ${encoded.updatedAt},
             ${encoded.deletedAt}
@@ -240,6 +246,7 @@ export const make = Effect.gen(function* () {
             autonomy = excluded.autonomy,
             parent_bot_project_id = excluded.parent_bot_project_id,
             can_create_bots_without_asking = excluded.can_create_bots_without_asking,
+            persona_ready = excluded.persona_ready,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at,
             deleted_at = excluded.deleted_at
@@ -295,6 +302,7 @@ export const make = Effect.gen(function* () {
           autonomy: DEFAULT_BOT_AUTONOMY,
           parentBotProjectId: null,
           canCreateBotsWithoutAsking: false,
+          personaReady: false,
           createdAt: payload.createdAt,
           updatedAt: payload.updatedAt,
           deletedAt: null,
@@ -336,6 +344,7 @@ export const make = Effect.gen(function* () {
         ...(payload.canCreateBotsWithoutAsking === undefined
           ? {}
           : { canCreateBotsWithoutAsking: payload.canCreateBotsWithoutAsking }),
+        ...(payload.personaReady === undefined ? {} : { personaReady: payload.personaReady }),
         updatedAt: payload.updatedAt,
       }).pipe(mapError("apply"));
     },

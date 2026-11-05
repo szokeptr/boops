@@ -101,7 +101,7 @@ describe("orchestration V2 wire projection", () => {
     expect(item.output.data).toBe("private-image-data");
   });
 
-  it("keeps transcript bodies out of shell rows", () => {
+  it("clips transcript bodies in shell rows to a preview", () => {
     const now = DateTime.makeUnsafe("2026-08-13T00:00:00.000Z");
     const threadId = ThreadId.make("thread-shell-budget");
     const projection = {
@@ -152,7 +152,7 @@ describe("orchestration V2 wire projection", () => {
 
     const shell = threadShellFromProjection(projection);
 
-    expect(shell.latestVisibleMessage).toBeNull();
+    expect(shell.latestVisibleMessage?.text.length).toBe(400);
     expect(JSON.stringify(shell).length).toBeLessThan(2_000);
   });
 

@@ -91,6 +91,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
             autonomy: "home-folder",
             parentBotProjectId: ProjectId.make("project-parent"),
             canCreateBotsWithoutAsking: true,
+            personaReady: true,
             updatedAt: at,
           },
         });
@@ -112,6 +113,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
         assert.strictEqual(shell?.autonomy, "home-folder");
         assert.strictEqual(shell?.parentBotProjectId, "project-parent");
         assert.strictEqual(shell?.canCreateBotsWithoutAsking, true);
+        assert.strictEqual(shell?.personaReady, true);
 
         const sql = yield* SqlClient.SqlClient;
         yield* sql`UPDATE projection_projects SET avatar = 'pixel-fox' WHERE project_id = ${projectId}`;

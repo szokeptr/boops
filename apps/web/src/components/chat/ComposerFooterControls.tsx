@@ -34,6 +34,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
+  accessLimitLabel?: string | null;
   size?: "sm" | "xs";
   hidden?: boolean;
   /** How the permissions chip shows: hidden while the thread matches the user's default. */
@@ -52,6 +53,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
     props.runtimeModeOptions.find((option) => option.mode === props.runtimeMode) ??
     supervisedRuntimeModeOption;
   const RuntimeModeIcon = runtimeModeOption.icon;
+  const accessLabel = props.accessLimitLabel ?? runtimeModeOption.label;
   const interactionModeTooltip =
     props.interactionMode === "plan"
       ? "Plan mode. Click to return to normal build mode"
@@ -97,7 +99,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   ) : null;
 
   // The chip opens the same Permissions toggle used in the model picker and the overflow menu.
-  const permissionsTooltip = `Permissions: ${runtimeModeOption.label}. ${runtimeModeOption.description}`;
+  const permissionsTooltip = `Permissions: ${accessLabel}. ${runtimeModeOption.description}`;
   const permissionsChip = (
     <Menu
       open={open}
@@ -117,7 +119,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
                   size={size}
                   // Mirrors the model trigger's trailing pe-1 so the gaps on both sides of the chip match.
                   className="ps-1.5"
-                  aria-label={`Permissions: ${runtimeModeOption.label}`}
+                  aria-label={`Permissions: ${accessLabel}`}
                 />
               }
             />
@@ -133,7 +135,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
             data-composer-control-label
             className={accessDisplay === "icon" ? "sr-only" : undefined}
           >
-            {runtimeModeOption.label}
+            {accessLabel}
           </span>
         </TooltipTrigger>
         <TooltipPopup side="top">{permissionsTooltip}</TooltipPopup>

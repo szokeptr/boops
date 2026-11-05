@@ -3423,6 +3423,7 @@ export default function ChatView(props: ChatViewProps) {
                               }
                               runtimeMode={runtimeMode}
                               defaultRuntimeMode={defaultRuntimeMode}
+                              autonomy={activeProject?.autonomy}
                               interactionMode={interactionMode}
                               lockedProvider={modelPickerLockedProvider}
                               providerStatuses={providerStatuses as ServerProvider[]}
@@ -3507,6 +3508,7 @@ export default function ChatView(props: ChatViewProps) {
                                 <ComposerContextPermissions
                                   environmentId={environmentId}
                                   runtimeMode={runtimeMode}
+                                  autonomy={activeProject?.autonomy}
                                   supportedRuntimeModes={
                                     activeProviderStatus?.supportedRuntimeModes
                                   }
@@ -3551,17 +3553,6 @@ export default function ChatView(props: ChatViewProps) {
                 environmentId={activeThread.environmentId}
                 threadId={activeThread.id}
                 {...(draftId ? { draftId } : {})}
-                keybindings={keybindings}
-                availableEditors={availableEditors}
-                showOpenInPicker={showOpenInPicker}
-                openInShortcutEnabled={
-                  !(
-                    rightPanelOpen &&
-                    renderedRightPanelSurface?.kind === "file" &&
-                    renderedRightPanelSurface.attachment === undefined
-                  )
-                }
-                openInCwd={gitCwd}
                 usage={{
                   providerInstanceId: activeProviderInstanceId,
                   providers: providerStatuses,

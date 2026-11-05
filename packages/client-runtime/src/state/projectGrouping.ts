@@ -68,14 +68,10 @@ function deriveRepositoryRelativeProjectPath(
   return normalizedProjectPath.slice(rootPrefix.length).replaceAll("\\", "/");
 }
 
-export function derivePhysicalProjectKeyFromPath(environmentId: string, cwd: string): string {
-  return `${environmentId}:${normalizeProjectPathForComparison(cwd)}`;
-}
-
 export function derivePhysicalProjectKey(
   project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
 ): string {
-  return derivePhysicalProjectKeyFromPath(project.environmentId, project.workspaceRoot);
+  return `${project.environmentId}:${normalizeProjectPathForComparison(project.workspaceRoot)}`;
 }
 
 function deriveProjectGroupingOverrideKey(
