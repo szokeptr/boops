@@ -279,6 +279,8 @@ interface MessagesTimelineProps {
   threadStartCheckpointReady?: boolean;
   availableRevertTurnCounts?: ReadonlySet<number> | undefined;
   onRevertToTurnCount?: (targetTurnCount: number, messageId: MessageId) => void;
+  /** Absent hides Edit on sent messages, as in the guest view. */
+  onEditMessage?: (messageId: MessageId, text: string) => Promise<boolean>;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   onSendAppMessage?: (text: string) => Promise<void>;
   onRunShellCommand?: (command: string) => void;
@@ -378,6 +380,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   threadStartCheckpointReady = false,
   availableRevertTurnCounts,
   onRevertToTurnCount,
+  onEditMessage,
   onUseArtifactTemplate = NOOP_USE_ARTIFACT_TEMPLATE,
   onSendAppMessage,
   onRunShellCommand,
@@ -1032,6 +1035,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     runs,
     activeThreadEnvironmentId,
     onRevertToTurnCount,
+    onEditMessage,
     onRunShellCommand,
     findActive,
     onImageExpand,

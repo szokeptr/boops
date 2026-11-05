@@ -48,6 +48,7 @@ import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRunt
 import {
   AuthFilesystemReadScope,
   idleCompactionOf,
+  isEditableSentMessage,
   type OrchestrationMessageContext,
   ThreadId,
   type ChatAttachment,
@@ -344,6 +345,10 @@ export interface ThreadFeedProps {
   readonly queuedMessages: ReadonlyArray<QueuedThreadMessage>;
   readonly dispatchingMessageId: MessageId | null;
   readonly onEditPendingMessage: ((message: QueuedThreadMessage) => void) | null;
+  /** Null hides Edit on sent messages. */
+  readonly onEditSentMessage?:
+    | ((message: { readonly id: MessageId; readonly text: string }) => void)
+    | null;
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   /** Null while the thread's creation is queued: reading detail then caches a not-found as deleted. */
@@ -389,13 +394,17 @@ async function waitForThreadShell(
   });
 }
 
-const USER_MESSAGE_COPY_MENU_ACTIONS = [
-  { id: "copy-prompt-link", title: "Copy prompt link", image: "link" },
-];
+const EDIT_MESSAGE_MENU_ACTION = { id: "edit", title: "Edit", image: "pencil" };
+const COPY_PROMPT_LINK_MENU_ACTION = {
+  id: "copy-prompt-link",
+  title: "Copy prompt link",
+  image: "link",
+};
 
 function UserMessageCopyButton(props: {
   readonly text: string;
   readonly onCopy: (() => Promise<void>) | undefined;
+  readonly onEdit?: (() => void) | undefined;
   readonly tintColor: ColorValue;
 }) {
   const button = (
@@ -409,11 +418,16 @@ function UserMessageCopyButton(props: {
     />
   );
   const linkText = replaceComposerContextReferences(props.text, (reference) => reference.label);
-  if (linkText.length > PROMPT_LINK_MAX_PROMPT_LENGTH) return button;
+  const actions = [
+    ...(props.onEdit === undefined ? [] : [EDIT_MESSAGE_MENU_ACTION]),
+    ...(linkText.length > PROMPT_LINK_MAX_PROMPT_LENGTH ? [] : [COPY_PROMPT_LINK_MENU_ACTION]),
+  ];
+  if (actions.length === 0) return button;
   return (
     <Menu
-      actions={USER_MESSAGE_COPY_MENU_ACTIONS}
+      actions={actions}
       onPressAction={({ nativeEvent }) => {
+        if (nativeEvent.event === "edit") props.onEdit?.();
         if (nativeEvent.event === "copy-prompt-link") void copyPromptLink(linkText);
       }}
       shouldOpenOnLongPress
@@ -1656,6 +1670,7 @@ function renderFeedEntry(
     | "skills"
     | "dispatchingMessageId"
     | "onEditPendingMessage"
+    | "onEditSentMessage"
     | "threadId"
     | "workspaceRoot"
   > & {
@@ -2225,6 +2240,14 @@ function renderFeedEntry(
               {presentation.text.trim().length > 0 ? (
                 <UserMessageCopyButton
                   text={presentation.text}
+                  onEdit={
+                    props.onEditSentMessage != null &&
+                    props.unsettledTurnId === null &&
+                    !entry.pendingMessage &&
+                    isEditableSentMessage(message)
+                      ? () => props.onEditSentMessage?.({ id: message.id, text: presentation.text })
+                      : undefined
+                  }
                   onCopy={
                     message.context && presentation.attribution !== "guest"
                       ? () =>
@@ -3699,6 +3722,7 @@ export const ThreadFeed = memo(function ThreadFeed({
             environmentId: props.environmentId,
             dispatchingMessageId: props.dispatchingMessageId,
             onEditPendingMessage: props.onEditPendingMessage,
+            onEditSentMessage: props.onEditSentMessage,
             onUseArtifactTemplate: props.onUseArtifactTemplate,
             threadId: props.threadId,
             copiedRowId,

@@ -263,6 +263,11 @@ export interface RetryWorkspacePreparationInput extends ThreadCommandInput {
   readonly runId: RunId;
 }
 
+export interface EditSentMessageInput extends ThreadCommandInput {
+  readonly messageId: MessageId;
+  readonly text: string;
+}
+
 export interface EditQueuedRunInput extends ThreadCommandInput {
   readonly runId: RunId;
   readonly text: string;
@@ -633,6 +638,18 @@ export const startFreshSession = Effect.fn("EnvironmentCommands.startFreshSessio
     ...(input.modelSelection === undefined
       ? { reason: "user" as const }
       : { reason: "model_switch" as const, modelSelection: input.modelSelection }),
+  });
+});
+
+export const editSentMessage = Effect.fn("EnvironmentCommands.editSentMessage")(function* (
+  input: EditSentMessageInput,
+) {
+  return yield* dispatch({
+    type: "message.edit",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    messageId: input.messageId,
+    text: input.text,
   });
 });
 

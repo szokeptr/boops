@@ -1,7 +1,12 @@
 import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { filePreviewKind } from "@t3tools/shared/filePreview";
 import { findRevealRef } from "./markdownFindContext";
-import { type MessageId, type ServerProviderSkill, ThreadId } from "@t3tools/contracts";
+import {
+  isEditableSentMessage,
+  type MessageId,
+  type ServerProviderSkill,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   resolveUserMessagePresentation,
   routineLabelText,
@@ -51,6 +56,7 @@ import {
 } from "./SnapShotAttachmentDetails";
 import { GuestMessageName, guestBubbleClassName } from "./guestMessageStyle";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { UserMessageEditor } from "./UserMessageEditor";
 import { promptLinkFor } from "../promptLinks/copyPromptLink";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { formatBytes } from "../../lib/formatBytes";
@@ -430,6 +436,8 @@ function UserMessageProjectedStatus({ row }: { row: Extract<TimelineRow, { kind:
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const activity = use(TimelineRowActivityCtx);
+  const [editing, setEditing] = useState(false);
   const { onImageExpand, onFileOpen } = ctx;
   const coarsePointer = useMediaQuery({ pointer: "coarse" });
   const senderThreadId = row.message.senderThreadId;
@@ -476,6 +484,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   );
   const senderBotName = senderBot?.title ?? userMessage.bot?.name;
   const resolvedContext = resolveUserMessageContext({ ...row.message, text: userMessage.text });
+  const onEditMessage = ctx.onEditMessage;
+  const editable =
+    onEditMessage !== undefined &&
+    !folded &&
+    !activity.isWorking &&
+    resolvedContext.text.trim() !== "" &&
+    isEditableSentMessage(row.message);
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const revertTurnCount = row.revertTurnCount;
   const attachmentReferences = collectComposerContextReferences(resolvedContext.text).flatMap(
@@ -813,6 +828,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         {typeof revertTurnCount === "number" && (
           <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
         )}
+        {editable ? <EditUserMessageButton onEdit={() => setEditing(true)} /> : null}
         {copyText && (
           <MessageCopyButton
             text={contextClipboardFragment ? copyText : plainText}
@@ -894,6 +910,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             : !mediaOnly && !fileCardsOnly && !audioOnly && "bg-message",
           !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "p-3",
           folded && expanded && "w-full",
+          editing && "w-full",
         )}
       >
         {/* Outside the fold so a collapsed message still has a heading to navigate to. */}
@@ -1034,7 +1051,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 ))}
               </div>
             ) : null}
-            {fileCardsOnly || audioOnly ? null : (
+            {editing && onEditMessage !== undefined ? (
+              <UserMessageEditor
+                initialText={resolvedContext.text}
+                onCancel={() => setEditing(false)}
+                onSend={(text) => onEditMessage(row.message.id, text)}
+              />
+            ) : fileCardsOnly || audioOnly ? null : (
               <div onCopyCapture={onBodyCopyCapture}>
                 <CollapsibleUserMessageBody
                   text={resolvedContext.text}
@@ -1047,7 +1070,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             )}
           </div>
         ) : null}
-        {floatActions ? (
+        {floatActions && !editing ? (
           <div
             className={cn(
               "absolute end-full top-1/2 me-2 hidden w-max max-w-[calc(20cqw-0.5rem)] -translate-y-1/2 @min-[37rem]:flex",
@@ -1059,7 +1082,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         ) : null}
       </div>
       <UserMessageProjectedStatus row={row} />
-      {!folded || expanded ? (
+      {(!folded || expanded) && !editing ? (
         <div
           className={cn(
             "flex w-full max-w-[80%] justify-end pe-1",
@@ -1131,6 +1154,21 @@ function RevertUserMessageButton({
         <PencilIcon className="size-3" />
       </TooltipTrigger>
       <TooltipPopup side="top">Edit from here</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function EditUserMessageButton({ onEdit }: { onEdit: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button type="button" size="xs" variant="ghost" onClick={onEdit} aria-label="Edit" />
+        }
+      >
+        <PencilIcon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Edit</TooltipPopup>
     </Tooltip>
   );
 }

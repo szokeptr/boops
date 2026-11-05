@@ -44,6 +44,7 @@ const COMMAND_FEATURES: {
   "run.interrupt": () => ({ feature: "run.interrupt" }),
   "queued-message.promote-to-steer": () => ({ feature: "queue.steer" }),
   "queued-run.edit": () => ({ feature: "queue.edit" }),
+  "message.edit": () => ({ feature: "message.edit" }),
   "thread.guest-share.close": () => ({ feature: "guest_share.close" }),
   "thread.guest-message.dismiss": () => ({ feature: "guest_message.dismiss" }),
 };
