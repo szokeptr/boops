@@ -71,6 +71,10 @@
       "types": "./src/secretRequest.ts",
       "default": "./src/secretRequest.ts"
     },
+    "./connectors": {
+      "types": "./src/connectors.ts",
+      "default": "./src/connectors.ts"
+    },
     "./link-request": {
       "types": "./src/linkRequest.ts",
       "default": "./src/linkRequest.ts"
@@ -178,6 +182,10 @@
     "./delayed-status": {
       "types": "./src/delayedStatus.ts",
       "default": "./src/delayedStatus.ts"
+    },
+    "./state/connectors": {
+      "types": "./src/state/connectors.ts",
+      "default": "./src/state/connectors.ts"
     },
     "./state/connections": {
       "types": "./src/state/connections.ts",
