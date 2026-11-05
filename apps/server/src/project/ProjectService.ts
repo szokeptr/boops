@@ -1,5 +1,6 @@
 import {
   CommandId,
+  type ModelSelection,
   type OrchestrationProjectShell,
   ProjectId,
   type Project,
@@ -350,6 +351,25 @@ export const make = Effect.gen(function* () {
     return Option.isNone(row) ? Option.none() : Option.some(yield* hydrate(row.value));
   });
 
+  // Folded settings ignore the record's default, so the override is what new threads read.
+  const writeDefaultModelOverride = (projectId: ProjectId, selection: ModelSelection) =>
+    serverSettings.getSettings.pipe(
+      Effect.flatMap((current) =>
+        serverSettings.updateSettings({
+          projectSettingsOverrides: {
+            [projectId]: {
+              ...current.projectSettingsOverrides[projectId],
+              defaultModelSelection: selection,
+            },
+          },
+        }),
+      ),
+      Effect.asVoid,
+      Effect.catchCause((cause) =>
+        Effect.logWarning(`Failed to save the default model of project ${projectId}.`, cause),
+      ),
+    );
+
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
     function* (input) {
       const workspaceRoot = yield* normalizeWorkspaceRoot({
@@ -368,6 +388,9 @@ export const make = Effect.gen(function* () {
           : { defaultModelSelection: input.defaultModelSelection }),
         ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
       });
+      if (input.defaultModelSelection !== undefined) {
+        yield* writeDefaultModelOverride(input.projectId, input.defaultModelSelection);
+      }
       yield* projectEnrichment.invalidate([workspaceRoot]);
       return yield* readCommitted(input.projectId);
     },
