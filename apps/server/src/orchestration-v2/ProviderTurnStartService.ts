@@ -26,7 +26,11 @@ import * as Path from "effect/Path";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
-import { withBotMessageHeader } from "../bots/botMessageHeader.ts";
+import {
+  isHelperTask,
+  withBotMessageHeader,
+  withHelperTaskHeader,
+} from "../bots/botMessageHeader.ts";
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
@@ -859,10 +863,13 @@ export const layer: Layer.Layer<
         }),
         message.context,
       );
-      const userText =
-        message.routine === undefined || goalCommand
-          ? composedText
-          : `${routineHeader(message.routine)}\n\n${composedText}`;
+      const userText = goalCommand
+        ? composedText
+        : message.routine !== undefined
+          ? `${routineHeader(message.routine)}\n\n${composedText}`
+          : isHelperTask(projection.thread, message.senderThreadId)
+            ? withHelperTaskHeader(composedText)
+            : composedText;
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
       const noteContinuation = isRestartNoteContinuation(
         run,
