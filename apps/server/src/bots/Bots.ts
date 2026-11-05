@@ -567,7 +567,9 @@ const make = Effect.gen(function* () {
     const seen = new Set(queue);
     while (queue.length > 0) {
       const children = yield* childrenOf(queue.shift()!).pipe(
-        Effect.mapError((cause) => new BotLifecycleError({ operation: "archive", projectId, cause })),
+        Effect.mapError(
+          (cause) => new BotLifecycleError({ operation: "archive", projectId, cause }),
+        ),
       );
       for (const child of children) {
         if (seen.has(child.id)) continue;
