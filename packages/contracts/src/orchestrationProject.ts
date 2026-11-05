@@ -29,6 +29,8 @@ export const OrchestrationProjectShell = Schema.Struct({
   avatar: Schema.optional(ReceivedProjectAvatar),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   autonomy: Schema.optional(BotAutonomy),
+  /** Server-kept: the bot's home folder has a PERSONA.md, so it has hatched. Absent from older servers. */
+  personaReady: Schema.optional(Schema.Boolean),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

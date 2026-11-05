@@ -89,6 +89,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
             avatar,
             mainThreadId: ThreadId.make("thread-main"),
             autonomy: "home-folder",
+            personaReady: true,
             updatedAt: at,
           },
         });
@@ -108,6 +109,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
         const shell = Option.getOrNull(yield* projects.getShell(projectId));
         assert.strictEqual(shell?.mainThreadId, "thread-main");
         assert.strictEqual(shell?.autonomy, "home-folder");
+        assert.strictEqual(shell?.personaReady, true);
 
         const sql = yield* SqlClient.SqlClient;
         yield* sql`UPDATE projection_projects SET avatar = 'pixel-fox' WHERE project_id = ${projectId}`;

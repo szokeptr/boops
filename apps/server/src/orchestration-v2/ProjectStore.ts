@@ -49,6 +49,7 @@ export const ProjectRow = Schema.Struct({
   avatar: Schema.NullOr(ProjectAvatar),
   mainThreadId: Schema.NullOr(ThreadId),
   autonomy: BotAutonomy,
+  personaReady: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -73,6 +74,7 @@ const ProjectDbRow = Schema.Struct({
   avatar: StoredAvatar,
   defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
   autoPull: Schema.BooleanFromBit,
+  personaReady: Schema.BooleanFromBit,
   projectIcon: Schema.NullOr(Schema.fromJsonString(StoredProjectIcon)),
   scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
 });
@@ -94,6 +96,7 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
     avatar: row.avatar,
     mainThreadId: row.mainThreadId,
     autonomy: row.autonomy,
+    personaReady: row.personaReady,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -154,6 +157,7 @@ export const make = Effect.gen(function* () {
         avatar,
         main_thread_id AS "mainThreadId",
         autonomy,
+        persona_ready AS "personaReady",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
         deleted_at AS "deletedAt"
@@ -189,6 +193,7 @@ export const make = Effect.gen(function* () {
             avatar,
             main_thread_id,
             autonomy,
+            persona_ready,
             created_at,
             updated_at,
             deleted_at
@@ -208,6 +213,7 @@ export const make = Effect.gen(function* () {
             ${encoded.avatar},
             ${encoded.mainThreadId},
             ${encoded.autonomy},
+            ${encoded.personaReady},
             ${encoded.createdAt},
             ${encoded.updatedAt},
             ${encoded.deletedAt}
@@ -227,6 +233,7 @@ export const make = Effect.gen(function* () {
             avatar = excluded.avatar,
             main_thread_id = excluded.main_thread_id,
             autonomy = excluded.autonomy,
+            persona_ready = excluded.persona_ready,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at,
             deleted_at = excluded.deleted_at
@@ -280,6 +287,7 @@ export const make = Effect.gen(function* () {
           avatar: null,
           mainThreadId: null,
           autonomy: DEFAULT_BOT_AUTONOMY,
+          personaReady: false,
           createdAt: payload.createdAt,
           updatedAt: payload.updatedAt,
           deletedAt: null,
@@ -315,6 +323,7 @@ export const make = Effect.gen(function* () {
         ...(payload.avatar === undefined ? {} : { avatar: payload.avatar }),
         ...(payload.mainThreadId === undefined ? {} : { mainThreadId: payload.mainThreadId }),
         ...(payload.autonomy === undefined ? {} : { autonomy: payload.autonomy }),
+        ...(payload.personaReady === undefined ? {} : { personaReady: payload.personaReady }),
         updatedAt: payload.updatedAt,
       }).pipe(mapError("apply"));
     },

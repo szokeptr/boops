@@ -47,6 +47,7 @@ export interface ProjectMetaUpdateCommand {
   readonly avatar?: ProjectAvatar | null;
   readonly mainThreadId?: ThreadId | null;
   readonly autonomy?: BotAutonomy | null;
+  readonly personaReady?: boolean;
 }
 
 export interface ProjectDeleteCommand {
@@ -230,6 +231,7 @@ export function planProjectCommand(input: {
           ...(command.autonomy === undefined
             ? {}
             : { autonomy: command.autonomy ?? DEFAULT_BOT_AUTONOMY }),
+          ...(command.personaReady === undefined ? {} : { personaReady: command.personaReady }),
           updatedAt: occurredAt,
         },
       });

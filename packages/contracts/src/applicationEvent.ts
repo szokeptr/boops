@@ -66,6 +66,7 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   avatar: Schema.optional(ReceivedProjectAvatar),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   autonomy: Schema.optional(BotAutonomy),
+  personaReady: Schema.optional(Schema.Boolean),
   updatedAt: IsoDateTime,
 });
 export type ApplicationProjectMetaUpdatedPayload = typeof ApplicationProjectMetaUpdatedPayload.Type;

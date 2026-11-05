@@ -259,6 +259,7 @@ function makeHarness(options: HarnessOptions = {}) {
               avatar: null,
               mainThreadId: null,
               autonomy: "full",
+              personaReady: false,
               createdAt: project.createdAt,
               updatedAt: project.updatedAt,
               deletedAt: project.deletedAt,

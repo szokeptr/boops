@@ -23,8 +23,8 @@ import { toSortableTimestamp } from "./threadSort.ts";
 export type BotThreadStatus = "working" | "needs-you" | "idle";
 
 /**
- * What the bot is doing, as its avatar shows it. Hatching: its conversation has
- * not had a turn yet. Dozing: idle and quiet for a while.
+ * What the bot is doing, as its avatar shows it. Hatching: it has not written its
+ * PERSONA.md yet. Dozing: idle and quiet for a while.
  */
 export type BotStatus = BotThreadStatus | "dozing" | "hatching";
 
@@ -163,6 +163,14 @@ function compareByActivity(
   return difference !== 0 ? difference : tieBreak.localeCompare(otherTieBreak);
 }
 
+// Servers without persona tracking leave `personaReady` out; there, a first turn is the best sign.
+function hasHatched(
+  project: Pick<EnvironmentProject, "personaReady">,
+  main: EnvironmentThreadShell | null,
+): boolean {
+  return project.personaReady ?? (main !== null && main.latestRun !== null);
+}
+
 /**
  * One row per bot across every linked environment, most recently active
  * first. A bot needs you or works when any of its threads does, so a
@@ -197,7 +205,7 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
     const status: BotStatus =
       threadStatus !== "idle"
         ? threadStatus
-        : main === null || main.latestRun === null
+        : !hasHatched(project, main)
           ? "hatching"
           : input.now !== undefined &&
               input.now - (toSortableTimestamp(lastActivityAt) ?? input.now) > BOT_DOZE_AFTER_MS
