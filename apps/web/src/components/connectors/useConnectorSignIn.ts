@@ -1,19 +1,30 @@
-import { type ConnectorChoice, connectorFailureMessage } from "@t3tools/client-runtime/connectors";
+import {
+  type ConnectorChoice,
+  connectorCallbackUrl,
+  connectorFailureMessage,
+  isOAuthClientRequired,
+} from "@t3tools/client-runtime/connectors";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type {
+  ConnectorCatalogEntry,
   ConnectorConnection,
   ConnectorConnectionId,
+  ConnectorOAuthClientInput,
   ConnectorRequestRef,
   EnvironmentId,
 } from "@t3tools/contracts";
 import { useRef, useState } from "react";
 
 import { ensureLocalApi } from "../../localApi";
-import { connectorEnvironment, useConnectorRedirect } from "../../state/connectors";
+import {
+  connectorEnvironment,
+  useConnectorCatalog,
+  useConnectorRedirect,
+} from "../../state/connectors";
 import { useAtomCommand } from "../../state/use-atom-command";
 
 /** A sign-in waiting on the browser; the subscribe stream says when it lands. */
@@ -29,6 +40,13 @@ export interface PendingConnectorSignIn {
 export type ConnectorKeyPrompt =
   | { readonly kind: "new"; readonly choice: ConnectorChoice }
   | { readonly kind: "reauthenticate"; readonly connection: ConnectorConnection };
+
+/** An OAuth client the user still has to create, for a server without client registration. */
+export type ConnectorClientPrompt = ConnectorKeyPrompt & {
+  readonly name: string;
+  readonly entry: ConnectorCatalogEntry | null;
+  readonly redirectUri: string;
+};
 
 /**
  * Reserves a tab before the first await, since browsers block a later `window.open`. The
@@ -46,6 +64,10 @@ function reserveAuthWindow() {
   };
 }
 
+/** A new connection's id; signing in again answers without one. */
+const connectionIdOf = (value: object): ConnectorConnectionId | null =>
+  "connectionId" in value ? (value.connectionId as ConnectorConnectionId) : null;
+
 const settle = <A, E>(result: AtomCommandResult<A, E>, fallback: string) =>
   result._tag === "Success"
     ? ({ ok: true, value: result.value } as const)
@@ -54,6 +76,7 @@ const settle = <A, E>(result: AtomCommandResult<A, E>, fallback: string) =>
         message: isAtomCommandInterrupted(result)
           ? null
           : connectorFailureMessage(squashAtomCommandFailure(result), fallback),
+        clientRequired: isOAuthClientRequired(squashAtomCommandFailure(result)),
       } as const);
 
 /**
@@ -69,8 +92,10 @@ export function useConnectorSignIn(
   } = {},
 ) {
   const redirect = useConnectorRedirect(environmentId);
+  const catalog = useConnectorCatalog(environmentId).entries;
   const [pending, setPending] = useState<PendingConnectorSignIn | null>(null);
   const [keyPrompt, setKeyPrompt] = useState<ConnectorKeyPrompt | null>(null);
+  const [clientPrompt, setClientPrompt] = useState<ConnectorClientPrompt | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // A double click runs twice before a re-render; this guard is synchronous.
@@ -94,33 +119,64 @@ export function useConnectorSignIn(
     setError(failure);
   };
 
+  /** Starts a sign-in, or asks for an OAuth client when the server has no way to register one. */
   const oauth = async (
     authWindow: ReturnType<typeof reserveAuthWindow>,
-    name: string,
-    fresh: boolean,
-    begin: (
-      redirectOrigin: string,
-    ) => Promise<
-      | { readonly ok: true; readonly connectionId: ConnectorConnectionId; readonly url: string }
-      | { readonly ok: false; readonly message: string | null }
-    >,
-  ) => {
+    target: ConnectorKeyPrompt,
+    client?: ConnectorOAuthClientInput,
+  ): Promise<string | null> => {
     if (redirect === null) {
       authWindow.cancel();
       return "This app has no address for the server to send sign-ins back to. Reconnect and try again.";
     }
-    const started = await begin(redirect.origin);
+    const redirectOrigin = redirect.origin;
+    const withClient = client === undefined ? {} : { client };
+    const fallback = "Could not start signing in.";
+    const started =
+      target.kind === "new"
+        ? settle(
+            await startOAuth({
+              environmentId,
+              input: { target: target.choice.target, redirectOrigin, ...withClient, ...forRequest },
+            }),
+            fallback,
+          )
+        : settle(
+            await reauthenticate({
+              environmentId,
+              input: {
+                connectionId: target.connection.id,
+                credential: { type: "oauth", redirectOrigin, ...withClient },
+                ...forRequest,
+              },
+            }),
+            fallback,
+          );
+    const name = target.kind === "new" ? target.choice.name : target.connection.displayName;
     if (!started.ok) {
       authWindow.cancel();
-      return started.message;
+      if (!started.clientRequired || client !== undefined) return started.message;
+      const entry =
+        target.kind === "new"
+          ? target.choice.entry
+          : (catalog.find((candidate) => candidate.id === target.connection.catalogId) ?? null);
+      setClientPrompt({
+        ...target,
+        name,
+        entry,
+        redirectUri: connectorCallbackUrl(redirectOrigin),
+      });
+      return null;
     }
-    setPending({
-      connectionId: started.connectionId,
-      name,
-      authorizationUrl: started.url,
-      fresh,
-    });
-    await authWindow.open(started.url).catch(() => undefined);
+    const connectionId =
+      target.kind === "reauthenticate" ? target.connection.id : connectionIdOf(started.value);
+    const url = started.value.authorizationUrl;
+    if (connectionId === null || url === null) {
+      authWindow.cancel();
+      return "The server did not return a sign-in page.";
+    }
+    setPending({ connectionId, name, authorizationUrl: url, fresh: target.kind === "new" });
+    await authWindow.open(url).catch(() => undefined);
     return null;
   };
 
@@ -164,22 +220,7 @@ export function useConnectorSignIn(
         );
         return result.ok ? added(result.value) : result.message;
       }
-      return oauth(authWindow, choice.name, true, async (redirectOrigin) => {
-        const result = settle(
-          await startOAuth({
-            environmentId,
-            input: { target: choice.target, redirectOrigin, ...forRequest },
-          }),
-          "Could not start signing in.",
-        );
-        return result.ok
-          ? {
-              ok: true,
-              connectionId: result.value.connectionId,
-              url: result.value.authorizationUrl,
-            }
-          : result;
-      });
+      return oauth(authWindow, { kind: "new", choice });
     });
   };
 
@@ -199,26 +240,21 @@ export function useConnectorSignIn(
       });
     }
     const authWindow = reserveAuthWindow();
-    return run(() =>
-      oauth(authWindow, connection.displayName, false, async (redirectOrigin) => {
-        const result = settle(
-          await reauthenticate({
-            environmentId,
-            input: {
-              connectionId: connection.id,
-              credential: { type: "oauth", redirectOrigin },
-              ...forRequest,
-            },
-          }),
-          "Could not start signing in.",
-        );
-        if (!result.ok) return result;
-        if (result.value.authorizationUrl === null) {
-          return { ok: false, message: "The server did not return a sign-in page." };
-        }
-        return { ok: true, connectionId: connection.id, url: result.value.authorizationUrl };
-      }),
-    );
+    return run(() => oauth(authWindow, { kind: "reauthenticate", connection }));
+  };
+
+  /** Settles to an error to show in the client dialog, or null once the sign-in page opens. */
+  const submitClient = async (client: ConnectorOAuthClientInput): Promise<string | null> => {
+    const prompt = clientPrompt;
+    if (prompt === null || inFlight.current) return null;
+    const authWindow = reserveAuthWindow();
+    inFlight.current = true;
+    setBusy(true);
+    const failure = await oauth(authWindow, prompt, client);
+    inFlight.current = false;
+    setBusy(false);
+    if (failure === null) setClientPrompt(null);
+    return failure;
   };
 
   /** Settles to an error to show in the key dialog, or null once the key is saved. */
@@ -278,6 +314,9 @@ export function useConnectorSignIn(
     },
     keyPrompt,
     closeKeyPrompt: () => setKeyPrompt(null),
+    clientPrompt,
+    closeClientPrompt: () => setClientPrompt(null),
+    submitClient,
     busy,
     error,
     clearError: () => setError(null),

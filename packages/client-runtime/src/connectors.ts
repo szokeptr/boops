@@ -1,11 +1,13 @@
-import type {
-  ConnectorAuthKind,
-  ConnectorCatalogEntry,
-  ConnectorConnection,
-  ConnectorConnectionId,
-  ConnectorsAnswerRequestInput,
-  ConnectorTarget,
-  OrchestrationV2TurnItem,
+import {
+  CONNECTOR_CALLBACK_PATH,
+  type ConnectorAuthKind,
+  type ConnectorCatalogEntry,
+  type ConnectorClientSetup,
+  type ConnectorConnection,
+  type ConnectorConnectionId,
+  type ConnectorsAnswerRequestInput,
+  type ConnectorTarget,
+  type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
 
@@ -244,6 +246,28 @@ export function connectorRedirectOrigin(
     insecureRemote: url.protocol === "http:" && !isLocalLoopbackHost(url.hostname),
   };
 }
+
+/** The redirect URI a user registers with a provider when they create their own OAuth client. */
+export const connectorCallbackUrl = (redirectOrigin: string) =>
+  `${redirectOrigin}${CONNECTOR_CALLBACK_PATH}`;
+
+/** The catalog's guidance for creating an OAuth client, and the scopes to add for it. */
+export function connectorClientGuide(entry: ConnectorCatalogEntry | null | undefined): {
+  readonly setup: ConnectorClientSetup | null;
+  readonly scopes: ReadonlyArray<string>;
+} {
+  const auth = entry?.auth.kind === "oauth" ? entry.auth : undefined;
+  return { setup: auth?.clientSetup ?? null, scopes: auth?.scopes ?? [] };
+}
+
+/** The server has no client registration and no client to reuse: ask the user for one. */
+export const isOAuthClientRequired = (failure: unknown) =>
+  typeof failure === "object" &&
+  failure !== null &&
+  "_tag" in failure &&
+  failure._tag === "ConnectorError" &&
+  "reason" in failure &&
+  failure.reason === "oauth_client_required";
 
 export const INSECURE_REDIRECT_WARNING =
   "This app reaches the server over plain http, which most services refuse for sign-in. Sign in from the server's machine, or connect to it through Boops Connect.";

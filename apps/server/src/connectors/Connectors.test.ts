@@ -57,6 +57,9 @@ const rootNode = NodeId.make("node:bot:root");
 const ORIGIN = "http://localhost:3773";
 const ACME = "https://mcp.acme.test/mcp";
 const OPEN = "https://open.acme.test/mcp";
+const GMAIL = "https://gmailmcp.googleapis.com/mcp/v1";
+const CALENDAR = "https://calendarmcp.googleapis.com/mcp/v1";
+const GOOGLE_CLIENT = { clientId: "123-work.apps.googleusercontent.com", clientSecret: "GOCSPX-s" };
 
 const scope: McpInvocationContext.McpInvocationScope = {
   environmentId: "environment-local" as McpInvocationContext.McpInvocationScope["environmentId"],
@@ -68,8 +71,9 @@ const scope: McpInvocationContext.McpInvocationScope = {
 };
 
 /**
- * One remote MCP server behind OAuth (ACME, with its authorization server) and one open one.
- * It checks PKCE, the resource indicator, and the tokens it issued.
+ * One remote MCP server behind OAuth (ACME, with its authorization server), one open one, and
+ * Google's: no client registration, `initialize` without a token, and a token endpoint that wants
+ * the user's client secret. It checks PKCE, the resource indicator, and the tokens it issued.
  */
 const makeWorld = () => {
   const world = {
@@ -79,6 +83,7 @@ const makeWorld = () => {
     challenges: new Map<string, string>(),
     validTokens: new Set<string>(),
     issued: 0,
+    googleRefreshes: 0,
   };
   const json = (body: unknown, init: ResponseInit = {}) =>
     new Response(JSON.stringify(body), {
@@ -137,6 +142,44 @@ const makeWorld = () => {
       const metadata = JSON.parse(bodyOf(request)) as { redirect_uris: Array<string> };
       expect(metadata.redirect_uris).toEqual([`${ORIGIN}/oauth/connectors/callback`]);
       return json({ client_id: `client-${world.registrations}` }, { status: 201 });
+    }
+    if (href === GMAIL || href === CALENDAR) {
+      const token = request.headers.authorization?.replace(/^Bearer /, "");
+      if (token !== undefined && !world.validTokens.has(token)) {
+        return new Response(null, { status: 401 });
+      }
+      return mcp(request);
+    }
+    if (url.pathname === "/.well-known/oauth-protected-resource/mcp/v1") {
+      return json({
+        resource: `${url.origin}/mcp/v1`,
+        authorization_servers: ["https://accounts.google.com/"],
+        scopes_supported: ["https://mail.google.com/", "https://www.googleapis.com/auth/calendar"],
+      });
+    }
+    if (href === "https://accounts.google.com/.well-known/oauth-authorization-server") {
+      return json({
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_endpoint: "https://oauth2.googleapis.com/token",
+        code_challenge_methods_supported: ["plain", "S256"],
+        token_endpoint_auth_methods_supported: ["client_secret_post", "client_secret_basic"],
+      });
+    }
+    if (href === "https://oauth2.googleapis.com/token") {
+      const basic = `Basic ${btoa(`${GOOGLE_CLIENT.clientId}:${GOOGLE_CLIENT.clientSecret}`)}`;
+      if (request.headers.authorization !== basic) {
+        return json({ error: "invalid_client" }, { status: 401 });
+      }
+      const form = new URLSearchParams(bodyOf(request));
+      world.issued += 1;
+      const accessToken = `ya29-${world.issued}`;
+      world.validTokens.add(accessToken);
+      if (form.get("grant_type") === "refresh_token") {
+        world.googleRefreshes += 1;
+        return json({ access_token: accessToken, expires_in: 3599 });
+      }
+      return json({ access_token: accessToken, refresh_token: "1//rt", expires_in: 3599 });
     }
     if (href === "https://auth.acme.test/token") {
       const form = new URLSearchParams(bodyOf(request));
@@ -452,6 +495,80 @@ it.effect(
     ),
 );
 
+it.effect(
+  "signs in to Google with the user's own OAuth client, reused across connections and sign-ins",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const gmail = { target: { catalogId: "gmail" }, redirectOrigin: ORIGIN } as const;
+        const asked = yield* harness.connectors.startOAuth(gmail).pipe(Effect.flip);
+        expect(asked).toMatchObject({
+          reason: "oauth_client_required",
+          detail: "accounts.google.com",
+        });
+        const started = yield* harness.connectors.startOAuth({ ...gmail, client: GOOGLE_CLIENT });
+        const url = new URL(started.authorizationUrl);
+        expect(`${url.origin}${url.pathname}`).toBe("https://accounts.google.com/o/oauth2/v2/auth");
+        expect(Object.fromEntries(url.searchParams)).toMatchObject({
+          client_id: GOOGLE_CLIENT.clientId,
+          redirect_uri: `${ORIGIN}/oauth/connectors/callback`,
+          resource: GMAIL,
+          scope:
+            "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose",
+          access_type: "offline",
+          prompt: "consent",
+        });
+        const connection = yield* harness.connectors.completeOAuth(
+          harness.approve(started.authorizationUrl),
+        );
+        expect(connection).toMatchObject({ authKind: "oauth", status: "connected", toolCount: 2 });
+        // The secret stays in the secret store, never in the connection or its server info.
+        expect(JSON.stringify((yield* harness.connectors.list).connections)).not.toContain(
+          "GOCSPX",
+        );
+
+        // Another Google product reuses the client without asking.
+        const calendar = yield* harness.connectors.startOAuth({
+          target: { catalogId: "google-calendar" },
+          redirectOrigin: ORIGIN,
+        });
+        expect(new URL(calendar.authorizationUrl).searchParams.get("client_id")).toBe(
+          GOOGLE_CLIENT.clientId,
+        );
+
+        // Refresh authenticates with the stored secret.
+        yield* seedThread(harness);
+        yield* harness.connectors.setBotConnection({
+          projectId: botId,
+          connectionId: connection.id,
+          enabled: true,
+        });
+        yield* TestClock.adjust(Duration.seconds(3570));
+        const upstream = yield* harness.connectors.upstream({
+          threadId,
+          serverName: connection.serverName,
+        });
+        expect(upstream.headers).toEqual({ authorization: "Bearer ya29-2" });
+        expect(harness.world.googleRefreshes).toBe(1);
+
+        // Disconnecting signs out but keeps the client, so signing in again doesn't ask for it.
+        yield* harness.connectors.disconnect(connection.id);
+        const again = yield* harness.connectors.reauthenticate({
+          connectionId: connection.id,
+          credential: { type: "oauth", redirectOrigin: ORIGIN },
+        });
+        expect(new URL(again.authorizationUrl!).searchParams.get("client_id")).toBe(
+          GOOGLE_CLIENT.clientId,
+        );
+        const reconnected = yield* harness.connectors.completeOAuth(
+          harness.approve(again.authorizationUrl!),
+        );
+        expect(reconnected).toMatchObject({ id: connection.id, status: "connected" });
+      }),
+    ),
+);
+
 it.effect("refreshes a token near expiry, and a failed refresh means needs_auth", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -495,6 +612,10 @@ it.effect("a connection card: retry by clientRequestId, use-existing resolves an
     Effect.gen(function* () {
       const harness = yield* makeHarness;
       yield* seedThread(harness);
+      const { catalog } = yield* harness.connectors.listForCaller(scope);
+      // Bots learn which connectors need the user to create an OAuth client first.
+      expect(catalog.find((entry) => entry.catalogId === "gmail")?.setup).toContain("OAuth client");
+      expect(catalog.find((entry) => entry.catalogId === "linear")?.setup).toBeUndefined();
       const ask = { url: OPEN, reason: "To read your tickets.", clientRequestId: "ask-1" };
       const shown = yield* harness.connectors.requestConnection(scope, ask);
       expect(shown.status).toBe("card_shown");

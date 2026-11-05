@@ -30,8 +30,27 @@ const ConnectorUrl = TrimmedNonEmptyString.check(
 export const ConnectorAuthKind = Schema.Literals(["oauth", "api-key", "none"]);
 export type ConnectorAuthKind = typeof ConnectorAuthKind.Type;
 
+/**
+ * For an OAuth server without dynamic client registration: the user creates an OAuth client in
+ * the provider's console and enters its ID and secret. One client serves every connection to
+ * the same authorization server, so only the first one asks.
+ */
+export const ConnectorClientSetup = Schema.Struct({
+  docsUrl: ConnectorUrl,
+  /** Short steps in the provider's console. Clients show the redirect URI and scopes after them. */
+  steps: Schema.Array(Schema.String),
+});
+export type ConnectorClientSetup = typeof ConnectorClientSetup.Type;
+
 export const ConnectorCatalogAuth = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("oauth") }),
+  Schema.Struct({
+    kind: Schema.Literal("oauth"),
+    /** Requested instead of every scope the server lists. */
+    scopes: Schema.optionalKey(Schema.Array(Schema.String)),
+    /** Added to the authorization request, e.g. Google's `access_type=offline`. */
+    authorizationParams: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+    clientSetup: Schema.optionalKey(ConnectorClientSetup),
+  }),
   Schema.Struct({
     kind: Schema.Literal("api-key"),
     /** The request header the key goes in. `Authorization` keys are sent as `Bearer <key>`. */
@@ -101,15 +120,25 @@ export const ConnectorRequestRef = Schema.Struct({
 });
 export type ConnectorRequestRef = typeof ConnectorRequestRef.Type;
 
+/** Where providers send the browser back after sign-in, on the environment's HTTP origin. */
+export const CONNECTOR_CALLBACK_PATH = "/oauth/connectors/callback";
+
 /**
  * The environment's HTTP origin as this client reaches it, e.g. `http://localhost:3773` or the
  * T3 Connect hostname. Not the page origin on app.t3.codes. The provider redirects the browser to
- * `<origin>/oauth/connectors/callback`, which must reach this server.
+ * `<origin>${CONNECTOR_CALLBACK_PATH}`, which must reach this server.
  */
 const RedirectOrigin = TrimmedNonEmptyString.check(
   Schema.isMaxLength(512),
   Schema.isPattern(/^https?:\/\/[^/?#]+$/i),
 );
+
+/** An OAuth client the user registered with the provider. It stays on the server. */
+export const ConnectorOAuthClientInput = Schema.Struct({
+  clientId: TrimmedNonEmptyString.check(Schema.isMaxLength(512)),
+  clientSecret: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(512))),
+});
+export type ConnectorOAuthClientInput = typeof ConnectorOAuthClientInput.Type;
 
 export const ConnectorsDetectAuthInput = Schema.Struct({ url: ConnectorUrl });
 export const ConnectorsDetectAuthResult = Schema.Struct({ authKind: ConnectorAuthKind });
@@ -120,6 +149,8 @@ export const ConnectorsStartOAuthInput = Schema.Struct({
   /** Defaults to the catalog name or the server's host. */
   displayName: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(80))),
   redirectOrigin: RedirectOrigin,
+  /** Only after `oauth_client_required`; otherwise the server registers or reuses a client. */
+  client: Schema.optionalKey(ConnectorOAuthClientInput),
   forRequest: Schema.optionalKey(ConnectorRequestRef),
 });
 export type ConnectorsStartOAuthInput = typeof ConnectorsStartOAuthInput.Type;
@@ -163,7 +194,12 @@ export type ConnectorsRenameInput = typeof ConnectorsRenameInput.Type;
 export const ConnectorsReauthenticateInput = Schema.Struct({
   connectionId: ConnectorConnectionId,
   credential: Schema.Union([
-    Schema.Struct({ type: Schema.Literal("oauth"), redirectOrigin: RedirectOrigin }),
+    Schema.Struct({
+      type: Schema.Literal("oauth"),
+      redirectOrigin: RedirectOrigin,
+      /** Replaces the connection's OAuth client; otherwise the one it signed in with is reused. */
+      client: Schema.optionalKey(ConnectorOAuthClientInput),
+    }),
     Schema.Struct({
       type: Schema.Literal("api-key"),
       apiKey: TrimmedNonEmptyString.check(Schema.isMaxLength(8192)),
@@ -213,7 +249,8 @@ const CONNECTOR_ERROR_MESSAGES = {
   auth_kind_mismatch: "That connector signs in another way.",
   not_connected: "Sign in to this connection first.",
   unreachable: "The server did not answer.",
-  oauth_unsupported: "This server's sign-in can't be used by Pocks.",
+  oauth_unsupported: "This server's sign-in can't be used by Boops.",
+  oauth_client_required: "This server needs an OAuth client you create. Enter its client ID.",
   oauth_failed: "Signing in failed.",
   test_failed: "The server did not list its tools.",
   request_not_found: "This connection request no longer exists.",
@@ -244,6 +281,8 @@ export const OrchestratorMcpListConnectorsResult = Schema.Struct({
       catalogId: ConnectorCatalogId,
       name: Schema.String,
       description: Schema.String,
+      /** Models read tool results, not output schemas, so this explains itself. */
+      setup: Schema.optional(Schema.String),
     }),
   ),
   connections: Schema.Array(

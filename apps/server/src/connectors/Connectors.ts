@@ -5,6 +5,7 @@
  */
 import {
   CommandId,
+  CONNECTOR_CALLBACK_PATH,
   type ConnectorCatalogEntry,
   type ConnectorConnection,
   ConnectorConnectionId,
@@ -14,6 +15,7 @@ import {
   type ConnectorsAnswerRequestInput,
   type ConnectorsAuthorizationResult,
   type ConnectorsDetectAuthResult,
+  type ConnectorOAuthClientInput,
   type ConnectorsReauthenticateInput,
   type ConnectorsReauthenticateResult,
   type ConnectorsRenameInput,
@@ -60,7 +62,6 @@ import { CONNECTOR_CATALOG, catalogEntry } from "./connectorCatalog.ts";
 import * as ConnectorMcp from "./connectorMcp.ts";
 import * as ConnectorOAuth from "./connectorOAuth.ts";
 
-export const CONNECTOR_CALLBACK_PATH = "/oauth/connectors/callback";
 // Long enough to sign in and approve; a flow is single-use either way.
 const OAUTH_FLOW_TTL_MS = 15 * 60 * 1000;
 // Refresh this long before expiry so a token never lapses mid-request.
@@ -71,7 +72,8 @@ const StoredCredential = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("oauth"),
     client: ConnectorOAuth.OAuthClient,
-    tokens: ConnectorOAuth.OAuthTokens,
+    /** Absent after a disconnect that kept the user's own client. */
+    tokens: Schema.optionalKey(ConnectorOAuth.OAuthTokens),
   }),
   Schema.Struct({ kind: Schema.Literal("api-key"), apiKey: Schema.String }),
 ]);
@@ -138,7 +140,9 @@ const credentialHeaders = (
 ): Record<string, string> => {
   if (credential === undefined) return {};
   if (credential.kind === "oauth") {
-    return { authorization: `Bearer ${credential.tokens.accessToken}` };
+    return credential.tokens === undefined
+      ? {}
+      : { authorization: `Bearer ${credential.tokens.accessToken}` };
   }
   const header = row.header_name ?? "Authorization";
   const bare = header.toLowerCase() === "authorization" && !/^\S+\s+\S/.test(credential.apiKey);
@@ -216,6 +220,9 @@ const outcomeNotice = (
           summary: `Declined to connect ${card.label}`,
         },
       };
+
+const CLIENT_SETUP_NOTE =
+  "The user first creates an OAuth client with the provider; the card walks them through it. Tell them so when you ask, and don't retry.";
 
 const mcpFailure = (code: OrchestratorMcpFailure["code"], message: string) =>
   new OrchestratorMcpFailure({ code, message });
@@ -401,17 +408,20 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const credential = yield* readCredential(row.connection_id);
         if (row.auth_kind === "none") return {};
-        if (credential === undefined) {
+        if (
+          credential === undefined ||
+          (credential.kind === "oauth" && credential.tokens === undefined)
+        ) {
           return yield* new ConnectorError({ reason: "not_connected" });
         }
         if (credential.kind !== "oauth") return credentialHeaders(row, credential);
         const now = yield* Clock.currentTimeMillis;
         const expiring =
-          credential.tokens.expiresAt !== undefined &&
+          credential.tokens?.expiresAt !== undefined &&
           credential.tokens.expiresAt - now < REFRESH_LEEWAY_MS;
         if (!forceRefresh && !expiring) return credentialHeaders(row, credential);
         const info = row.oauth_json === null ? Option.none() : decodeServerInfo(row.oauth_json);
-        const refreshToken = credential.tokens.refreshToken;
+        const refreshToken = credential.tokens?.refreshToken;
         if (Option.isNone(info) || refreshToken === undefined) {
           yield* setStatus(row.connection_id, "needs_auth", "Sign-in expired");
           return yield* new ConnectorError({ reason: "not_connected" });
@@ -500,11 +510,36 @@ const make = Effect.gen(function* () {
     },
   );
 
-  /** A registered client is reused per authorization server and redirect URI. */
+  /** The newest client the user entered for this authorization server, from any connection. */
+  const userClientFor = Effect.fn("Connectors.userClientFor")(function* (issuer: string) {
+    for (const row of (yield* readRows).toReversed()) {
+      const info = row.oauth_json === null ? Option.none() : decodeServerInfo(row.oauth_json);
+      if (Option.isNone(info) || info.value.issuer !== issuer) continue;
+      const credential = yield* readCredential(row.connection_id);
+      if (credential?.kind === "oauth" && credential.client.userProvided === true) {
+        return credential.client;
+      }
+    }
+    return undefined;
+  });
+
+  /**
+   * A registered client is reused per authorization server and redirect URI. A server without
+   * dynamic registration reuses a client the user entered for another connection, or asks.
+   */
   const clientFor = Effect.fn("Connectors.clientFor")(function* (
     info: ConnectorOAuth.OAuthServerInfo,
     redirectUri: string,
   ) {
+    const registrationEndpoint = info.registrationEndpoint;
+    if (registrationEndpoint === undefined) {
+      const reused = yield* userClientFor(info.issuer);
+      if (reused !== undefined) return reused;
+      return yield* new ConnectorError({
+        reason: "oauth_client_required",
+        detail: ConnectorOAuth.hostOf(info.issuer),
+      });
+    }
     const key = Hex.encode(
       yield* digest
         .digest(Digest.sha256, new TextEncoder().encode(`${info.issuer}\n${redirectUri}`))
@@ -516,7 +551,10 @@ const make = Effect.gen(function* () {
       const client = decodeClient(new TextDecoder().decode(cached.value));
       if (Option.isSome(client)) return client.value;
     }
-    const client = yield* ConnectorOAuth.registerClient(info, redirectUri).pipe(withHttp);
+    const client = yield* ConnectorOAuth.registerClient(
+      { ...info, registrationEndpoint },
+      redirectUri,
+    ).pipe(withHttp);
     yield* encodeClient(client).pipe(
       Effect.flatMap((json) => secrets.set(name, new TextEncoder().encode(json))),
       Effect.mapError(storage),
@@ -527,17 +565,27 @@ const make = Effect.gen(function* () {
   const beginOAuth = Effect.fn("Connectors.beginOAuth")(function* (input: {
     readonly connectionId: ConnectorConnectionId;
     readonly url: string;
+    readonly entry: ConnectorCatalogEntry | undefined;
     readonly redirectOrigin: string;
+    /** A client the user just entered, else the one this connection signed in with before. */
+    readonly client: ConnectorOAuthClientInput | ConnectorOAuth.OAuthClient | undefined;
     readonly create?: OAuthFlow["create"];
     readonly forRequest?: ConnectorRequestRef;
   }) {
+    const auth = input.entry?.auth.kind === "oauth" ? input.entry.auth : undefined;
     const probed = yield* ConnectorMcp.probe(input.url, {}).pipe(withHttp);
-    if (probed.status >= 200 && probed.status < 300) {
+    // Google's servers answer initialize without a token and refuse only tool calls.
+    if (probed.status >= 200 && probed.status < 300 && auth === undefined) {
       return yield* new ConnectorError({ reason: "auth_kind_mismatch", detail: "no sign-in" });
     }
-    const info = yield* ConnectorOAuth.discover(input.url, probed.challenge).pipe(withHttp);
+    const discovered = yield* ConnectorOAuth.discover(input.url, probed.challenge).pipe(withHttp);
+    const info =
+      auth?.scopes === undefined ? discovered : { ...discovered, scope: auth.scopes.join(" ") };
     const redirectUri = `${input.redirectOrigin}${CONNECTOR_CALLBACK_PATH}`;
-    const client = yield* clientFor(info, redirectUri);
+    const client: ConnectorOAuth.OAuthClient =
+      input.client === undefined
+        ? yield* clientFor(info, redirectUri)
+        : { userProvided: true, ...input.client };
     const codeVerifier = yield* randomToken(32);
     const codeChallenge = Base64Url.encode(
       yield* digest
@@ -560,7 +608,12 @@ const make = Effect.gen(function* () {
       });
       return next;
     });
-    return ConnectorOAuth.authorizationUrl(info, client, { redirectUri, codeChallenge, state });
+    return ConnectorOAuth.authorizationUrl(info, client, {
+      redirectUri,
+      codeChallenge,
+      state,
+      ...(auth?.authorizationParams === undefined ? {} : { params: auth.authorizationParams }),
+    });
   });
 
   const newConnectionId = random.uuidV4().pipe(Effect.map(ConnectorConnectionId.make));
@@ -575,7 +628,9 @@ const make = Effect.gen(function* () {
       const authorizationUrl = yield* beginOAuth({
         connectionId,
         url: target.url,
+        entry: target.entry,
         redirectOrigin: input.redirectOrigin,
+        client: input.client,
         create: {
           catalogId: target.catalogId,
           displayName: input.displayName ?? target.name,
@@ -706,11 +761,16 @@ const make = Effect.gen(function* () {
       return yield* new ConnectorError({ reason: "auth_kind_mismatch" });
     }
     if (input.credential.type === "oauth") {
+      const stored = yield* readCredential(row.connection_id);
+      const ownClient =
+        stored?.kind === "oauth" && stored.client.userProvided === true ? stored.client : undefined;
       return {
         authorizationUrl: yield* beginOAuth({
           connectionId: input.connectionId,
           url: row.url,
+          entry: row.catalog_id === null ? undefined : catalogEntry(row.catalog_id),
           redirectOrigin: input.credential.redirectOrigin,
+          client: input.credential.client ?? ownClient,
           ...(input.forRequest === undefined ? {} : { forRequest: input.forRequest }),
         }),
       };
@@ -732,7 +792,17 @@ const make = Effect.gen(function* () {
       const row = yield* requireRow(connectionId);
       yield* credentialLocks.withLock(
         connectionId,
-        secrets.remove(secretName(connectionId)).pipe(Effect.mapError(storage)),
+        Effect.gen(function* () {
+          const credential = yield* readCredential(connectionId);
+          // The user's own client is kept so signing in again doesn't ask for it.
+          if (credential?.kind === "oauth" && credential.client.userProvided === true) {
+            return yield* writeCredential(connectionId, {
+              kind: "oauth",
+              client: credential.client,
+            });
+          }
+          yield* secrets.remove(secretName(connectionId)).pipe(Effect.mapError(storage));
+        }),
       );
       yield* setStatus(
         connectionId,
@@ -972,6 +1042,9 @@ const make = Effect.gen(function* () {
         catalogId: entry.id,
         name: entry.name,
         description: entry.description,
+        ...(entry.auth.kind === "oauth" && entry.auth.clientSetup !== undefined
+          ? { setup: CLIENT_SETUP_NOTE }
+          : {}),
       })),
       connections: rows.map((row) => ({
         name: row.display_name,

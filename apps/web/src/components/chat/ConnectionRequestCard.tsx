@@ -26,6 +26,7 @@ import {
 import { useProject, useThreadShell } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ConnectorIcon } from "../connectors/ConnectorIcon";
+import { ConnectorClientDialog } from "../connectors/ConnectorClientDialog";
 import { ConnectorKeyDialog } from "../connectors/ConnectorKeyDialog";
 import { useConnectorSignIn } from "../connectors/useConnectorSignIn";
 import { useSetBotConnection } from "../connectors/useSetBotConnection";
@@ -205,6 +206,14 @@ export function ConnectionRequestCard(props: {
           ) : null}
         </div>
       )}
+      {signIn.clientPrompt !== null ? (
+        <ConnectorClientDialog
+          prompt={signIn.clientPrompt}
+          busy={signIn.busy}
+          onSubmit={signIn.submitClient}
+          onClose={signIn.closeClientPrompt}
+        />
+      ) : null}
       {signIn.keyPrompt !== null ? (
         <ConnectorKeyDialog
           prompt={signIn.keyPrompt}
