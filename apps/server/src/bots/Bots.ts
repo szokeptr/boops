@@ -158,6 +158,17 @@ export class Bots extends Context.Service<
       readonly text: string;
     }) => Effect.Effect<BotMcpDelivery, BotFamilyError>;
     /**
+     * Posts into the bot's main conversation from one of its own background threads, such as
+     * its heartbeat, labelled with that thread's title. A turn there tells the user.
+     */
+    readonly tellMainConversation: (input: {
+      readonly projectId: ProjectId;
+      readonly fromThreadId: ThreadId;
+      readonly text: string;
+    }) => Effect.Effect<BotMcpDelivery, BotFamilyError>;
+    /** Moves every bot's Heartbeat routine that still targets its main thread, once at startup. */
+    readonly moveHeartbeatsOffMainThreads: () => Effect.Effect<void>;
+    /**
      * Pauses the bot's routines and heartbeat and hides it from the bot list; its threads and
      * home folder stay. `includeChildren` also archives the live bots below it. Returns every bot
      * it archived.
@@ -348,7 +359,7 @@ const make = Effect.gen(function* () {
       );
     // The bot works without it, and the user can add one, so a failure does not undo the bot.
     yield* routines
-      .ensureDefaultHeartbeat({ projectId: project.id, threadId: mainThreadId })
+      .ensureDefaultHeartbeat({ projectId: project.id, mainThreadId })
       .pipe(
         Effect.catch((cause) =>
           Effect.logWarning("Could not add the bot's heartbeat", { projectId: project.id, cause }),
@@ -395,9 +406,11 @@ const make = Effect.gen(function* () {
     readonly from: Project;
     readonly relation: BotMessageOrigin["relation"];
     readonly text: string;
+    /** A background thread's post names that thread; another bot's names the bot. */
+    readonly sender?: { readonly threadId: ThreadId; readonly name: string };
   }) {
     const threadId = yield* conversationOf(input.to);
-    const senderThreadId = yield* conversationOf(input.from);
+    const senderThreadId = input.sender?.threadId ?? (yield* conversationOf(input.from));
     const id = yield* random
       .uuidV4()
       .pipe(Effect.mapError(() => familyError("unavailable", "Could not send the message.")));
@@ -409,7 +422,11 @@ const make = Effect.gen(function* () {
         commandId: CommandId.make(`bot-family:${id}`),
         messageId: MessageId.make(`bot-family:${id}`),
         senderThreadId,
-        bot: { projectId: input.from.id, name: input.from.title, relation: input.relation },
+        bot: {
+          projectId: input.from.id,
+          name: input.sender?.name ?? input.from.title,
+          relation: input.relation,
+        },
         text: input.text,
         attachments: [],
         mode: "queue",
@@ -490,7 +507,7 @@ const make = Effect.gen(function* () {
     const authorOf = (message: (typeof records.messages)[number]): BotFamilyAuthor =>
       message.role === "assistant"
         ? "child"
-        : message.routine !== undefined
+        : message.routine !== undefined || message.context?.bot?.relation === "background"
           ? "routine"
           : parent.mainThreadId != null && message.senderThreadId === parent.mainThreadId
             ? "you"
@@ -534,6 +551,58 @@ const make = Effect.gen(function* () {
         text: input.text,
       });
     },
+  );
+
+  const tellMainConversation: Bots["Service"]["tellMainConversation"] = Effect.fn(
+    "Bots.tellMainConversation",
+  )(function* (input) {
+    const bot = yield* requireBot(input.projectId);
+    if (bot.mainThreadId === input.fromThreadId) {
+      return yield* familyError(
+        "invalid",
+        "This is your main conversation already. Answer the user here directly.",
+      );
+    }
+    const from = yield* threads
+      .getThreadShell(input.fromThreadId)
+      .pipe(
+        Effect.mapError(() => familyError("unavailable", "Could not read the calling thread.")),
+      );
+    if (from === null || from.deletedAt !== null || from.projectId !== bot.id) {
+      return yield* familyError(
+        "unrelated",
+        "Only your own background threads can post into your main conversation.",
+      );
+    }
+    return yield* postInto({
+      to: bot,
+      from: bot,
+      relation: "background",
+      text: input.text,
+      sender: { threadId: from.id, name: from.title },
+    });
+  });
+
+  const moveHeartbeatsOffMainThreads: Bots["Service"]["moveHeartbeatsOffMainThreads"] = Effect.fn(
+    "Bots.moveHeartbeatsOffMainThreads",
+  )(
+    function* () {
+      const shells = yield* projects.listShells();
+      for (const shell of shells) {
+        if (shell.mainThreadId == null) continue;
+        yield* routines
+          .moveHeartbeatOffMainThread({ projectId: shell.id, mainThreadId: shell.mainThreadId })
+          .pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("Could not move the bot's heartbeat off its conversation", {
+                projectId: shell.id,
+                cause,
+              }),
+            ),
+          );
+      }
+    },
+    Effect.catch((cause) => Effect.logWarning("Could not move bots' heartbeats", { cause })),
   );
 
   const readBot = Effect.fn("Bots.readBot")(function* (
@@ -645,6 +714,8 @@ const make = Effect.gen(function* () {
     readChild,
     messageChild,
     reportToParent,
+    tellMainConversation,
+    moveHeartbeatsOffMainThreads,
     archive,
     unarchive,
     delete: deleteBot,

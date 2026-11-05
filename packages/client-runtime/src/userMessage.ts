@@ -98,8 +98,11 @@ export function resolveUserMessagePresentation(message: {
   readonly guestName?: string;
   /** Set when `attribution` is "bot". Messages from before the typed origin have no project. */
   readonly bot?: {
+    /** The sender line; for the bot's own background thread, "From <thread title>". */
     readonly name: string;
     readonly projectId: BotMessageOrigin["projectId"] | null;
+    /** Sent by one of the receiving bot's own background threads, such as its heartbeat. */
+    readonly background: boolean;
   };
 } {
   if (message.role !== "user") {
@@ -122,7 +125,10 @@ export function resolveUserMessagePresentation(message: {
       text: message.text,
       attribution: "bot",
       routine: undefined,
-      bot: { name: bot.name, projectId: bot.projectId },
+      bot:
+        bot.relation === "background"
+          ? { name: `From ${bot.name}`, projectId: bot.projectId, background: true }
+          : { name: bot.name, projectId: bot.projectId, background: false },
     };
   }
   const legacyBot =
@@ -132,7 +138,7 @@ export function resolveUserMessagePresentation(message: {
       text: message.text.slice(legacyBot[0].length),
       attribution: "bot",
       routine: undefined,
-      bot: { name: legacyBot[1]!, projectId: null },
+      bot: { name: legacyBot[1]!, projectId: null, background: false },
     };
   }
   if (message.routine !== undefined) {

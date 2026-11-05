@@ -11,8 +11,8 @@ import { BotToolkit } from "./tools.ts";
 
 const DEFAULT_READ_LIMIT = 20;
 
-/** The calling thread's bot. Bots reach only bots on their own machine. */
-const callerBot = Effect.gen(function* () {
+/** The calling thread. Bots reach only bots on their own machine. */
+const callerThread = Effect.gen(function* () {
   const caller = yield* loadCaller();
   yield* assertNotLinked(caller, "reach bots on this machine");
   if (caller.caller === undefined) {
@@ -21,8 +21,11 @@ const callerBot = Effect.gen(function* () {
       message: "Only a bot's own thread can use this tool.",
     });
   }
-  return caller.caller.projectId;
+  return caller.caller;
 });
+
+/** The calling thread's bot. */
+const callerBot = Effect.map(callerThread, (thread) => thread.projectId);
 
 const toFailure = (error: BotFamilyError | Bots.BotHomeFolderError | Bots.BotCreateError) =>
   new OrchestratorMcpFailure({
@@ -110,6 +113,17 @@ const handlers = {
       const childProjectId = yield* callerBot;
       const bots = yield* Bots.Bots;
       return yield* bots.reportToParent({ childProjectId, text: input.message });
+    }).pipe(mapBotErrors),
+  ),
+  tell_main_conversation: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const thread = yield* callerThread;
+      const bots = yield* Bots.Bots;
+      return yield* bots.tellMainConversation({
+        projectId: thread.projectId,
+        fromThreadId: thread.id,
+        text: input.text,
+      });
     }).pipe(mapBotErrors),
   ),
 } satisfies McpToolAccess.Handlers<typeof BotToolkit.tools>;

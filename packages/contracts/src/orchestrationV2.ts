@@ -1337,6 +1337,7 @@ export const OrchestrationV2SessionRolloverReason = Schema.Literals([
   "user",
   "model_switch",
   "agent",
+  "heartbeat",
 ]);
 export type OrchestrationV2SessionRolloverReason = typeof OrchestrationV2SessionRolloverReason.Type;
 
@@ -3280,6 +3281,8 @@ export const OrchestrationV2Command = Schema.Union([
     routine: Schema.optional(OrchestrationV2RoutineLabel),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+    /** Ends the provider session when this message's run ends, so the next turn starts fresh. */
+    sessionRollover: Schema.optional(OrchestrationV2SessionRollover),
     commandId: CommandId,
     threadId: ThreadId,
     messageId: MessageId,

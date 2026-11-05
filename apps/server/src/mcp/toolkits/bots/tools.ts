@@ -7,6 +7,7 @@ import {
   BotMcpReadChildInput,
   BotMcpReadChildResult,
   BotMcpReportToParentInput,
+  BotMcpTellMainConversationInput,
   OrchestratorMcpFailure,
 } from "@t3tools/contracts";
 import { Tool, Toolkit } from "effect/ai";
@@ -85,10 +86,24 @@ const ReportToParentTool = Tool.make("report_to_parent", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, true);
 
+const TellMainConversationTool = Tool.make("tell_main_conversation", {
+  description:
+    "From one of your background threads, such as a Heartbeat run, post a short note into your main conversation with the user, where you then tell them. Only for what needs the user; not from the main conversation itself.",
+  parameters: BotMcpTellMainConversationInput,
+  success: BotMcpDelivery,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "Tell the main conversation")
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.OpenWorld, false);
+
 export const BotToolkit = Toolkit.make(
   CreateChildBotTool,
   ListChildBotsTool,
   ReadChildBotTool,
   MessageChildBotTool,
   ReportToParentTool,
+  TellMainConversationTool,
 );

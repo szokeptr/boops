@@ -247,7 +247,21 @@ describe("resolveUserMessagePresentation", () => {
       text: "Dana ran 14 km.",
       attribution: "bot",
       routine: undefined,
-      bot: { name: "Pace", projectId: "pace" },
+      bot: { name: "Pace", projectId: "pace", background: false },
+    });
+    // The bot's own heartbeat thread is labelled by that thread, not by the bot.
+    expect(
+      resolveUserMessagePresentation({
+        ...fromBot,
+        text: "The visa form is due Friday.",
+        context: {
+          bot: { projectId: ProjectId.make("wren"), name: "Heartbeat", relation: "background" },
+        },
+      }),
+    ).toMatchObject({
+      text: "The visa form is due Friday.",
+      attribution: "bot",
+      bot: { name: "From Heartbeat", projectId: "wren", background: true },
     });
     // Older messages carried the routing line in their text.
     for (const routing of [

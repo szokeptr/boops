@@ -51,6 +51,7 @@ import { buildCodexAdditionalContext } from "../../apps/server/src/provider/Code
 import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/ContextHandoffService.ts";
 import { withInlineContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
 import { AttachmentToolkit } from "../../apps/server/src/mcp/toolkits/attachment/tools.ts";
+import { BotToolkit } from "../../apps/server/src/mcp/toolkits/bots/tools.ts";
 import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "../../apps/server/src/mcp/toolkits/environment/tools.ts";
 import { HtmlToolkit } from "../../apps/server/src/mcp/toolkits/html/tools.ts";
@@ -70,6 +71,8 @@ import {
 } from "../../apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { proxyConfig } from "../shared/proxy.ts";
 import { changeRequestsCreatedBy } from "../../apps/server/src/orchestration-v2/PullRequestSyncReactor.ts";
+import { routineHeader } from "../../apps/server/src/orchestration-v2/ProviderTurnStartService.ts";
+import { DEFAULT_HEARTBEAT_PROMPT } from "../../apps/server/src/scheduledTasks/ScheduledTaskService.ts";
 import { DeviceExpect, gradeDevice } from "./device-grading.ts";
 import {
   AGENT_DEVICE_SHELL,
@@ -306,6 +309,8 @@ export const McpToolUseCase = Schema.Struct({
   }),
   /** Empty to resume a top-level thread without side-chat context after its last tool result. */
   prompt: Schema.String,
+  /** The prompt is this shipped routine's run message, read from source. Leave `prompt` empty. */
+  routine: Schema.optional(Schema.Literal("heartbeat")),
   /** Records for the context chips `prompt` links, projected as T3 sends them. */
   promptContext: Schema.optional(Schema.Struct({ records: Schema.Array(ComposerContextRecord) })),
   expect: McpToolUseExpect,
@@ -315,6 +320,19 @@ export const McpToolUseCase = Schema.Struct({
   notes: Schema.optional(Schema.String),
 });
 export type McpToolUseCase = typeof McpToolUseCase.Type;
+
+// A routine run reaches the agent as its label line, then the routine's prompt.
+const ROUTINE_PROMPTS = {
+  heartbeat: `${routineHeader({
+    taskId: Contracts.ScheduledTaskId.make("heartbeat:project-1"),
+    name: "Heartbeat",
+    trigger: "interval",
+  })}\n\n${DEFAULT_HEARTBEAT_PROMPT}`,
+} as const;
+
+/** The user message a case sends. */
+export const casePrompt = (testCase: Pick<McpToolUseCase, "prompt" | "routine">) =>
+  testCase.routine === undefined ? testCase.prompt : ROUTINE_PROMPTS[testCase.routine];
 const AnyBlock = Schema.StructWithRest(
   Schema.Struct({ type: Schema.String, text: Schema.optional(Schema.String) }),
   Rest,
@@ -424,6 +442,7 @@ const t3SourceTools: ReadonlyArray<Tool.Any> = [
   PreviewToolkit,
   DeviceToolkit,
   HtmlToolkit,
+  BotToolkit,
 ].flatMap((toolkit): ReadonlyArray<Tool.Any> => Object.values(toolkit.tools));
 // McpHttpServer decodes arguments with each tool's JSON codec, which drops undeclared keys.
 const t3InputDecoders = new Map(
@@ -949,7 +968,7 @@ export const buildMessages = (sample: Sample) => {
   };
   const { role, context, delegateRole, priorTurns = [] } = testCase.setup;
   const sideChat = testCase.setup.sideChat;
-  if (testCase.prompt === "" && (role !== "top" || sideChat !== undefined)) {
+  if (casePrompt(testCase) === "" && (role !== "top" || sideChat !== undefined)) {
     throw new Error(
       `${testCase.id}: Empty-prompt replay requires a top-level thread without side-chat context.`,
     );
@@ -1005,12 +1024,15 @@ export const buildMessages = (sample: Sample) => {
   }
   const userText =
     testCase.promptContext === undefined
-      ? testCase.prompt
-      : projectComposerContextForProvider({ text: testCase.prompt, ...testCase.promptContext });
+      ? casePrompt(testCase)
+      : projectComposerContextForProvider({
+          text: casePrompt(testCase),
+          ...testCase.promptContext,
+        });
   const prompt =
     sideChatContext === undefined ? userText : withInlineContext(sideChatContext, userText);
   const childPrompt = () => withHelperTaskHeader(taskPrompt({ task: prompt, role: delegateRole }));
-  if (testCase.prompt !== "")
+  if (casePrompt(testCase) !== "")
     push("user", text(role === "delegated-child" ? childPrompt() : prompt));
   // Claude Code gives a subagent its SubagentStart hooks' context as a reminder after the task.
   if (native && base.subagentContext) {
@@ -1433,7 +1455,7 @@ export const shellRequest = (sample: Sample, call: Omit<ShellEntry, "output">, m
         ]
       : []),
     ...(context ? [`The agent was told: ${context}`] : []),
-    `The agent's task: ${testCase.prompt}`,
+    `The agent's task: ${casePrompt(testCase)}`,
     ...namedPathsLine(testCase),
   ];
   const history = shell.map((entry) => `${callText(entry)}\n<output>\n${entry.output}\n</output>`);

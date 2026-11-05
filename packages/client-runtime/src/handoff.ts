@@ -144,6 +144,7 @@ const SESSION_ROLLOVER_REASONS: Record<OrchestrationV2SessionRolloverReason, str
   user: "You asked",
   model_switch: "Switched model",
   agent: "The bot asked",
+  heartbeat: "Each heartbeat starts fresh",
 };
 
 /** The divider under the turn that ended a provider session; the bot re-reads its notes next. */

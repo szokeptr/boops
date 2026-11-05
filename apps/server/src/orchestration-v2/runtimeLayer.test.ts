@@ -8738,11 +8738,37 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
         const routines = (yield* tasks.list()).tasks.filter(
           (task) => task.projectId === bot.projectId,
         );
+        // The heartbeat runs in its own background thread, out of the main conversation.
+        const heartbeatThreadId = ScheduledTaskService.heartbeatThreadId(bot.projectId);
         assert.deepEqual(
           routines.map((task) => [task.title, task.threadId, task.schedule, task.enabled]),
-          [["Heartbeat", bot.mainThreadId, { type: "interval", everyMs: 21_600_000 }, true]],
+          [["Heartbeat", heartbeatThreadId, { type: "interval", everyMs: 21_600_000 }, true]],
         );
+        assert.deepInclude(yield* orchestrator.getThreadShell(heartbeatThreadId), {
+          projectId: bot.projectId,
+          title: "Heartbeat",
+        });
       }
+      const ran = yield* tasks.runNow({
+        id: ScheduledTaskService.heartbeatTaskId(first.projectId),
+      });
+      const heartbeatRun = (yield* orchestrator.getThreadProjection(
+        ScheduledTaskService.heartbeatThreadId(first.projectId),
+      )).messages.find((message) => message.routine?.name === "Heartbeat");
+      assert.equal(ran.threadId, ScheduledTaskService.heartbeatThreadId(first.projectId));
+      assert.deepEqual(heartbeatRun?.sessionRollover, { reason: "heartbeat" });
+      assert.isFalse(
+        (yield* orchestrator.getThreadProjection(first.mainThreadId)).messages.some(
+          (message) => message.routine !== undefined,
+        ),
+      );
+      // Startup moves a heartbeat still on the main thread, as bots made before this had.
+      yield* tasks.upsert({ ...ran.task, threadId: first.mainThreadId, requireExisting: true });
+      yield* bots.moveHeartbeatsOffMainThreads();
+      assert.equal(
+        (yield* tasks.list()).tasks.find((task) => task.id === ran.task.id)?.threadId,
+        ScheduledTaskService.heartbeatThreadId(first.projectId),
+      );
       const [firstLook, secondLook] = yield* Effect.forEach([first, second], (bot) =>
         projects
           .getById(bot.projectId)
@@ -9012,6 +9038,66 @@ it.layer(layerBotsTest)("bot families", (it) => {
           mayTalk(stranger.projectId, plain.id),
         ]),
         ["allowed", "allowed", "allowed", "unrelated", "unrelated", "allowed"],
+      );
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("a background thread tells the main conversation; nothing else can", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const bots = yield* Bots.Bots;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-family-" });
+      const bot = yield* inHome(home, bots.create({ name: "Wren", modelSelection, hatch: false }));
+      const other = yield* inHome(
+        home,
+        bots.create({ name: "Stranger", modelSelection, hatch: false }),
+      );
+      const heartbeatThreadId = ScheduledTaskService.heartbeatThreadId(bot.projectId);
+
+      yield* bots.tellMainConversation({
+        projectId: bot.projectId,
+        fromThreadId: heartbeatThreadId,
+        text: "The visa form is due Friday and is not filed.",
+      });
+      const note = (yield* orchestrator.getThreadProjection(bot.mainThreadId)).messages.find(
+        (message) => message.senderThreadId === heartbeatThreadId,
+      );
+      assert.deepInclude(note, {
+        role: "user",
+        createdBy: "agent",
+        text: "The visa form is due Friday and is not filed.",
+      });
+      assert.deepEqual(note?.context?.bot, {
+        projectId: bot.projectId,
+        name: "Heartbeat",
+        relation: "background",
+      });
+
+      const refusals = yield* Effect.all([
+        bots
+          .tellMainConversation({
+            projectId: bot.projectId,
+            fromThreadId: bot.mainThreadId,
+            text: "hi",
+          })
+          .pipe(Effect.flip),
+        bots
+          .tellMainConversation({
+            projectId: bot.projectId,
+            fromThreadId: ScheduledTaskService.heartbeatThreadId(other.projectId),
+            text: "hi",
+          })
+          .pipe(Effect.flip),
+      ]);
+      assert.deepEqual(
+        refusals.map((error) => error.reason),
+        ["invalid", "unrelated"],
+      );
+      assert.isFalse(
+        (yield* orchestrator.getThreadProjection(other.mainThreadId)).messages.some(
+          (message) => message.text === "hi",
+        ),
       );
     }).pipe(Effect.scoped),
   );
