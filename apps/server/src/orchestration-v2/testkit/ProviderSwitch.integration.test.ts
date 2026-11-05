@@ -1,5 +1,4 @@
-import * as NodeFS from "node:fs";
-import * as NodePath from "node:path";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { vi } from "vite-plus/test";
 import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
 import { assert, describe, it } from "@effect/vitest";
@@ -28,8 +27,10 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
@@ -3799,7 +3800,8 @@ describe("orchestration v2 session rollover", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const harness = yield* rolloverHarness("edit");
-        const notes = NodePath.join(harness.cwd, "notes.md");
+        const fileSystem = yield* FileSystem.FileSystem;
+        const notes = (yield* Path.Path).join(harness.cwd, "notes.md");
         const projection = yield* Effect.gen(function* () {
           yield* harness.create;
           yield* Deferred.succeed(harness.releaseFirstTurn, undefined);
@@ -3810,12 +3812,12 @@ describe("orchestration v2 session rollover", () => {
           yield* harness.send("third", "start_immediately");
           yield* waitForIdle(harness.threadId);
           // The bot's memory, written during a turn the edit drops.
-          yield* Effect.sync(() => NodeFS.writeFileSync(notes, "remembered in third\n"));
+          yield* fileSystem.writeFileString(notes, "remembered in third\n");
           yield* harness.edit("second", "second, edited");
           return yield* waitForIdle(harness.threadId);
         }).pipe(Effect.provide(harness.layer));
 
-        assert.equal(NodeFS.readFileSync(notes, "utf8"), "remembered in third\n");
+        assert.equal(yield* fileSystem.readFileString(notes), "remembered in third\n");
         const turns = yield* Ref.get(harness.capturedTurns);
         assert.deepEqual(
           turns.map((turn) => turn.text),
@@ -3834,7 +3836,7 @@ describe("orchestration v2 session rollover", () => {
         );
         assert.equal(edited?.text, "second, edited");
         assert.equal(edited?.createdBy, "user");
-      }),
+      }).pipe(Effect.provide(NodeServices.layer)),
     ),
   );
 
