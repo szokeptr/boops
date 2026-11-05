@@ -143,7 +143,7 @@ const BotUnarchiveTool = Tool.make("t3_bot_unarchive", {
 const BotDeleteTool = Tool.make("t3_bot_delete", {
   ...shared,
   description:
-    "Delete a bot's routines, threads and project. `removeHomeFolder` also deletes its ~/pocks folder. Permanent.",
+    "Delete a bot's routines, threads and project. `removeHomeFolder` also deletes its home folder. Permanent.",
   parameters: Schema.Struct({
     projectId: ProjectId,
     removeHomeFolder: Schema.optional(Schema.Boolean),

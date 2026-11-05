@@ -278,7 +278,7 @@ function DeleteBotDialog({ bot }: { readonly bot: BotTarget }) {
               <span className="flex flex-col gap-0.5">
                 <span>Also delete its home folder</span>
                 <span className="text-muted-foreground text-xs">
-                  Removes its files and memory from ~/pocks on its machine. Off keeps the folder.
+                  Removes its files and memory from its machine. Off keeps the folder.
                 </span>
               </span>
             </label>

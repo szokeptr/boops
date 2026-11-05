@@ -474,7 +474,7 @@ it.effect("refuses thread writes between bots that are not parent and child", ()
     const project = (id: string, parentBotProjectId: string | null = null) => ({
       id: ProjectId.make(id),
       title: id,
-      workspaceRoot: `/home/user/pocks/${id}`,
+      workspaceRoot: `/home/user/boops/${id}`,
       defaultModelSelection: null,
       scripts: [],
       createdAt: "2026-11-05T00:00:00.000Z",

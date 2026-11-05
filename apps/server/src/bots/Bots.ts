@@ -36,6 +36,7 @@ import * as Schema from "effect/Schema";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { BotFamilyError } from "./botFamily.ts";
 
 export class BotHomeFolderError extends Schema.TaggedError<BotHomeFolderError>()(
@@ -58,7 +59,7 @@ export class BotFolderNotRemovableError extends Schema.TaggedError<BotFolderNotR
   { folder: Schema.String },
 ) {
   override get message(): string {
-    return "Only a home folder inside ~/pocks is removed with its bot. Delete it without removing the folder.";
+    return "Only a home folder inside ~/boops is removed with its bot. Delete it without removing the folder.";
   }
 }
 
@@ -122,7 +123,7 @@ export class Bots extends Context.Service<
   Bots,
   {
     /**
-     * Creates `~/pocks/<slug>/` with `memory/`, a project rooted there, its main thread, and a
+     * Creates `~/boops/<slug>/` with `memory/`, a project rooted there, its main thread, and a
      * heartbeat routine. Without a picked avatar, its look steps away from the environment's other bots.
      */
     readonly create: (
@@ -170,7 +171,7 @@ export class Bots extends Context.Service<
     ) => Effect.Effect<void, BotNotFoundError | BotLifecycleError>;
     /**
      * Removes the bot's routines, threads and project. The home folder goes only when asked, and
-     * only when it lies inside `~/pocks/`.
+     * only when it lies inside `~/boops/`, or `~/pocks/` for bots made before the rename.
      */
     readonly delete: (
       input: BotDeleteInput,
@@ -182,6 +183,9 @@ export class Bots extends Context.Service<
 >()("boops/bots/Bots") {}
 
 const MAX_SLUG_ATTEMPTS = 100;
+
+// New bots go in the first; bots made before the rename from Pocks keep their `~/pocks` home.
+const BOT_HOME_BASES = ["boops", "pocks"] as const;
 
 // The injected bot instructions drive the interview; this only gives the bot its first turn.
 export const HATCH_KICKOFF_TEXT = "You were just created. Start hatching.";
@@ -208,10 +212,11 @@ const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const routines = yield* ScheduledTaskService.ScheduledTaskService;
   const random = yield* SecureRandom.SecureRandom;
+  const settings = yield* ServerSettings.ServerSettingsService;
 
   // Non-recursive mkdir atomically claims a slug; a taken one moves on to `<slug>-2`.
   const claimHome = Effect.fn("Bots.claimHome")(function* (name: string) {
-    const root = path.join(yield* HostProcess.HomeDirectory, "pocks");
+    const root = path.join(yield* HostProcess.HomeDirectory, BOT_HOME_BASES[0]);
     yield* fileSystem
       .makeDirectory(root, { recursive: true })
       .pipe(Effect.mapError((cause) => new BotHomeFolderError({ folder: root, cause })));
@@ -428,7 +433,15 @@ const make = Effect.gen(function* () {
     if (input.mode === "brief" && input.brief === undefined) {
       return yield* familyError("invalid", "A child started from a brief needs `brief`.");
     }
-    const modelSelection = input.modelSelection ?? parent.defaultModelSelection;
+    // A model switch writes the override, not the record, so the override is the current model.
+    const modelSelection =
+      input.modelSelection ??
+      (yield* settings.getSettings.pipe(
+        Effect.mapError(() =>
+          familyError("unavailable", `Could not read ${parent.title}'s model.`),
+        ),
+      )).projectSettingsOverrides[parent.id]?.defaultModelSelection ??
+      parent.defaultModelSelection;
     if (modelSelection === null) {
       return yield* familyError("invalid", `${parent.title} has no model for the child to use.`);
     }
@@ -595,18 +608,20 @@ const make = Effect.gen(function* () {
     yield* setArchived(input.projectId, false);
   });
 
-  const isInsidePocks = Effect.fn("Bots.isInsidePocks")(function* (folder: string) {
-    const root = path.join(yield* HostProcess.HomeDirectory, "pocks");
-    const relative = path.relative(root, folder);
-    return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+  const isInsideHomeBase = Effect.fn("Bots.isInsideHomeBase")(function* (folder: string) {
+    const home = yield* HostProcess.HomeDirectory;
+    return BOT_HOME_BASES.some((base) => {
+      const relative = path.relative(path.join(home, base), folder);
+      return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+    });
   });
 
   const deleteBot: Bots["Service"]["delete"] = Effect.fn("Bots.delete")(function* (input) {
     const { projectId } = input;
     const project = yield* readBot("delete", projectId);
     const folder = project.workspaceRoot;
-    // Refuse before removing anything, so a folder outside ~/pocks never half-deletes the bot.
-    if (input.removeHomeFolder === true && !(yield* isInsidePocks(folder))) {
+    // Refuse before removing anything, so a folder outside a home base never half-deletes the bot.
+    if (input.removeHomeFolder === true && !(yield* isInsideHomeBase(folder))) {
       return yield* new BotFolderNotRemovableError({ folder });
     }
     const fail = (cause: unknown) =>

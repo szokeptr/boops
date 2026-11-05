@@ -15,7 +15,7 @@ it.effect("records a persona when the bot writes one and when it goes away, once
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-persona-" });
+    const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-persona-" });
     let project = {
       id: projectId,
       title: "Bot",

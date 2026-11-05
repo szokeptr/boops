@@ -8702,7 +8702,7 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const tasks = yield* ScheduledTaskService.ScheduledTaskService;
       const settings = yield* ServerSettings.ServerSettingsService;
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-bots-" });
       const create = (name: string, avatar?: ProjectAvatar) =>
         bots
           .create({ name, modelSelection, ...(avatar ? { avatar } : {}) })
@@ -8713,8 +8713,8 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
       const second = yield* create("ada_lovelace");
 
       const roots = [
-        path.join(home, "pocks", "ada-lovelace"),
-        path.join(home, "pocks", "ada-lovelace-2"),
+        path.join(home, "boops", "ada-lovelace"),
+        path.join(home, "boops", "ada-lovelace-2"),
       ];
       for (const [bot, root] of [
         [first, roots[0]!],
@@ -8766,7 +8766,7 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
         const bots = yield* Bots.Bots;
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
-        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-bots-" });
         const create = (name: string, hatch?: boolean) =>
           bots
             .create({ name, modelSelection, ...(hatch === undefined ? {} : { hatch }) })
@@ -8805,7 +8805,8 @@ it.layer(layerBotsTest)("bot families", (it) => {
       const fileSystem = yield* FileSystem.FileSystem;
       const bots = yield* Bots.Bots;
       const projects = yield* ProjectService.ProjectService;
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-family-" });
+      const settings = yield* ServerSettings.ServerSettingsService;
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-family-" });
       const parent = yield* inHome(home, bots.create({ name: "Wren", modelSelection }));
       const asked: Array<Bots.BotChildApproval> = [];
       const answer = (approved: boolean) => (approval: Bots.BotChildApproval) =>
@@ -8838,8 +8839,17 @@ it.layer(layerBotsTest)("bot families", (it) => {
         projectId: parent.projectId,
         canCreateBotsWithoutAsking: true,
       });
-      yield* child("Tally", () => Effect.die("the bypass must not ask"));
+      // A model switch writes only the settings override, as a rollover does.
+      const switched = { ...modelSelection, model: "gpt-5.5" } satisfies ModelSelection;
+      yield* settings.updateSettings({
+        projectSettingsOverrides: { [parent.projectId]: { defaultModelSelection: switched } },
+      });
+      const tally = yield* child("Tally", () => Effect.die("the bypass must not ask"));
       assert.lengthOf(asked, 2);
+      assert.deepEqual(
+        Option.getOrThrow(yield* projects.getById(tally.projectId)).defaultModelSelection,
+        switched,
+      );
       assert.sameMembers(
         (yield* bots.childrenOf(parent.projectId)).map((shell) => shell.title),
         ["Pace", "Tally"],
@@ -8853,7 +8863,7 @@ it.layer(layerBotsTest)("bot families", (it) => {
       const bots = yield* Bots.Bots;
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-family-" });
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-family-" });
       const parent = yield* inHome(
         home,
         bots.create({ name: "Wren", modelSelection, hatch: false }),
@@ -8906,7 +8916,7 @@ it.layer(layerBotsTest)("bot families", (it) => {
       const bots = yield* Bots.Bots;
       const projects = yield* ProjectService.ProjectService;
       const orchestrator = yield* Orchestrator.OrchestratorV2;
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-family-" });
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-family-" });
       const quiet = (name: string) =>
         inHome(home, bots.create({ name, modelSelection, hatch: false }));
       const quietChild = (parentProjectId: ProjectId, name: string) =>
@@ -9014,7 +9024,7 @@ it.layer(layerBotsTest)("bot families", (it) => {
         const fileSystem = yield* FileSystem.FileSystem;
         const bots = yield* Bots.Bots;
         const orchestrator = yield* Orchestrator.OrchestratorV2;
-        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-family-" });
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-family-" });
         const parent = yield* inHome(
           home,
           bots.create({ name: "Wren", modelSelection, hatch: false }),
@@ -9041,7 +9051,7 @@ it.layer(layerBotsTest)("archiving and deleting a bot", (it) => {
       const bots = yield* Bots.Bots;
       const projects = yield* ProjectService.ProjectService;
       const tasks = yield* ScheduledTaskService.ScheduledTaskService;
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-bots-" });
       const bot = yield* bots
         .create({ name: "Archivist", modelSelection, hatch: false })
         .pipe(Effect.provideService(HostProcess.HomeDirectory, home));
@@ -9108,7 +9118,7 @@ it.layer(layerBotsTest)("archiving and deleting a bot", (it) => {
       const bots = yield* Bots.Bots;
       const projects = yield* ProjectService.ProjectService;
       const tasks = yield* ScheduledTaskService.ScheduledTaskService;
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-bots-" });
       const inHome = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         effect.pipe(Effect.provideService(HostProcess.HomeDirectory, home));
       const approve = () => Effect.succeed(true);
@@ -9157,7 +9167,7 @@ it.layer(layerBotsTest)("archiving and deleting a bot", (it) => {
         const projects = yield* ProjectService.ProjectService;
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const tasks = yield* ScheduledTaskService.ScheduledTaskService;
-        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-bots-" });
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-bots-" });
         const inHome = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
           effect.pipe(Effect.provideService(HostProcess.HomeDirectory, home));
         const kept = yield* inHome(bots.create({ name: "Kept", modelSelection, hatch: false }));
@@ -9174,14 +9184,26 @@ it.layer(layerBotsTest)("archiving and deleting a bot", (it) => {
             (yield* tasks.list()).tasks.filter((task) => task.projectId === bot.projectId),
           );
         }
-        assert.isTrue(yield* fileSystem.exists(path.join(home, "pocks", "kept", "memory")));
-        assert.isFalse(yield* fileSystem.exists(path.join(home, "pocks", "gone")));
+        assert.isTrue(yield* fileSystem.exists(path.join(home, "boops", "kept", "memory")));
+        assert.isFalse(yield* fileSystem.exists(path.join(home, "boops", "gone")));
 
-        // A project rooted outside ~/pocks keeps both its folder and its project.
-        const outside = yield* fileSystem.makeTempDirectoryScoped({ prefix: "pocks-outside-" });
+        // Bots made before the rename from Pocks live in ~/pocks, and their folder goes too.
+        const legacyRoot = path.join(home, "pocks", "legacy");
+        yield* fileSystem.makeDirectory(path.join(legacyRoot, "memory"), { recursive: true });
+        const legacy = yield* projects.create({
+          commandId: CommandId.make("bot-legacy-pocks"),
+          projectId: ProjectId.make("bot-legacy-pocks"),
+          title: "Legacy",
+          workspaceRoot: legacyRoot,
+        });
+        yield* inHome(bots.delete({ projectId: legacy.id, removeHomeFolder: true }));
+        assert.isFalse(yield* fileSystem.exists(legacyRoot));
+
+        // A project rooted outside ~/boops and ~/pocks keeps both its folder and its project.
+        const outside = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-outside-" });
         const project = yield* projects.create({
-          commandId: CommandId.make("bot-outside-pocks"),
-          projectId: ProjectId.make("bot-outside-pocks"),
+          commandId: CommandId.make("bot-outside-home-base"),
+          projectId: ProjectId.make("bot-outside-home-base"),
           title: "Outside",
           workspaceRoot: outside,
         });
