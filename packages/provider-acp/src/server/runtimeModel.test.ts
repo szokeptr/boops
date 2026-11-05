@@ -1271,7 +1271,7 @@ describe("extractMcpToolCallIdentity", () => {
     });
   });
 
-  it("recovers T3 identity from acp-mcp-call fallback commands", () => {
+  it("recovers Boops identity from acp-mcp-call fallback commands", () => {
     const toolCall = toolCallFromUpdate({
       sessionUpdate: "tool_call",
       toolCallId: "exec-1",
@@ -1289,7 +1289,7 @@ describe("extractMcpToolCallIdentity", () => {
     ).toEqual({ server: "t3-code", tool: "delegate_task", input: { task: "x" } });
   });
 
-  it("recovers T3 identity from pi-acp title-only fallback execs", () => {
+  it("recovers Boops identity from pi-acp title-only fallback execs", () => {
     const toolCall = toolCallFromUpdate({
       sessionUpdate: "tool_call",
       toolCallId: "call_JdxnvzjHHrbvyASTLVekLYWV|fc_08f5a805a7159aa6016a7ec4afad548191",
@@ -1314,7 +1314,7 @@ describe("extractMcpToolCallIdentity", () => {
     });
   });
 
-  it("recovers T3 identity from server-namespaced titles across titleless updates", () => {
+  it("recovers Boops identity from server-namespaced titles across titleless updates", () => {
     const created = toolCallFromUpdate({
       sessionUpdate: "tool_call",
       toolCallId: "chatcmpl-tool-b2a6142ee1a510a5",
@@ -1338,7 +1338,7 @@ describe("extractMcpToolCallIdentity", () => {
     });
   });
 
-  it("recovers T3 identity across the registry agents' naming conventions", () => {
+  it("recovers Boops identity across the registry agents' naming conventions", () => {
     for (const title of [
       "t3-code___delegate_task",
       "t3-code-delegate_task",
@@ -1366,7 +1366,7 @@ describe("extractMcpToolCallIdentity", () => {
     }
   });
 
-  it("recovers T3 identity from Kiro's @-scoped titles", () => {
+  it("recovers Boops identity from Kiro's @-scoped titles", () => {
     for (const tool of ["html_render", "t3_thread_read", "delegate_task"]) {
       const toolCall = toolCallFromUpdate({
         sessionUpdate: "tool_call",
@@ -1380,7 +1380,7 @@ describe("extractMcpToolCallIdentity", () => {
     }
   });
 
-  it("does not claim an agent's own tool that shares a T3 tool name", () => {
+  it("does not claim an agent's own tool that shares a Boops tool name", () => {
     const toolCall = toolCallFromUpdate({
       sessionUpdate: "tool_call",
       toolCallId: "own-delegate-1",
@@ -1391,7 +1391,7 @@ describe("extractMcpToolCallIdentity", () => {
     expect(extractMcpToolCallIdentity(toolCall)).toBeUndefined();
   });
 
-  it("recovers T3 identity from goose _meta despite LLM-rewritten titles", () => {
+  it("recovers Boops identity from goose _meta despite LLM-rewritten titles", () => {
     // goose titles change asynchronously; only _meta.goose.toolCall is stable.
     const toolCall = toolCallFromUpdate({
       sessionUpdate: "tool_call",
@@ -1412,7 +1412,7 @@ describe("extractMcpToolCallIdentity", () => {
     });
   });
 
-  it("recovers T3 identity from qwen serverId meta regardless of prefix format", () => {
+  it("recovers Boops identity from qwen serverId meta regardless of prefix format", () => {
     // qwen-code 0.21.12 serverId asserts MCP origin even when tool prefixes change.
     const toolCall = toolCallFromUpdate({
       sessionUpdate: "tool_call",
@@ -1466,7 +1466,7 @@ describe("extractMcpToolCallIdentity", () => {
     },
   );
 
-  it("uses the asserted server instead of a misleading T3 title", () => {
+  it("uses the asserted server instead of a misleading Boops title", () => {
     const toolCall = toolCallFromUpdate({
       sessionUpdate: "tool_call",
       toolCallId: "foreign-1",

@@ -309,7 +309,7 @@ describe("Pi MCP tool schemas", () => {
 
 describe("Pi tool discovery permissions", () => {
   it.each(["approval-required", "auto-accept-edits", "auto"])(
-    "allows annotated T3 reads in %s while gating mutations and replacements",
+    "allows annotated Boops reads in %s while gating mutations and replacements",
     async (runtimeMode) => {
       const bridge = await loadMcpBridge({ modern: true, runtimeMode });
       const hook = bridge.handlers.get("tool_call") as unknown as (

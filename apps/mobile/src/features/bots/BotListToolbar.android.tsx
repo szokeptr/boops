@@ -52,10 +52,10 @@ export function BotListToolbar(props: BotListToolbarProps) {
 
   return (
     <AppBar
-      title="T3 Code"
+      title="Boops"
       titleContent={
         <WorkspaceBrandTitle
-          accessibilityLabel="T3 Code, Bots"
+          accessibilityLabel="Boops, Bots"
           onOpenEnvironments={props.onOpenEnvironments}
         />
       }

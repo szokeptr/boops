@@ -21,7 +21,7 @@ export class ConnectorServers extends Context.Service<
     /** Server names of the connected connections turned on for the thread's bot. */
     readonly forThread: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<string>>;
   }
->()("t3/connectors/ConnectorServers") {}
+>()("boops/connectors/ConnectorServers") {}
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

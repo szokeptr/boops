@@ -82,7 +82,7 @@ export const protectedResourceMetadata = (
   authorization_servers: [urls.issuer],
   scopes_supported: MCP_OAUTH_SCOPES,
   bearer_methods_supported: ["header"],
-  resource_name: "T3 Code",
+  resource_name: "Boops",
 });
 
 export const authorizationServerMetadata = (
@@ -228,7 +228,7 @@ export class McpOAuth extends Context.Service<
       readonly token: AuthMcpTokenRequest;
     }) => Effect.Effect<AuthMcpTokenResult, AuthMcpTokenError>;
   }
->()("t3/auth/McpOAuth") {}
+>()("boops/auth/McpOAuth") {}
 
 const redirectWith = (
   redirectUri: string,

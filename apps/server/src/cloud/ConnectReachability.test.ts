@@ -70,11 +70,11 @@ describe("classifyReachability", () => {
     // Desktop and `t3 serve` run the server without a background service.
     const result = classifyReachability(facts({ managedTunnelConfigured: false }), checkedAt);
     expect(result).toMatchObject({ cause: "not_linked" });
-    expect(result.status === "unreachable" && result.fix).not.toContain("t3 service");
+    expect(result.status === "unreachable" && result.fix).not.toContain("boops service");
   });
 });
 
-describe("T3 Connect troubleshooting links", () => {
+describe("Boops Connect troubleshooting links", () => {
   it("each section names a heading in the user guide", () => {
     const guide = NodeFS.readFileSync(
       new URL("../../../../docs/user/t3-connect-troubleshooting.md", import.meta.url),

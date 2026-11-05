@@ -56,7 +56,7 @@ export class AgentAwarenessRelay extends Context.Service<
     readonly requestCatchUp: () => Effect.Effect<void>;
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
   }
->()("t3/relay/AgentAwarenessRelay") {}
+>()("boops/relay/AgentAwarenessRelay") {}
 
 function eventThreadId(event: OrchestrationV2DomainEvent): ThreadId {
   return event.threadId;
@@ -797,11 +797,13 @@ export const make = Effect.gen(function* () {
       switch (startupState) {
         case "waiting-for-link":
           yield* Effect.logInfo(
-            "agent activity publishing standby; waiting for T3 Connect link reconciliation",
+            "agent activity publishing standby; waiting for Boops Connect link reconciliation",
           );
           break;
         case "disabled":
-          yield* Effect.logInfo("agent activity publishing disabled by T3 Connect configuration");
+          yield* Effect.logInfo(
+            "agent activity publishing disabled by Boops Connect configuration",
+          );
           break;
         case "enabled":
           yield* Effect.logInfo("agent activity publishing enabled", {

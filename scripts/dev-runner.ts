@@ -68,11 +68,11 @@ const MODE_ARGS = {
     "run",
     "--filter=@t3tools/contracts",
     "--filter=@t3tools/web",
-    "--filter=t3",
+    "--filter=boops",
     "--parallel",
     "dev",
   ],
-  "dev:server": ["run", "--filter=t3", "dev"],
+  "dev:server": ["run", "--filter=boops", "dev"],
   "dev:web": ["run", "--filter=@t3tools/web", "dev"],
   "dev:desktop": ["run", "--filter=@t3tools/desktop", "--filter=@t3tools/web", "dev"],
 } as const satisfies Record<string, ReadonlyArray<string>>;
@@ -82,7 +82,7 @@ const MODE_ARGS = {
 const BUILT_DEV_ARGS = [
   "run",
   "--filter=@t3tools/web",
-  "--filter=t3",
+  "--filter=boops",
   "--parallel",
   "dev:built",
 ] as const;
@@ -907,7 +907,7 @@ const devRunnerCli = Command.make("dev-runner", {
   ),
   t3Home: Flag.String("home-dir").pipe(
     Flag.withDescription(
-      "Explicit T3 Code data directory; runtime state is stored under userdata (equivalent to T3CODE_HOME). Inside a git worktree this defaults to that worktree's own .t3 so dev state stays off the shared home.",
+      "Explicit Boops data directory; runtime state is stored under userdata (equivalent to T3CODE_HOME). Inside a git worktree this defaults to that worktree's own .t3 so dev state stays off the shared home.",
     ),
     Flag.optional,
     Flag.map(Option.getOrUndefined),

@@ -178,7 +178,7 @@ export class Bots extends Context.Service<
       BotNotFoundError | BotFolderNotRemovableError | BotHomeFolderError | BotLifecycleError
     >;
   }
->()("t3/bots/Bots") {}
+>()("boops/bots/Bots") {}
 
 const MAX_SLUG_ATTEMPTS = 100;
 

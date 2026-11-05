@@ -21,7 +21,7 @@ import {
   serviceStateHasPendingUpdate,
 } from "./serviceProtocol.ts";
 
-it("reads the served T3 home back out of a rendered unit or plist", () => {
+it("reads the served Boops home back out of a rendered unit or plist", () => {
   const plan = (baseDir: string) => ({
     program: [`${baseDir}/runtime/versions/1.2.3/t3`, "__service-launcher"],
     baseDir,
@@ -161,7 +161,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
                 ],
               })
             : input.args[0] === "--version"
-              ? `t3 v${/versions\/([^/]+)\//.exec(input.command)?.[1] ?? "1.2.3"}\n`
+              ? `boops v${/versions\/([^/]+)\//.exec(input.command)?.[1] ?? "1.2.3"}\n`
               : input.command === "loginctl" && input.args[0] === "show-user"
                 ? `${control.linger}\n`
                 : input.args[1] === "is-enabled"
@@ -681,7 +681,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
     }),
   );
 
-  it.effect("restart leaves a service that serves another T3 home alone", () =>
+  it.effect("restart leaves a service that serves another Boops home alone", () =>
     Effect.gen(function* () {
       const { service, fs, commands, makeService } = yield* makeHarness();
       yield* service.install();

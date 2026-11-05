@@ -187,7 +187,7 @@ describe("CodexAdapterV2 runtime policy", () => {
       }),
   );
 
-  it.effect("derives concrete Codex turn policies from every T3 runtime mode", () =>
+  it.effect("derives concrete Codex turn policies from every Boops runtime mode", () =>
     Effect.gen(function* () {
       const build = (
         runtimeMode: "approval-required" | "auto-accept-edits" | "auto" | "full-access",
@@ -591,7 +591,7 @@ function codexReplayPreamble(input: {
         id: 1,
         method: "initialize",
         params: {
-          clientInfo: { name: "T3 Code", title: "T3 Code", version: packageJson.version },
+          clientInfo: { name: "Boops", title: "Boops", version: packageJson.version },
           capabilities: {
             experimentalApi: true,
             optOutNotificationMethods: ["turn/diff/updated"],
@@ -608,7 +608,7 @@ function codexReplayPreamble(input: {
       frame: {
         id: 1,
         result: {
-          userAgent: "T3 Code/0.156.1",
+          userAgent: "Boops/0.156.1",
           codexHome: "/tmp/codex-home",
           platformFamily: "unix",
           platformOs: "macos",
@@ -1184,7 +1184,7 @@ describe("CodexAdapterV2 session initialize", () => {
               frame: {
                 id: 1,
                 result: {
-                  userAgent: "T3 Code/0.144.3 (Mac OS 15.5.0; x86_64) unknown (T3 Code; 0.1.5)",
+                  userAgent: "Boops/0.144.3 (Mac OS 15.5.0; x86_64) unknown (Boops; 0.1.5)",
                   codexHome: "/tmp/codex-home",
                   platformFamily: "unix",
                   platformOs: "macos",
@@ -1208,7 +1208,7 @@ describe("CodexAdapterV2 session initialize", () => {
       assert.instanceOf(failure.cause, ProviderSetupError);
       assert.equal(
         failure.cause.message,
-        "Codex 0.144.3 does not work with this T3 Code release. Update Codex to >=0.159.0, then retry.",
+        "Codex 0.144.3 does not work with this Boops release. Update Codex to >=0.159.0, then retry.",
       );
     }).pipe(
       Effect.scoped,
@@ -2390,7 +2390,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
-  it.effect("preserves T3 context on the wire and restores it after compaction", () =>
+  it.effect("preserves Boops context on the wire and restores it after compaction", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const nativeThreadId = "context-thread";

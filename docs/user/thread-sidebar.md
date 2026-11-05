@@ -19,7 +19,7 @@ project picker opens. Turn off **Settings → General → Use last project** to
 choose a project every time. When you pick a project that is on more than one
 machine, the thread starts on a connected one if any is connected.
 
-When you change a new thread's project, T3 Code stays in the current environment
+When you change a new thread's project, Boops stays in the current environment
 if that project exists there. Otherwise it selects an environment that has it.
 
 ### Start without a project
@@ -33,7 +33,7 @@ from the machine menu to move it there. To move a draft into a project, pick the
 project in the heading.
 
 Each thread without a project works in its own folder under `~/.t3/scratch` (the
-`scratch` folder of your T3 data directory), named after its date, the first words
+`scratch` folder of your Boops data directory), named after its date, the first words
 of its first message, and a short id, like
 `2026-09-25-convert-these-pngs-to-webp-a1b2c3d4`. Deleting a thread keeps its
 folder, so the files the agent wrote stay until you delete them. Branch, worktree, and diff controls stay hidden because
@@ -114,7 +114,7 @@ position, so using **Un-settle** returns it to the top. Pinning and snoozing pre
 position until you move it again. Thread activity does not change the order. The settled shelf
 continues to use settlement time.
 
-If dragging is unavailable for one environment, update the T3 Code server running in that
+If dragging is unavailable for one environment, update the Boops server running in that
 environment. Pinned and active reordering require server support. Threads from older servers keep
 their default order until the server is updated.
 
@@ -126,7 +126,7 @@ To change how titles are written, add **Thread title instructions** in **Setting
 Text generation**, under Advanced, such as a length limit or an identifier to put first. They apply to new and
 regenerated titles. Select a project to give it its own instructions.
 
-Agents connected through T3 Code can use the same server-owned metadata workflow to
+Agents connected through Boops can use the same server-owned metadata workflow to
 rename a thread, regenerate its title, or link and unlink a pull request. These changes
 appear on web, desktop, and mobile without requiring the originating browser to remain
 open.
@@ -235,7 +235,7 @@ you paste it and pastes into a composer as a thread chip (see
 [sharing a thread](./prompt-links.md#share-a-thread)). To copy the thread even
 when it has a PR, choose **Copy → Thread** from its context menu, or **Copy
 thread** from its long-press menu on mobile.
-**Thread ID** copies the bare ID for scripts and the `t3` CLI. See
+**Thread ID** copies the bare ID for scripts and the `boops` CLI. See
 [keybindings](./keybindings.md) for custom configuration.
 
 ## Inspect agent work
@@ -282,7 +282,7 @@ thread's terminals or its Claude agent started, with their ports. Not every one
 serves a web page. A server the agent started stays listed after the agent's
 turn ends.
 Select a server to open it in the browser panel. **Stop** ends the server's job
-and keeps the agent, the terminal, and T3 Code running. Stop needs terminal
+and keeps the agent, the terminal, and Boops running. Stop needs terminal
 access to the environment and is not available on Windows.
 
 To choose what the thread details card shows, right-click the card or open

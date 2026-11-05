@@ -108,7 +108,7 @@ const unauthorized = (input: {
   return HttpServerResponse.jsonUnsafe(
     {
       error: "invalid_mcp_credential",
-      message: "A valid T3 Code MCP credential is required.",
+      message: "A valid Boops MCP credential is required.",
     },
     {
       status: 401,
@@ -127,7 +127,7 @@ export class McpClientAuthenticator extends Context.Service<
       request: HttpServerRequest.HttpServerRequest,
     ) => Effect.Effect<McpInvocationContext.McpInvocationScope | undefined>;
   }
->()("t3/mcp/McpHttpServer/McpClientAuthenticator") {}
+>()("boops/mcp/McpHttpServer/McpClientAuthenticator") {}
 
 type AuthenticatedHttpEffect = Effect.Effect<
   HttpServerResponse.HttpServerResponse,
@@ -1187,7 +1187,7 @@ export const layerInProcessMcpServer = McpServer.middleware<{
 
 export const layerMcpTransport = <RA, RE, RR>(registrations: Layer.Layer<RA, RE, RR>) =>
   McpServer.layerHttp({
-    name: "T3 Code",
+    name: "Boops",
     version: packageJson.version,
     path: "/mcp",
     protocols: [McpProtocol.v2025_06_18],

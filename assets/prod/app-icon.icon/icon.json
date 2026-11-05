@@ -1,26 +1,26 @@
 {
   "fill": {
-    "solid": "display-p3:0.00000,0.00000,0.00000,1.00000"
+    "solid": "display-p3:0.14510,0.13333,0.22745,1.00000"
   },
   "groups": [
     {
       "layers": [
         {
-          "image-name": "text.svg",
-          "name": "Text",
+          "image-name": "mascot.svg",
+          "name": "Mascot",
           "position": {
-            "scale": 8.5,
+            "scale": 42.67,
             "translation-in-points": [0, 0]
           }
         }
       ],
       "shadow": {
-        "kind": "neutral",
-        "opacity": 0.5
+        "kind": "none",
+        "opacity": 0
       },
       "translucency": {
-        "enabled": true,
-        "value": 0.5
+        "enabled": false,
+        "value": 0
       }
     }
   ],

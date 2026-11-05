@@ -7,7 +7,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import { findOwnedLauncher, spawnWindowsRemoval } from "./uninstall.ts";
 
-it.layer(NodeServices.layer)("t3 uninstall launcher", (it) => {
+it.layer(NodeServices.layer)("boops uninstall launcher", (it) => {
   it.effect("claims only a launcher that points into this home's runtime tree", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -37,7 +37,7 @@ it.layer(NodeServices.layer)("t3 uninstall launcher", (it) => {
 });
 
 it.live.runIf(HostProcess.Platform.defaultValue() === "win32")(
-  "t3 uninstall has cmd.exe remove the runtime directory, preserving spaces and literal environment-variable syntax",
+  "boops uninstall has cmd.exe remove the runtime directory, preserving spaces and literal environment-variable syntax",
   () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

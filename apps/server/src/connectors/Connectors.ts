@@ -288,7 +288,7 @@ export class Connectors extends Context.Service<
     /** The server refused the credentials even after a refresh. */
     readonly markNeedsAuth: (connectionId: ConnectorConnectionId) => Effect.Effect<void>;
   }
->()("t3/connectors/Connectors") {}
+>()("boops/connectors/Connectors") {}
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

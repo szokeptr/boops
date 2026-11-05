@@ -38,7 +38,7 @@ export class DirectEndpoints extends Context.Service<
     readonly resolveAvailable: () => Effect.Effect<ReadonlyArray<ServerDirectEndpoint>>;
     readonly resolve: () => Effect.Effect<ReadonlyArray<ServerDirectEndpoint>>;
   }
->()("t3/environment/DirectEndpoints") {}
+>()("boops/environment/DirectEndpoints") {}
 
 // Credentials travel over HTTP; public IPs leak them and hostnames can resolve differently per client.
 const isAdvertisableAddress = (address: string): boolean =>

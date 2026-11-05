@@ -50,7 +50,7 @@ async function download(url, file) {
         shown = step;
         const percent = total ? ` ${step}%` : "";
         process.stderr.write(
-          `\r\x1b[2Kt3: downloading T3 Code ${version}${percent} (${(received / 1048576).toFixed(1)} MB)`,
+          `\r\x1b[2Kboops: downloading Boops ${version}${percent} (${(received / 1048576).toFixed(1)} MB)`,
         );
       }
     }
@@ -138,7 +138,7 @@ function publish(staging, dir) {
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
     throw new Error(
-      `another t3 is installing ${version}. If none is running, delete ${lock} and try again.`,
+      `another boops is installing ${version}. If none is running, delete ${lock} and try again.`,
       { cause: error },
     );
   }
@@ -164,7 +164,7 @@ async function main() {
   const key = `${process.platform}-${process.arch}`;
   if (!SUPPORTED.includes(key)) {
     throw new Error(
-      `no T3 Code CLI build is available for ${key} (supported: ${SUPPORTED.join(", ")}).\n` +
+      `no Boops CLI build is available for ${key} (supported: ${SUPPORTED.join(", ")}).\n` +
         "The desktop app is at https://github.com/pingdotgg/t3code/releases",
     );
   }
@@ -198,7 +198,7 @@ async function main() {
 
 function executableError(key, detail) {
   return new Error(
-    `could not run T3 Code ${version} for ${key}: ${detail}` +
+    `could not run Boops ${version} for ${key}: ${detail}` +
       (process.platform === "linux"
         ? "\nThe Linux release requires glibc; musl-based systems such as Alpine are not supported. Use a glibc-based Linux environment."
         : ""),
@@ -206,7 +206,7 @@ function executableError(key, detail) {
 }
 
 function fail(error) {
-  process.stderr.write(`t3: ${error.message}\n`);
+  process.stderr.write(`boops: ${error.message}\n`);
   process.exit(1);
 }
 

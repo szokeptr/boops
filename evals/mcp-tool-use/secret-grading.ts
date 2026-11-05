@@ -253,7 +253,7 @@ export const chatAsk = (text: string) => {
 };
 
 const CARD =
-  /\b(?:private|secure|secret) (?:card|prompt|input|field|form|request|dialog)\b|\brequest_secret\b|\b(?:request|collect|ask for)\w*\s+(?:\S+\s+){0,4}?(?:securely|privately|through (?:a|the|T3['’]s) (?:private|secure))\b/i;
+  /\b(?:private|secure|secret) (?:card|prompt|input|field|form|request|dialog)\b|\brequest_secret\b|\b(?:request|collect|ask for)\w*\s+(?:\S+\s+){0,4}?(?:securely|privately|through (?:a|the|Boops['’]s) (?:private|secure))\b/i;
 // Preconditions, blocks and promises. "To run it, I need: …" and "A secure prompt is required
 // before proceeding" are preconditions too.
 const DEMAND =
