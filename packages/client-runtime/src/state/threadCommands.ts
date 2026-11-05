@@ -31,6 +31,7 @@ import {
   forkThreadFromRun,
   markThreadUnread,
   mergeThreadBack,
+  startFreshSession,
   promoteQueuedRun,
   resumeThreadQueue,
   retryWorkspacePreparation,
@@ -212,6 +213,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     visit: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:visit",
       execute: visitThread,
+      scheduler,
+      concurrency,
+    }),
+    startFreshSession: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:start-fresh-session",
+      execute: startFreshSession,
       scheduler,
       concurrency,
     }),

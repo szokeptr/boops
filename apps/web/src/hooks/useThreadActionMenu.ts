@@ -89,6 +89,9 @@ export function useThreadActionMenu(input: {
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const startFreshSession = useOrchestrationCommand(threadEnvironment.startFreshSession, {
+    reportFailure: false,
+  });
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
@@ -139,6 +142,7 @@ export function useThreadActionMenu(input: {
         snoozePresets,
         canShareWithGuest,
         canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+        hasSession: thread.activeProviderThreadId !== null,
       });
       const clicked = await settlePromise(() => api.contextMenu.show(items, position));
       if (clicked._tag === "Failure" || clicked.value === null) return;
@@ -229,6 +233,14 @@ export function useThreadActionMenu(input: {
             updateThreadMetadata({
               environmentId: threadRef.environmentId,
               input: { threadId: threadRef.threadId, regenerateTitle: true },
+            }),
+          );
+          return;
+        case "fresh-session":
+          await reportFailure("Could not start a fresh session", () =>
+            startFreshSession({
+              environmentId: threadRef.environmentId,
+              input: { threadId: threadRef.threadId },
             }),
           );
           return;

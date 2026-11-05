@@ -85,7 +85,9 @@ import { ChatGptSharingStatus } from "./ChatGptSharingStatus";
 import { environmentCatalog } from "../../connection/catalog";
 import { useEnvironmentQuery } from "../../state/query";
 import { scopedThreadKey } from "../../lib/scopedEntities";
-import { useThreadReportedModelSelection } from "../../state/entities";
+import { useProject, useThreadReportedModelSelection } from "../../state/entities";
+import { threadEnvironment } from "../../state/threads";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   setComposerDraftText,
   updateComposerDraftSettings,
@@ -1522,19 +1524,29 @@ export function ExistingThreadSettingsRouteScreen({
   // A queued edit can end while the sheet is open; the prompt then belongs to the thread's draft.
   const draftKey = activeComposerDraftKey(threadKey, route.params.draftKey, queuedRunEdit);
   const prompt = useComposerDraft(draftKey).text;
+  const project = useProject(
+    selectedThread ? scopeProjectRef(route.params.environmentId, selectedThread.projectId) : null,
+  );
+  const startFreshSession = useAtomCommand(threadEnvironment.startFreshSession, {
+    reportFailure: false,
+  });
 
   if (!selectedThread) {
     return <View className="flex-1 bg-sheet" />;
   }
+  // A bot's conversation switches model, on any provider, through a fresh session.
+  const isBotConversation = project?.mainThreadId === selectedThread.id;
 
   const serverConfig = selectedEnvironmentRuntime?.serverConfig ?? null;
   const modelSelection = draftSettings.modelSelection ?? selectedThread.modelSelection;
-  const lockedProviderInstanceId = threadAllowsProviderSwitch({
-    thread: selectedThread,
-    projection: structure?.projection,
-  })
-    ? undefined
-    : modelSelection.instanceId;
+  const lockedProviderInstanceId =
+    isBotConversation ||
+    threadAllowsProviderSwitch({
+      thread: selectedThread,
+      projection: structure?.projection,
+    })
+      ? undefined
+      : modelSelection.instanceId;
   const modelOptions = buildModelOptions(
     serverConfig,
     modelSelection,
@@ -1547,8 +1559,20 @@ export function ExistingThreadSettingsRouteScreen({
         option.selection.instanceId === modelSelection.instanceId &&
         option.selection.model === modelSelection.model,
     ) ?? null;
-  const updateModelSelection = (selection: ModelSelection) =>
+  const updateModelSelection = (selection: ModelSelection) => {
     updateThreadDraftModelSelection(threadKey, selection, serverConfig?.providers ?? []);
+    if (
+      isBotConversation &&
+      selectedThread.activeProviderThreadId !== null &&
+      (selection.instanceId !== selectedThread.modelSelection.instanceId ||
+        selection.model !== selectedThread.modelSelection.model)
+    ) {
+      void startFreshSession({
+        environmentId: selectedThread.environmentId,
+        input: { threadId: selectedThread.id, modelSelection: selection },
+      });
+    }
+  };
 
   return (
     <ThreadSettingsPickerScreen

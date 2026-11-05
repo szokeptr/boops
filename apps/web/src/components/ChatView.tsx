@@ -1161,7 +1161,11 @@ export default function ChatView(props: ChatViewProps) {
     threadProvider,
     providers: providerStatuses,
   });
-  const modelPickerLockedProvider = supportsProviderSwitchingViaHandoff ? null : lockedProvider;
+  // A bot's conversation switches provider through a fresh session instead of a handoff.
+  const isBotConversation =
+    activeThread !== undefined && activeProject?.mainThreadId === activeThread.id;
+  const modelPickerLockedProvider =
+    supportsProviderSwitchingViaHandoff || isBotConversation ? null : lockedProvider;
   const supportsPullRequests = serverConfig !== null;
   const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
   const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
@@ -2620,6 +2624,7 @@ export default function ChatView(props: ChatViewProps) {
     setPendingServerThreadEnvModeEntry,
     setPendingServerThreadStartFromOriginByThreadId,
     scheduleComposerFocus,
+    isBotConversation,
   });
   const { onResume, isResuming } = useComposerResume({
     environmentId,
