@@ -29,6 +29,7 @@ import {
   threadFeedCompactionLabels,
   createThreadFeedCache,
   deriveThreadFeedPresentation,
+  isConnectionRequestActivityGroup,
   messageFoldRunId,
   type ThreadFeedCache,
   type ThreadFeedEntry,
@@ -55,6 +56,22 @@ it("shows a captured MCP app for a failed deferred write", () => {
     output: { t3McpApp: mcpApp, result: { content: [], isError: true } },
   };
   expect(buildThreadFeed([projected(item, 0)])).toMatchObject([{ type: "mcp-app", app: mcpApp }]);
+});
+
+it("keeps a connection card out of the work group before it, so it renders as a card", () => {
+  const card = {
+    ...base("item-connection", "2026-06-20T00:00:03.000Z", 2),
+    type: "connection_request",
+    catalogId: "linear",
+    label: "Linear",
+    reason: "To read your sprint board.",
+    connectionStatus: "pending",
+  } as OrchestrationV2TurnItem;
+
+  const groups = buildThreadFeed([projected(command(), 0), projected(card, 1)]).flatMap((entry) =>
+    entry.type === "activity-group" ? [entry] : [],
+  );
+  expect(groups.filter(isConnectionRequestActivityGroup)).toHaveLength(1);
 });
 
 it("keeps historical plan detail accessible from its paged turn item", () => {
