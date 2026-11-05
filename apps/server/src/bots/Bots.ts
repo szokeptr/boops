@@ -7,6 +7,7 @@ import {
   type BotDeleteInput,
   type BotFamilyAuthor,
   type BotMcpDelivery,
+  type BotMessageOrigin,
   type BotUnarchiveInput,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -192,11 +193,6 @@ export const childBriefKickoffText = (parentName: string, brief: string) =>
   `You were just created by ${parentName}, another bot, from this brief instead of a hatching interview. Write PERSONA.md and your first memory notes from it, add a routine if it calls for one, then start. Tell ${parentName} what matters with report_to_parent.\n\nBrief:\n${brief}`;
 
 // Agents read who sent a family message from this line; people see the sender on the message row.
-const fromParentHeader = (parentName: string) =>
-  `[From ${parentName}, your parent bot. Answer with report_to_parent.]`;
-const fromChildHeader = (childName: string) =>
-  `[From ${childName}, a bot you created. Answer with message_child_bot.]`;
-
 const READ_TEXT_MAX_CHARS = 4_000;
 
 interface Kickoff {
@@ -392,7 +388,7 @@ const make = Effect.gen(function* () {
   const postInto = Effect.fn("Bots.postInto")(function* (input: {
     readonly to: Project;
     readonly from: Project;
-    readonly header: string;
+    readonly relation: BotMessageOrigin["relation"];
     readonly text: string;
   }) {
     const threadId = yield* conversationOf(input.to);
@@ -408,7 +404,8 @@ const make = Effect.gen(function* () {
         commandId: CommandId.make(`bot-family:${id}`),
         messageId: MessageId.make(`bot-family:${id}`),
         senderThreadId,
-        text: `${input.header}\n\n${input.text}`,
+        bot: { projectId: input.from.id, name: input.from.title, relation: input.relation },
+        text: input.text,
         attachments: [],
         mode: "queue",
         createdBy: "agent",
@@ -504,7 +501,7 @@ const make = Effect.gen(function* () {
       return yield* postInto({
         to: child,
         from: parent,
-        header: fromParentHeader(parent.title),
+        relation: "parent",
         text: input.text,
       });
     },
@@ -520,7 +517,7 @@ const make = Effect.gen(function* () {
       return yield* postInto({
         to: parent,
         from: child,
-        header: fromChildHeader(child.title),
+        relation: "child",
         text: input.text,
       });
     },

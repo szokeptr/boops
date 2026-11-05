@@ -7,7 +7,9 @@ import {
   routineLabelText,
 } from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
-import { useQuietThreadShell } from "../../state/entities";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { useProject, useQuietThreadShell } from "../../state/entities";
+import { BotAvatar } from "../bots/BotAvatar";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { memo, use, useState, type ReactNode } from "react";
 import {
@@ -466,6 +468,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       : null,
   );
   const senderLabel = senderShell?.title.trim() || "Agent";
+  const senderBotProjectId = userMessage.bot?.projectId ?? null;
+  const senderBot = useProject(
+    senderBotProjectId === null
+      ? null
+      : scopeProjectRef(ctx.activeThreadEnvironmentId, senderBotProjectId),
+  );
+  const senderBotName = senderBot?.title ?? userMessage.bot?.name;
   const resolvedContext = resolveUserMessageContext({ ...row.message, text: userMessage.text });
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const revertTurnCount = row.revertTurnCount;
@@ -841,7 +850,22 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           Sent by Boops
         </p>
       ) : null}
-      {/* The row's heading already names the guest for screen readers. */}
+      {/* The row's heading already names the sender for screen readers. */}
+      {senderBotName !== undefined ? (
+        <div
+          aria-hidden
+          className="me-1 flex items-center gap-1.5 text-2xs text-muted-foreground"
+          data-user-message-attribution="bot"
+        >
+          <BotAvatar
+            avatar={senderBot?.avatar ?? null}
+            name={senderBotName}
+            status="idle"
+            size={16}
+          />
+          {senderBotName}
+        </div>
+      ) : null}
       {userMessage.guestName !== undefined ? (
         <div aria-hidden>
           <GuestMessageName name={userMessage.guestName} />
@@ -877,9 +901,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           <MessageAuthorHeading>
             {folded
               ? senderLabel
-              : userMessage.guestName === undefined
-                ? "You"
-                : `${userMessage.guestName} (guest)`}
+              : senderBotName !== undefined
+                ? senderBotName
+                : userMessage.guestName === undefined
+                  ? "You"
+                  : `${userMessage.guestName} (guest)`}
           </MessageAuthorHeading>
         )}
         {folded ? (

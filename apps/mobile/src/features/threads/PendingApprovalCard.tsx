@@ -24,6 +24,14 @@ export interface PendingApprovalCardProps {
   ) => Promise<unknown>;
 }
 
+const REQUEST_KIND_TITLES: Readonly<Record<PendingApproval["requestKind"], string>> = {
+  command: "Run a command",
+  "file-change": "Change files",
+  "file-read": "Read a file",
+  permission: "App permission",
+  "mcp-elicitation": "Request",
+};
+
 const DEFAULT_APPROVAL_OPTIONS: ReadonlyArray<ProviderApprovalOption> = [
   { decision: "accept", label: "Allow once" },
   { decision: "acceptForSession", label: "Allow session" },
@@ -43,7 +51,7 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
         Approval needed
       </Text>
       <Text className="font-t3-bold text-lg text-foreground">
-        {props.approval.appName ?? props.approval.requestKind}
+        {props.approval.appName ?? REQUEST_KIND_TITLES[props.approval.requestKind]}
       </Text>
       {props.approval.detail ? (
         <Text className="font-sans text-sm leading-normal text-foreground-secondary">

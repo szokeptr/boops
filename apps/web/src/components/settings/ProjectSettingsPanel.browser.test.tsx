@@ -309,9 +309,7 @@ async function mountSettings(search: SettingsScopeSearch) {
 }
 
 const nameInput = (screen: Screen) =>
-  screen.container.querySelector<HTMLInputElement>('[aria-label="Project name"]')!;
-const removeCheckout = (screen: Screen, root: string) =>
-  screen.container.querySelector<HTMLButtonElement>(`[aria-label="Remove checkout ${root}"]`)!;
+  screen.container.querySelector<HTMLInputElement>('[aria-label="Bot name"]')!;
 const removeAll = (screen: Screen) =>
   [...screen.container.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Remove all entries"),
@@ -392,35 +390,16 @@ describe("project settings permissions", () => {
       firstUpdate.resolve(AsyncResult.success(undefined));
       await firstUpdate.promise;
     });
-    await expectProjectAccessDeniedToast("Failed to rename project");
+    await expectProjectAccessDeniedToast("Failed to rename bot");
     expect(state.update).toHaveBeenCalledOnce();
     expect(state.update.mock.calls[0]![0].environmentId).toBe(primaryId);
   });
 
-  it("disables removal for a checkout whose project grant is missing", async () => {
+  it("denies removing the group while one member's project grant is missing", async () => {
     setup();
     await grant(remoteId, AsyncResult.success(session([])));
     await using screen = await mountPanel();
-    expect(removeCheckout(screen, "/work/remote").disabled).toBe(true);
-    expect(removeCheckout(screen, "/work/primary").disabled).toBe(false);
-  });
-
-  it("removes a writable checkout while removal of the mixed group stays denied", async () => {
-    setup();
-    await grant(remoteId, AsyncResult.success(session([])));
-    await using screen = await mountPanel();
-    const initialHref = screen.router.state.location.href;
     expect(removeAll(screen).disabled).toBe(true);
-
-    await userEvent.click(removeCheckout(screen, "/work/primary"));
-    await vi.waitFor(() => expect(state.delete).toHaveBeenCalledOnce());
-    expect(state.delete).toHaveBeenCalledWith({
-      environmentId: primaryId,
-      input: { projectId: state.projects[0]!.id, force: true },
-    });
-    await vi.waitFor(() => expect(state.releaseUploads).toHaveBeenCalledOnce());
-    expect(state.clearDraft).toHaveBeenCalledOnce();
-    expect(screen.router.state.location.href).toBe(initialHref);
   });
 
   it("rechecks every removal target after confirmation before deleting or clearing drafts", async () => {
@@ -452,7 +431,7 @@ describe("project settings permissions", () => {
     await act(async () => {
       nameInput(screen).dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     });
-    await expectProjectAccessDeniedToast("Failed to rename project");
+    await expectProjectAccessDeniedToast("Failed to rename bot");
     expect(state.update).not.toHaveBeenCalled();
     expect(nameInput(screen).disabled).toBe(true);
 
@@ -602,7 +581,7 @@ describe("project settings scope", () => {
     state.projects = state.projects.filter((project) => project.environmentId === primaryId);
     await using _screen = await mountSettings({ project: projectKey() });
 
-    await expect.element(page.getByRole("textbox", { name: "Project name" })).toBeVisible();
+    await expect.element(page.getByRole("textbox", { name: "Bot name" })).toBeVisible();
     await userEvent.click(environmentMenu());
     await expect.element(primaryOption()).toBeVisible();
     await expect.element(remoteOption()).not.toBeInTheDocument();
@@ -649,7 +628,7 @@ describe("project settings scope", () => {
     await userEvent.click(page.getByRole("button", { name: "Show all environments" }));
 
     await expect
-      .element(page.getByRole("textbox", { name: "Project name" }))
+      .element(page.getByRole("textbox", { name: "Bot name" }))
       .toHaveValue("Shared repo");
     expect(screen.router.state.location.search).toEqual({ project: key });
     await expect

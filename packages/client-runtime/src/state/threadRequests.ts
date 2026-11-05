@@ -11,6 +11,7 @@ import type {
   ProviderRequestKind,
   RuntimeRequestId,
 } from "@t3tools/contracts";
+import { isT3McpServerName } from "@t3tools/shared/t3McpToolPresentation";
 import { Atom } from "effect/reactivity";
 import { parseThreadKey, threadKey } from "./entities.ts";
 import { getProjectionArrayReplacementIndex } from "./orchestrationV2Projection.ts";
@@ -270,7 +271,10 @@ export function derivePendingThreadRequests(
       ...(item?.type === "approval_request" && item.fullAccessOverride
         ? { fullAccessOverride: item.fullAccessOverride }
         : {}),
-      ...(item?.type === "approval_request" && item.appName ? { appName: item.appName } : {}),
+      // The app's own tools ask through its MCP server; its internal name means nothing to users.
+      ...(item?.type === "approval_request" && item.appName && !isT3McpServerName(item.appName)
+        ? { appName: item.appName }
+        : {}),
       ...(item?.type === "approval_request" && item.options !== undefined
         ? { options: item.options }
         : {}),

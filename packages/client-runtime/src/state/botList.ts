@@ -146,8 +146,32 @@ function laterIso(a: string, b: string): string {
   return (toSortableTimestamp(b) ?? 0) > (toSortableTimestamp(a) ?? 0) ? b : a;
 }
 
-function previewText(text: string): string | null {
-  const collapsed = text.replace(/\s+/g, " ").trim();
+// Line-start syntax first, while the newlines are still there; then inline marks.
+const MARKDOWN_PREVIEW_RULES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^\s*```[^\n]*$/gm, ""],
+  [/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/gm, ""],
+  [/^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-*:?\s*$/gm, ""],
+  [/^\s{0,3}#{1,6}\s+/gm, ""],
+  [/^\s{0,3}(?:>\s?)+/gm, ""],
+  [/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/gm, ""],
+  [/!\[([^\]]*)\]\([^)]*\)/g, "$1"],
+  [/\[([^\]]+)\]\([^)]*\)/g, "$1"],
+  [/<((?:https?|mailto):[^>\s]+)>/g, "$1"],
+  [/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, "$2"],
+  [/~~(?=\S)([\s\S]*?\S)~~/g, "$1"],
+  [/(^|[^\w*])\*(?=\S)([^*\n]*?\S)\*(?![\w*])/g, "$1$2"],
+  [/(^|[^\w])_(?=\S)([^_\n]*?\S)_(?!\w)/g, "$1$2"],
+  [/`+([^`]+?)`+/g, "$1"],
+  [/\|/g, " "],
+];
+
+/** One line of plain text from a markdown message, clipped for a list row. */
+export function botMessagePreview(text: string): string | null {
+  let plain = text;
+  for (const [pattern, replacement] of MARKDOWN_PREVIEW_RULES) {
+    plain = plain.replace(pattern, replacement);
+  }
+  const collapsed = plain.replace(/\s+/g, " ").trim();
   if (collapsed.length === 0) return null;
   return collapsed.length > PREVIEW_MAX_LENGTH
     ? `${collapsed.slice(0, PREVIEW_MAX_LENGTH - 1)}…`
@@ -230,7 +254,7 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
       name: project.title,
       avatar: project.avatar ?? null,
       mainThreadId,
-      lastMessagePreview: message === null ? null : previewText(message.text),
+      lastMessagePreview: message === null ? null : botMessagePreview(message.text),
       lastMessageFromUser: message?.role === "user",
       status,
       unread: main !== null && isThreadUnread(main, input.localLastVisitedAt),

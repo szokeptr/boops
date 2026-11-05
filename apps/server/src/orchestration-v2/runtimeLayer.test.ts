@@ -8923,13 +8923,22 @@ it.layer(layerBotsTest)("bot families", (it) => {
       yield* bots.reportToParent({ childProjectId: child.projectId, text: "Dana ran 14 km." });
       const childMessages = (yield* orchestrator.getThreadProjection(child.mainThreadId)).messages;
       const sent = childMessages.find((message) => message.senderThreadId === parent.mainThreadId);
-      assert.isTrue(sent?.text.endsWith("How was the long run?"));
-      assert.include(sent?.text, "Wren");
+      // The routing line is added for the agent at turn start; the stored text is the sender's.
+      assert.strictEqual(sent?.text, "How was the long run?");
+      assert.deepEqual(sent?.context?.bot, {
+        projectId: parent.projectId,
+        name: "Wren",
+        relation: "parent",
+      });
       const report = (yield* orchestrator.getThreadProjection(parent.mainThreadId)).messages.find(
         (message) => message.senderThreadId === child.mainThreadId,
       );
-      assert.deepInclude(report, { role: "user", createdBy: "agent" });
-      assert.isTrue(report?.text.endsWith("Dana ran 14 km."));
+      assert.deepInclude(report, { role: "user", createdBy: "agent", text: "Dana ran 14 km." });
+      assert.deepEqual(report?.context?.bot, {
+        projectId: child.projectId,
+        name: "Pace",
+        relation: "child",
+      });
 
       const read = yield* bots.readChild({
         parentProjectId: parent.projectId,

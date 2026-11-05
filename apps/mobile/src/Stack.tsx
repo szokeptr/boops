@@ -294,7 +294,7 @@ const SETTINGS_SCREENS = {
   SettingsProjectOverview: createNativeStackScreen({
     screen: SettingsProjectOverviewRouteScreen,
     linking: "settings/project",
-    options: { ...SETTINGS_PAGE_OPTIONS, title: "Projects" },
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Bots" },
   }),
   SettingsKeyboard: createNativeStackScreen({
     screen: SettingsKeyboardRouteScreen,
