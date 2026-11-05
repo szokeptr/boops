@@ -4,6 +4,7 @@ import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { mapAtomCommandResult, settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { botHomeFolderUnavailableReason } from "@t3tools/client-runtime/state/bot-home-folder";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
 import { type EnvironmentId, type SidebarProjectGroupingMode } from "@t3tools/contracts";
 import {
@@ -27,7 +28,11 @@ import {
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
-import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
+import {
+  useEnvironmentProviders,
+  useEnvironments,
+  usePrimaryEnvironmentId,
+} from "../../state/environments";
 import { useThreadShells, waitForProjectRemoval } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -277,6 +282,11 @@ function ProjectDetail({
       (member) => environmentById.get(member.environmentId)?.serverConfig != null,
     ) ?? group.memberProjects[0]!;
   const threads = useThreadShells();
+  const homeFolderUnavailableReason = botHomeFolderUnavailableReason(
+    group.memberProjects,
+    threads,
+    useEnvironmentProviders(),
+  );
   const deleteProject = useOrchestrationCommand(projectEnvironment.delete, {
     reportFailure: false,
   });
@@ -622,6 +632,7 @@ function ProjectDetail({
           <SettingsRow
             title="Stay in its home folder"
             description="Limits the bot's file changes and commands to its home folder. Applies from its next session."
+            status={homeFolderUnavailableReason}
             control={
               <Switch
                 checked={group.memberProjects.every((member) => member.autonomy === "home-folder")}

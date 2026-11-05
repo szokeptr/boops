@@ -335,6 +335,10 @@
       "types": "./src/state/threadSort.ts",
       "default": "./src/state/threadSort.ts"
     },
+    "./state/bot-home-folder": {
+      "types": "./src/state/botHomeFolder.ts",
+      "default": "./src/state/botHomeFolder.ts"
+    },
     "./state/bot-list": {
       "types": "./src/state/botList.ts",
       "default": "./src/state/botList.ts"

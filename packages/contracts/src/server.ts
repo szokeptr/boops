@@ -219,6 +219,8 @@ export const ServerProvider = Schema.Struct({
   supportedRuntimeModes: Schema.optional(ForwardCompatibleArray(RuntimeMode)),
   supportsConversationRollback: Schema.optional(Schema.Boolean),
   supportsTextGeneration: Schema.optional(Schema.Boolean),
+  // Why a bot's "Stay in its home folder" cannot be enforced on this host; absent when it can.
+  homeFolderUnavailableReason: Schema.optionalKey(TrimmedNonEmptyString),
   setup: Schema.optional(
     Schema.Struct({
       canAuthenticate: Schema.Boolean,

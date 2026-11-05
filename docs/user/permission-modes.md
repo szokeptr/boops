@@ -36,7 +36,8 @@ The bot can still read files elsewhere and use the network. The change applies f
 session.
 
 Codex, Claude and Cursor enforce this with their own sandbox; on Linux, Claude needs `bubblewrap`
-installed, and Cursor on Windows has no filesystem sandbox. OpenCode, Grok, Kiro and ACP Registry
+and `socat` installed (the switch says so when they are missing, and the bot's turns fail until
+they are), and Cursor on Windows has no filesystem sandbox. OpenCode, Grok, Kiro and ACP Registry
 agents can change files in the folder but cannot run commands. Antigravity, Pi and Muse Code have
 no sandbox, so they ask you before every change and command.
 
