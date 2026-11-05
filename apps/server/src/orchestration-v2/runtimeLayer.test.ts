@@ -8805,6 +8805,7 @@ it.layer(layerBotsTest)("bot families", (it) => {
       const fileSystem = yield* FileSystem.FileSystem;
       const bots = yield* Bots.Bots;
       const projects = yield* ProjectService.ProjectService;
+      const settings = yield* ServerSettings.ServerSettingsService;
       const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-family-" });
       const parent = yield* inHome(home, bots.create({ name: "Wren", modelSelection }));
       const asked: Array<Bots.BotChildApproval> = [];
@@ -8838,8 +8839,17 @@ it.layer(layerBotsTest)("bot families", (it) => {
         projectId: parent.projectId,
         canCreateBotsWithoutAsking: true,
       });
-      yield* child("Tally", () => Effect.die("the bypass must not ask"));
+      // A model switch writes only the settings override, as a rollover does.
+      const switched = { ...modelSelection, model: "gpt-5.5" } satisfies ModelSelection;
+      yield* settings.updateSettings({
+        projectSettingsOverrides: { [parent.projectId]: { defaultModelSelection: switched } },
+      });
+      const tally = yield* child("Tally", () => Effect.die("the bypass must not ask"));
       assert.lengthOf(asked, 2);
+      assert.deepEqual(
+        Option.getOrThrow(yield* projects.getById(tally.projectId)).defaultModelSelection,
+        switched,
+      );
       assert.sameMembers(
         (yield* bots.childrenOf(parent.projectId)).map((shell) => shell.title),
         ["Pace", "Tally"],

@@ -36,6 +36,7 @@ import * as Schema from "effect/Schema";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { BotFamilyError } from "./botFamily.ts";
 
 export class BotHomeFolderError extends Schema.TaggedError<BotHomeFolderError>()(
@@ -211,6 +212,7 @@ const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const routines = yield* ScheduledTaskService.ScheduledTaskService;
   const random = yield* SecureRandom.SecureRandom;
+  const settings = yield* ServerSettings.ServerSettingsService;
 
   // Non-recursive mkdir atomically claims a slug; a taken one moves on to `<slug>-2`.
   const claimHome = Effect.fn("Bots.claimHome")(function* (name: string) {
@@ -431,7 +433,15 @@ const make = Effect.gen(function* () {
     if (input.mode === "brief" && input.brief === undefined) {
       return yield* familyError("invalid", "A child started from a brief needs `brief`.");
     }
-    const modelSelection = input.modelSelection ?? parent.defaultModelSelection;
+    // A model switch writes the override, not the record, so the override is the current model.
+    const modelSelection =
+      input.modelSelection ??
+      (yield* settings.getSettings.pipe(
+        Effect.mapError(() =>
+          familyError("unavailable", `Could not read ${parent.title}'s model.`),
+        ),
+      )).projectSettingsOverrides[parent.id]?.defaultModelSelection ??
+      parent.defaultModelSelection;
     if (modelSelection === null) {
       return yield* familyError("invalid", `${parent.title} has no model for the child to use.`);
     }
