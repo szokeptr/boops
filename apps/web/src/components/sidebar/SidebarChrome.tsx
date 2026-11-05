@@ -1,4 +1,5 @@
 import { ArrowLeftIcon, ArrowRightIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { BoopsWordmark } from "../BoopsWordmark";
 import type { ReactNode } from "react";
 import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -178,14 +179,9 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 
 function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
-    <span
-      className={cn(
-        "truncate text-sm font-semibold tracking-tight [text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:py-1",
-        onBackdrop ? "text-white" : "text-foreground",
-      )}
-    >
-      Boops
-    </span>
+    <BoopsWordmark
+      className={cn("h-[18px] w-auto shrink-0", onBackdrop ? "text-white" : "text-foreground")}
+    />
   );
 }
 

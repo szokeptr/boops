@@ -1,4 +1,5 @@
 import { useAuth } from "@clerk/react";
+import { BoopsWordmark } from "../BoopsWordmark";
 import { useAtomValue } from "@effect/atom-react";
 import type {
   AgentSessionProjectCandidate,
@@ -239,7 +240,7 @@ export function WelcomeWizard({
       >
         <WizardHeader
           title="Set up Boops"
-          identity={<span className="text-2xl font-semibold tracking-tight">Boops</span>}
+          identity={<BoopsWordmark className="h-[27px] w-auto shrink-0" />}
         >
           <WizardSteps
             steps={ONBOARDING_STAGES}
