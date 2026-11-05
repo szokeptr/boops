@@ -24,7 +24,6 @@ export function T3Wordmark(props: {
       height={props.height}
       width={props.height * aspectRatio}
       viewBox="0 0 29 9"
-      shapeRendering="crispEdges"
     >
       <ThemedPath
         d={INK}
