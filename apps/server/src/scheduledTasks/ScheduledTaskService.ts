@@ -289,7 +289,7 @@ export class ScheduledTaskService extends Context.Service<
       readonly threadId: ThreadId;
     }) => Effect.Effect<ScheduledTaskMutationResult, ScheduledTaskError>;
   }
->()("t3/scheduledTasks/ScheduledTaskService") {}
+>()("boops/scheduledTasks/ScheduledTaskService") {}
 
 function taskError(message: string, input?: { taskId?: ScheduledTaskId; cause?: unknown }) {
   return new ScheduledTaskError({

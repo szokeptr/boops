@@ -119,7 +119,7 @@ export class Bots extends Context.Service<
       readonly text: string;
     }) => Effect.Effect<BotMcpDelivery, BotFamilyError>;
   }
->()("t3/bots/Bots") {}
+>()("boops/bots/Bots") {}
 
 const MAX_SLUG_ATTEMPTS = 100;
 

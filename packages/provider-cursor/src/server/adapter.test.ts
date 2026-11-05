@@ -660,7 +660,7 @@ describe("CursorAdapterV2", () => {
     ),
   );
 
-  it.effect("sends T3 instructions to each Cursor conversation that lacks them", () =>
+  it.effect("sends Boops instructions to each Cursor conversation that lacks them", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const workspace = yield* fileSystem.makeTempDirectoryScoped({ prefix: "cursor-v2-device-" });
@@ -785,7 +785,7 @@ describe("CursorAdapterV2", () => {
         const sent = sentMessages.at(-1)!;
         return {
           orchestration: sent.includes("## Pocks bot"),
-          devices: sent.includes("## T3 Code devices"),
+          devices: sent.includes("## Boops devices"),
         };
       });
       const told = (orchestration: boolean, devices: boolean) => ({ orchestration, devices });
