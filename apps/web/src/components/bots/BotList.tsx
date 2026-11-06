@@ -30,7 +30,7 @@ const ROW_CLASS =
   "flex w-full cursor-pointer items-center gap-3 rounded-xl px-2 py-2 text-left outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[active=true]:bg-sidebar-row-selected";
 
 const TILE_CLASS =
-  "flex w-full cursor-pointer flex-col items-center gap-1.5 rounded-xl px-1 pt-2 pb-1.5 outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[active=true]:bg-sidebar-row-selected";
+  "flex w-full cursor-pointer flex-col items-center rounded-xl px-1 pt-2 pb-1.5 outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[active=true]:bg-sidebar-row-selected";
 
 export function BotList(props: BotListProps) {
   return (
@@ -144,7 +144,7 @@ function PinnedBotTile(props: BotEntryProps) {
         </span>
         <span
           className={cn(
-            "w-full truncate text-center text-xs text-sidebar-foreground",
+            "-mt-1 w-full truncate text-center text-xs text-sidebar-foreground",
             row.unread ? "font-semibold" : "font-medium",
           )}
         >

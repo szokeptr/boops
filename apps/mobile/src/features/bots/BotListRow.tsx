@@ -1,7 +1,7 @@
 import type { BotRow, BotStatus } from "@t3tools/client-runtime/state/bot-list";
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
 import type { ReactNode } from "react";
-import { Pressable, View } from "react-native";
+import { Platform, Pressable, View, type ViewStyle } from "react-native";
 
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { RelativeTime } from "../../components/RelativeTime";
@@ -76,22 +76,33 @@ export interface BotEntryActions {
 
 /** Long-press on a bot: pin or unpin it, or open its activity. */
 function BotEntryMenu(
-  props: BotEntryActions & { readonly row: BotRow; readonly children: ReactNode },
+  props: BotEntryActions & {
+    readonly row: BotRow;
+    readonly children: ReactNode;
+    readonly style?: ViewStyle;
+  },
 ) {
   const { row } = props;
   const pinned = row.pinnedAt !== null;
   const actions = [
     pinned
-      ? { id: "unpin", title: "Unpin", image: "pin.slash" }
-      : { id: "pin", title: "Pin", image: "pin" },
+      ? { id: "unpin", title: "Unpin", image: Platform.OS === "ios" ? "pin.slash" : "keep_off" }
+      : { id: "pin", title: "Pin", image: Platform.OS === "ios" ? "pin" : "keep" },
     ...(row.activityThreadCount > 0
-      ? [{ id: "activity", title: `Activity (${row.activityThreadCount})`, image: "clock" }]
+      ? [
+          {
+            id: "activity",
+            title: `Activity (${row.activityThreadCount})`,
+            image: Platform.OS === "ios" ? "clock" : "history",
+          },
+        ]
       : []),
   ];
   return (
     <Menu
       actions={actions}
       shouldOpenOnLongPress
+      {...(props.style ? { style: props.style } : {})}
       onPressAction={({ nativeEvent }) => {
         if (nativeEvent.event === "pin" || nativeEvent.event === "unpin") {
           props.onSetPinned(row, !pinned);
@@ -120,7 +131,7 @@ export function BotListRow(
     : "accent-foreground-muted";
   return (
     <View className={cn("flex-row items-center rounded-xl", selected && "bg-thread-selected")}>
-      <BotEntryMenu {...props}>
+      <BotEntryMenu {...props} style={{ flex: 1 }}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={botRowLabel(row)}
@@ -198,7 +209,7 @@ export function PinnedBotTiles(
                 accessibilityLabel={botRowLabel(row)}
                 accessibilityState={{ selected }}
                 className={cn(
-                  "items-center gap-1.5 rounded-xl px-1 pt-2 pb-1.5 active:opacity-70",
+                  "items-center rounded-xl px-1 pt-2 pb-1.5 active:opacity-70",
                   selected && "bg-thread-selected",
                 )}
                 onPress={() => props.onOpen(row)}
@@ -217,7 +228,7 @@ export function PinnedBotTiles(
                 <Text
                   numberOfLines={1}
                   className={cn(
-                    "text-xs",
+                    "-mt-1 text-xs",
                     row.unread ? "font-t3-bold" : "font-t3-medium",
                     selected ? "text-thread-selected-foreground" : "text-foreground",
                   )}
