@@ -73,7 +73,9 @@ import {
   type ProviderSubagentStatus,
 } from "@t3tools/client-runtime/state/thread-execution";
 import { formatModelSlugName, resolveSelectableModel } from "@t3tools/shared/model";
-import { isProviderNativeSubagentThread } from "@t3tools/contracts";
+import { isProviderNativeSubagentThread, type ProjectAvatar } from "@t3tools/contracts";
+import { botBubbleColors } from "@t3tools/client-runtime/bot-avatar";
+import { specFor } from "@t3tools/shared/botAvatar";
 import type { QueuedRunEdit } from "../../state/queued-run-edit";
 import type { FollowUpBehavior } from "../../lib/followUpBehavior";
 import type { ActiveTurnComposerAction } from "@t3tools/client-runtime/state/composer-dispatch";
@@ -225,6 +227,7 @@ export interface ThreadDetailScreenProps {
   readonly setupWorkingStartedAt?: string | null;
   /** Set in a bot's main conversation, which reads like a DM with the bot. */
   readonly botName?: string | null;
+  readonly botAvatar?: ProjectAvatar | null;
   readonly canOperateThread: boolean;
   readonly selectedThread: EnvironmentThreadShell;
   /** Use this for detail reads; it stays null until queued creation reaches the server. */
@@ -1491,6 +1494,7 @@ function ThreadDetailBody(
                           props.activePendingApproval || props.activePendingUserInput
                             ? null
                             : props.activeWorkStartedAt,
+                        ownBubble: botBubbleColors(props.botAvatar ?? specFor(props.botName ?? "")),
                       }
                     : null
                 }

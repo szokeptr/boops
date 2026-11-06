@@ -16,7 +16,7 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { useProject, useQuietThreadShell } from "../../state/entities";
 import { BotAvatar } from "../bots/BotAvatar";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
-import { memo, use, useState, type ReactNode } from "react";
+import { memo, use, useState, type CSSProperties, type ReactNode } from "react";
 import {
   createMessageAttachmentPreviewProjector,
   selectMessageImageResources,
@@ -915,6 +915,21 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           folded && expanded && "w-full",
           editing && "w-full",
         )}
+        style={
+          ctx.ownBubbleColors &&
+          userMessage.attribution === null &&
+          !mediaOnly &&
+          !fileCardsOnly &&
+          !audioOnly
+            ? ({
+                backgroundColor: ctx.ownBubbleColors.background,
+                color: ctx.ownBubbleColors.foreground,
+                // Markdown inside sets text-foreground; the bot's ink must win on its colour.
+                "--contrast-foreground": ctx.ownBubbleColors.foreground,
+                "--contrast-muted-foreground": ctx.ownBubbleColors.foreground,
+              } as CSSProperties)
+            : undefined
+        }
       >
         {/* Outside the fold so a collapsed message still has a heading to navigate to. */}
         {mediaAboveText ? null : (

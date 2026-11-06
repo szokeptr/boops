@@ -364,7 +364,11 @@ export interface ThreadFeedProps {
   readonly activeWorkStartedAt: string | null;
   readonly runlessWorkActive?: boolean;
   /** Set in a bot's main conversation, which reads like a DM: bubbles and a typing row, not the work. */
-  readonly directMessage?: { readonly typingSince: string | null } | null;
+  readonly directMessage?: {
+    readonly typingSince: string | null;
+    /** Your bubbles wear the bot's colour. */
+    readonly ownBubble: { readonly background: string; readonly foreground: string };
+  } | null;
   readonly listRef: RefObject<LegendListRef | null>;
   readonly freeze: SharedValue<boolean>;
   readonly anchorMessageId: MessageId | null;
@@ -1141,6 +1145,22 @@ interface MarkdownStyleSet {
   readonly nativeTextStyle: NativeMarkdownTextStyle;
 }
 
+function inkedMarkdownStyleSet(set: MarkdownStyleSet, ink: string): MarkdownStyleSet {
+  return {
+    nativeTextStyle: {
+      ...set.nativeTextStyle,
+      color: ink,
+      strongColor: ink,
+      mutedColor: ink,
+      linkColor: ink,
+      inlineCodeColor: ink,
+      fileTextColor: ink,
+      quoteMarkerColor: ink,
+      dividerColor: ink,
+    },
+  };
+}
+
 const ARTIFACT_TEMPLATE_SYMBOL_BY_KIND: Record<
   CodexArtifactTemplate["artifactKind"],
   AppSymbolName
@@ -1700,6 +1720,10 @@ function renderFeedEntry(
     readonly replyActionSize: { readonly button: number; readonly icon: number };
     readonly screenColor: string;
     readonly userBubbleColor: string | import("react-native").ColorValue;
+    readonly ownBubble: {
+      readonly background: string;
+      readonly markdownStyles: MarkdownStyleSet;
+    } | null;
     readonly markdownStyles: MarkdownStyleSets;
     readonly reviewCommentColors: ReviewCommentColors;
     readonly reviewCommentBubbleWidth: number;
@@ -1889,7 +1913,9 @@ function renderFeedEntry(
     const isUser = message.role === "user";
     const presentation = resolveUserMessagePresentation(message);
     const renderedText = renderAssistantCitationsAsText(presentation.text);
-    const styles = isUser ? markdownStyles.user : markdownStyles.assistant;
+    const ownBubble = isUser && presentation.attribution === null ? props.ownBubble : null;
+    const styles =
+      ownBubble?.markdownStyles ?? (isUser ? markdownStyles.user : markdownStyles.assistant);
     const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);
     const attachments = message.attachments ?? [];
     const hasReviewCommentContext = presentation.text.includes("<review_comment");
@@ -2086,7 +2112,7 @@ function renderFeedEntry(
                 props.directMessage && props.messageGrouping.groupedWithNext && "rounded-br-md",
               )}
               style={{
-                backgroundColor: userBubbleColor,
+                backgroundColor: ownBubble?.background ?? userBubbleColor,
                 maxWidth: props.duoColumns ? "85%" : props.userBubbleMaxWidth,
                 ...(!bubbleBodyVisible
                   ? null
@@ -3247,6 +3273,13 @@ export const ThreadFeed = memo(function ThreadFeed({
     ) : null;
   };
   const markdownStyles = useMarkdownStyles();
+  const ownBubbleColors = props.directMessage?.ownBubble ?? null;
+  const ownBubble = ownBubbleColors
+    ? {
+        background: ownBubbleColors.background,
+        markdownStyles: inkedMarkdownStyleSet(markdownStyles.user, ownBubbleColors.foreground),
+      }
+    : null;
   const renderReasoning = (text: string) => (
     <AssistantMarkdownContent
       markdown={text}
@@ -3279,6 +3312,7 @@ export const ThreadFeed = memo(function ThreadFeed({
     reviewCommentColors,
     themeAppearance,
     userBubbleColor,
+    ownBubble,
     viewportWidth,
     contentWidth,
     skills: props.skills,
@@ -3822,6 +3856,7 @@ export const ThreadFeed = memo(function ThreadFeed({
             replyActionSize,
             screenColor,
             userBubbleColor,
+            ownBubble,
             markdownStyles,
             reviewCommentColors,
             reviewCommentBubbleWidth,

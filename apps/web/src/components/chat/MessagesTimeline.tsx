@@ -1,5 +1,7 @@
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { botBubbleColors } from "@t3tools/client-runtime/bot-avatar";
+import { specFor } from "@t3tools/shared/botAvatar";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import { AudioPreviewUnmountContext } from "../files/AudioPreview";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
@@ -470,12 +472,12 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const citationThreadRef = parseScopedThreadKey(routeThreadKey);
   const openPullRequest = useOpenPrLink(citationThreadRef ?? undefined);
   const threadShell = useQuietThreadShell(citationThreadRef);
-  const assistantName =
-    useProject(
-      threadShell === null
-        ? null
-        : scopeProjectRef(threadShell.environmentId, threadShell.projectId),
-    )?.title ?? "Assistant";
+  const project = useProject(
+    threadShell === null ? null : scopeProjectRef(threadShell.environmentId, threadShell.projectId),
+  );
+  const assistantName = project?.title ?? "Assistant";
+  const ownBubbleColors =
+    directMessage && project ? botBubbleColors(project.avatar ?? specFor(project.title)) : null;
   const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
   const [disclosureToggleSettling, setDisclosureToggleSettling] = useState(false);
   const disclosureAnchorKeyRef = useRef<string | null>(null);
@@ -1023,6 +1025,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   );
   const sharedState: TimelineRowSharedState = {
     directMessage,
+    ownBubbleColors,
     pendingApprovals: pendingApprovalsByRequestId,
     respondingRequestIds,
     canOperateThread,
