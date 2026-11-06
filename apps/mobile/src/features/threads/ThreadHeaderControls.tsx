@@ -103,9 +103,40 @@ function useThreadHeaderActionItems(props: ThreadHeaderControlsProps) {
   } satisfies Record<string, HeaderItem>;
 }
 
-export function useThreadRightHeaderItems(props: ThreadHeaderControlsProps): HeaderItems {
-  const actionItems = useThreadHeaderActionItems(props);
-  return [actionItems.files, actionItems.terminal];
+/** One "…" menu for phones, where the conversation keeps the bar to itself. */
+export function useThreadOverflowHeaderItems(props: ThreadHeaderControlsProps): HeaderItems {
+  const { files, terminal } = useThreadHeaderActionItems(props);
+  return [
+    {
+      accessibilityLabel: "More",
+      icon: { name: "ellipsis", type: "sfSymbol" },
+      identifier: "thread-right-more",
+      menu: {
+        items: [
+          {
+            disabled: files.disabled,
+            icon: files.icon,
+            label: files.label,
+            onPress: files.onPress,
+            type: "action",
+          },
+          ...(terminal.disabled
+            ? []
+            : [
+                {
+                  icon: terminal.icon,
+                  items: terminal.menu.items,
+                  title: "Terminal",
+                  type: "submenu",
+                },
+              ]),
+        ],
+      },
+      sharesBackground: true,
+      type: "menu",
+      variant: "plain",
+    },
+  ];
 }
 
 export function useThreadCenterHeaderItems(props: ThreadHeaderControlsProps): HeaderItems {
