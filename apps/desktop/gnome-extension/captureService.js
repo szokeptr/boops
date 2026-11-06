@@ -1,4 +1,4 @@
-export const CLIENT_NAMES = ["com.getboops.app.SnapShot", "com.getboops.app.dev.SnapShot"];
+export const CLIENT_NAMES = ["com.getboops.desktop.SnapShot", "com.getboops.desktop.dev.SnapShot"];
 
 export function isWaylandSession(meta) {
   // GNOME 50 removed the X11 compositor and this API. GNOME 45–49 still need the check.

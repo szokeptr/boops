@@ -131,13 +131,13 @@ describe("DesktopPreReadyPlatform", () => {
     let desktopEntry = previousEntry;
     let iconInstalled = false;
     copyFileSyncMock.mockImplementation((_source: string, destination: string) => {
-      iconInstalled = destination === "/xdg/icons/com.getboops.app.desktop.png";
+      iconInstalled = destination === "/xdg/icons/com.getboops.desktop.desktop.png";
     });
     setDesktopNameMock.mockImplementation((name: string) => {
       desktopName = name;
     });
     writeFileSyncMock.mockImplementation((path: string, contents: string) => {
-      if (path === "/xdg/applications/com.getboops.app.desktop") desktopEntry = contents;
+      if (path === "/xdg/applications/com.getboops.desktop.desktop") desktopEntry = contents;
     });
 
     return Effect.scoped(
@@ -153,11 +153,14 @@ describe("DesktopPreReadyPlatform", () => {
           ),
         );
         const identity = yield* Effect.promise(() => portalIdentity);
-        assert.equal(identity.desktopName, "com.getboops.app.desktop");
+        assert.equal(identity.desktopName, "com.getboops.desktop.desktop");
         assert.include(identity.desktopEntry ?? "", "Exec=/Applications/current.AppImage %U");
         assert.include(identity.desktopEntry ?? "", "Name=Boops (Beta)");
         assert.include(identity.desktopEntry ?? "", "MimeType=x-scheme-handler/boops;");
-        assert.include(identity.desktopEntry ?? "", "Icon=/xdg/icons/com.getboops.app.desktop.png");
+        assert.include(
+          identity.desktopEntry ?? "",
+          "Icon=/xdg/icons/com.getboops.desktop.desktop.png",
+        );
         assert.isTrue(identity.iconInstalled);
       }),
     ).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())));
@@ -178,7 +181,7 @@ describe("DesktopPreReadyPlatform", () => {
           ),
         );
         const entry = writeFileSyncMock.mock.calls.find(
-          ([path]) => path === "/xdg/applications/com.getboops.app.desktop",
+          ([path]) => path === "/xdg/applications/com.getboops.desktop.desktop",
         )?.[1];
         assert.include(entry, 'Exec="/opt/T3 Code/t3code" %U');
       }),
