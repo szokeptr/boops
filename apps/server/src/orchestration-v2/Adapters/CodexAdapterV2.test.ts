@@ -2054,6 +2054,19 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             }),
             {
               type: "emit_inbound",
+              label: "question lead-in",
+              frame: {
+                method: "item/agentMessage/delta",
+                params: {
+                  threadId: nativeThreadId,
+                  turnId: nativeTurnId,
+                  itemId: "async-question-item",
+                  delta: "Pick a branch above.",
+                },
+              },
+            },
+            {
+              type: "emit_inbound",
               label: "question",
               frame: {
                 method: "item/completed",
@@ -2063,7 +2076,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                   item: {
                     type: "agentMessage",
                     id: "async-question-item",
-                    text: "Which branch?",
+                    text: "Pick a branch above.",
                     delivery: "async",
                     questions: [{ title: "Which branch?", options: ["main", "dev"] }],
                   },

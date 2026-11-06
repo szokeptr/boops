@@ -5254,6 +5254,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             }
 
             if (payload.item.delivery === "async" && payload.item.questions?.length) {
+              // The streamed text is the question card's lead-in; it is not a message of its own.
+              yield* agentMessageDeltas.discard({
+                turnId: payload.turnId,
+                itemId: payload.item.id,
+              });
               const artifacts = yield* buildUserInputRequestArtifacts({
                 context,
                 nativeItemId: payload.item.id,
