@@ -49,6 +49,7 @@ import type {
   OrchestrationV2RunStatus,
   OrchestrationV2TurnItem,
   OrchestrationV2UserMessageInputIntent,
+  ProjectId,
   RunAttemptId,
   TurnItemId,
 } from "@t3tools/contracts";
@@ -236,7 +237,17 @@ type ThreadFeedEntryContent =
       readonly id: string;
       readonly createdAt: string;
       readonly runId: RunId | null;
-    };
+    }
+  | ThreadFeedBotExchange;
+
+/** A bot's DM folds a talk with its parent or child bot into one pill. */
+export interface ThreadFeedBotExchange {
+  readonly type: "bot-exchange";
+  readonly id: string;
+  readonly createdAt: string;
+  readonly peers: ReadonlyArray<{ readonly name: string; readonly projectId: ProjectId | null }>;
+  readonly messages: ReadonlyArray<ThreadFeedMessage>;
+}
 
 export interface ThreadFeedLatestRun {
   readonly runId: RunId;
@@ -1319,7 +1330,8 @@ function latestRunsEqual(left: ThreadFeedLatestRun | null, right: ThreadFeedLate
 }
 
 function feedEntryRunId(entry: ThreadFeedEntry): RunId | null {
-  return entry.type === "message" ? (entry.message.runId ?? null) : entry.runId;
+  if (entry.type === "message") return entry.message.runId ?? null;
+  return entry.type === "bot-exchange" ? null : entry.runId;
 }
 
 function isUserMessageEntry(entry: ThreadFeedEntry | undefined): boolean {
@@ -1662,9 +1674,73 @@ export function deriveDirectMessageFeed(
         return false;
     }
   });
-  const last = kept.at(-1);
+  const folded = foldBotExchanges(kept);
+  const last = folded.at(-1);
   const replying = last?.type === "message" && last.message.streaming;
-  return typingSince === null || replying ? kept : [...kept, thinkingRow(typingSince, null)];
+  return typingSince === null || replying ? folded : [...folded, thinkingRow(typingSince, null)];
+}
+
+const botExchangeRows = new WeakMap<ThreadFeedEntry, ThreadFeedBotExchange>();
+
+/**
+ * A message from the bot's parent or child bot, and the bot's replies until another user-role
+ * message arrives, fold into one exchange at the first message. Other rows keep their places.
+ */
+function foldBotExchanges(entries: ReadonlyArray<ThreadFeedEntry>): ThreadFeedEntry[] {
+  const result: ThreadFeedEntry[] = [];
+  let open: {
+    readonly index: number;
+    readonly first: ThreadFeedEntry;
+    readonly peers: Array<ThreadFeedBotExchange["peers"][number]>;
+    readonly messages: ThreadFeedMessage[];
+  } | null = null;
+  const close = () => {
+    if (open === null) return;
+    const previous = botExchangeRows.get(open.first);
+    const { peers, messages } = open;
+    // Reusing the row keeps the list from re-rendering an exchange that did not change.
+    const row =
+      previous !== undefined &&
+      previous.peers.length === peers.length &&
+      previous.messages.length === messages.length &&
+      previous.messages.every((message, index) => message === messages[index])
+        ? previous
+        : {
+            type: "bot-exchange" as const,
+            id: `bot-exchange:${open.first.id}`,
+            createdAt: open.first.createdAt,
+            peers,
+            messages,
+          };
+    botExchangeRows.set(open.first, row);
+    result[open.index] = row;
+    open = null;
+  };
+  for (const entry of entries) {
+    if (entry.type !== "message") {
+      result.push(entry);
+    } else if (entry.message.role === "assistant") {
+      if (open === null) result.push(entry);
+      else open.messages.push(entry.message);
+    } else {
+      const bot = resolveUserMessagePresentation(entry.message).bot;
+      if (bot === undefined || bot.background) {
+        close();
+        result.push(entry);
+        continue;
+      }
+      if (open === null) {
+        open = { index: result.length, first: entry, peers: [], messages: [] };
+        result.push(entry);
+      }
+      if (!open.peers.some((peer) => peer.name === bot.name)) {
+        open.peers.push({ name: bot.name, projectId: bot.projectId });
+      }
+      open.messages.push(entry.message);
+    }
+  }
+  close();
+  return result;
 }
 
 const continuedWorkLogRows = new WeakMap<ThreadFeedEntry, ThreadFeedEntry>();

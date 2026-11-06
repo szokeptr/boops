@@ -21,6 +21,7 @@ import {
   ThreadModelSwitchDivider,
 } from "./thread-handoff-row";
 import { BotAvatarSlot } from "../bots/BotAvatarSlot";
+import { ThreadBotExchangeRow } from "./ThreadBotExchangeRow";
 import { GuestBubbleTint, GuestMessageName } from "./guestMessageStyle";
 import { ThreadGuestPendingMessage, useThreadGuestShare } from "./ThreadGuestShareBar";
 import { ConnectionRequestCard } from "./ConnectionRequestCard";
@@ -59,6 +60,7 @@ import {
   type OrchestrationV2ProjectedTurnItem,
   type RunId,
   type OrchestrationV2RoutineLabel,
+  type ProjectAvatar,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { renderAssistantCitationsAsText } from "@t3tools/shared/assistantCitations";
@@ -368,6 +370,7 @@ export interface ThreadFeedProps {
     readonly typingSince: string | null;
     /** Your bubbles wear the bot's colour. */
     readonly ownBubble: { readonly background: string; readonly foreground: string };
+    readonly bot: { readonly name: string; readonly avatar: ProjectAvatar | null };
   } | null;
   readonly listRef: RefObject<LegendListRef | null>;
   readonly freeze: SharedValue<boolean>;
@@ -1736,6 +1739,7 @@ function renderFeedEntry(
     readonly workflowOpening: WorkflowOpening | null;
     readonly messageGrouping: GroupedThreadFeedRow["messageGrouping"];
     readonly directMessage: boolean;
+    readonly conversationBot: { readonly name: string; readonly avatar: ProjectAvatar | null };
   },
 ) {
   const entry = info.item;
@@ -1812,6 +1816,33 @@ function renderFeedEntry(
         revision={entry.revision}
         app={entry.app}
         width={props.contentWidth}
+      />
+    );
+  }
+
+  if (entry.type === "bot-exchange") {
+    return (
+      <ThreadBotExchangeRow
+        environmentId={props.environmentId}
+        entry={entry}
+        bot={props.conversationBot}
+        expanded={props.expandedWorkRows[entry.id] ?? false}
+        onToggle={() => props.onToggleWorkRow(entry.id, entry.id)}
+        iconSubtleColor={iconSubtleColor}
+        renderMarkdown={(text) => (
+          // The card's border, padding, and avatar indent.
+          <MarkdownImageAvailableWidthContext value={Math.max(0, props.contentWidth - 48)}>
+            <AssistantMarkdownContent
+              markdown={renderAssistantCitationsAsText(text)}
+              environmentId={props.environmentId}
+              markdownStyles={markdownStyles.assistant}
+              linkHandlers={props.markdownLinkHandlers}
+              onUseArtifactTemplate={props.onUseArtifactTemplate}
+              renderImage={props.renderMarkdownImage}
+              skills={props.skills}
+            />
+          </MarkdownImageAvailableWidthContext>
+        )}
       />
     );
   }
@@ -3274,6 +3305,7 @@ export const ThreadFeed = memo(function ThreadFeed({
   };
   const markdownStyles = useMarkdownStyles();
   const ownBubbleColors = props.directMessage?.ownBubble ?? null;
+  const conversationBot = props.directMessage?.bot ?? { name: props.threadTitle, avatar: null };
   const ownBubble = ownBubbleColors
     ? {
         background: ownBubbleColors.background,
@@ -3313,6 +3345,7 @@ export const ThreadFeed = memo(function ThreadFeed({
     themeAppearance,
     userBubbleColor,
     ownBubble,
+    conversationBot,
     viewportWidth,
     contentWidth,
     skills: props.skills,
@@ -3831,6 +3864,7 @@ export const ThreadFeed = memo(function ThreadFeed({
           {renderFeedEntry(info, {
             messageGrouping: info.item.messageGrouping,
             directMessage: Boolean(props.directMessage),
+            conversationBot,
             environmentId: props.environmentId,
             dispatchingMessageId: props.dispatchingMessageId,
             onEditPendingMessage: props.onEditPendingMessage,
