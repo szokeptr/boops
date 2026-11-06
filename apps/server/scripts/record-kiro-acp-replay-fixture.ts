@@ -212,7 +212,7 @@ function wireToEntries(wire: ReadonlyArray<WireMessage>): {
   return { entries, droppedFrames };
 }
 
-const T3_INSTRUCTIONS_BODY = /<t3_code_instructions>\n[\s\S]*?\n<\/t3_code_instructions>/u;
+const T3_INSTRUCTIONS_BODY = /<boops_instructions>\n[\s\S]*?\n<\/boops_instructions>/u;
 // A turn on another model sends its own runtime info, which the filter below
 // keeps; its model stays pinned and the linking guidance does not.
 const PULL_REQUEST_LINKING_BODY = /<pull_request_linking>\n[\s\S]*?\n<\/pull_request_linking>/u;
@@ -256,7 +256,7 @@ function normalizeOutboundFrame(frame: Record<string, unknown>, runtimeInstructi
                   text: part.text
                     .replace(
                       T3_INSTRUCTIONS_BODY,
-                      "<t3_code_instructions>\n<any>\n</t3_code_instructions>",
+                      "<boops_instructions>\n<any>\n</boops_instructions>",
                     )
                     .replace(
                       PULL_REQUEST_LINKING_BODY,

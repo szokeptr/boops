@@ -49,7 +49,7 @@ const shared = {
     SecureRandom.SecureRandom,
   ],
 };
-const ProjectListTool = Tool.make("t3_project_list", {
+const ProjectListTool = Tool.make("boops_project_list", {
   ...shared,
   description: "List projects. Pages can shift.",
   parameters: Schema.Struct({
@@ -64,7 +64,7 @@ const ProjectListTool = Tool.make("t3_project_list", {
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);
-const ProjectReadTool = Tool.make("t3_project_read", {
+const ProjectReadTool = Tool.make("boops_project_read", {
   ...shared,
   description: "Read one project: workspace and saved scripts.",
   parameters: Schema.Struct({
@@ -74,10 +74,10 @@ const ProjectReadTool = Tool.make("t3_project_read", {
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);
-const ProjectCreateTool = Tool.make("t3_project_create", {
+const ProjectCreateTool = Tool.make("boops_project_create", {
   ...shared,
   description:
-    "Register a project folder. `createWorkspaceRootIfMissing` creates it; a registered folder is rejected. No `workspaceRoot`: makes a git repo from `title` with README, icon, first commit (`commitError` on failure; project still exists). Clone first with `t3_project_clone` if needed.",
+    "Register a project folder. `createWorkspaceRootIfMissing` creates it; a registered folder is rejected. No `workspaceRoot`: makes a git repo from `title` with README, icon, first commit (`commitError` on failure; project still exists). Clone first with `boops_project_clone` if needed.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     ...ProjectCreatePayload.fields,
@@ -88,7 +88,7 @@ const ProjectCreateTool = Tool.make("t3_project_create", {
 }).annotate(Tool.Destructive, true);
 // Bot identity is set from the clients until agents get an approval gate for it. Autonomy and
 // the bot family fields stay client-only for good: a bot must not lift its own limits.
-// Archiving goes through t3_bot_archive, which pauses routines and asks the user first.
+// Archiving goes through boops_bot_archive, which pauses routines and asks the user first.
 const {
   avatar: _avatar,
   mainThreadId: _mainThreadId,
@@ -98,7 +98,7 @@ const {
   archived: _archived,
   ...projectUpdateFields
 } = ProjectUpdatePayload.fields;
-const ProjectUpdateTool = Tool.make("t3_project_update", {
+const ProjectUpdateTool = Tool.make("boops_project_update", {
   ...shared,
   description: "Update one project's settings. Omitted fields are unchanged.",
   parameters: Schema.Struct({
@@ -107,7 +107,7 @@ const ProjectUpdateTool = Tool.make("t3_project_update", {
     ...projectUpdateFields,
   }),
 }).annotate(Tool.Destructive, true);
-const BotArchiveTool = Tool.make("t3_bot_archive", {
+const BotArchiveTool = Tool.make("boops_bot_archive", {
   ...shared,
   description:
     "Ask the user to archive a bot: you, or one you created. They approve or decline on a card. Archiving pauses its routines and hides it; its conversation and folder stay. Bots cannot delete bots.",
@@ -131,7 +131,7 @@ const BotArchiveTool = Tool.make("t3_bot_archive", {
   .annotate(Tool.Title, "Suggest archiving a bot")
   .annotate(Tool.Destructive, false);
 // Unarchive and delete are the user's: outside MCP clients see them, bots never do.
-const BotUnarchiveTool = Tool.make("t3_bot_unarchive", {
+const BotUnarchiveTool = Tool.make("boops_bot_unarchive", {
   ...shared,
   description: "Unarchive a bot and resume the routines archiving paused.",
   parameters: Schema.Struct({ projectId: ProjectId }),
@@ -140,7 +140,7 @@ const BotUnarchiveTool = Tool.make("t3_bot_unarchive", {
 })
   .annotate(Tool.Destructive, false)
   .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromThreads);
-const BotDeleteTool = Tool.make("t3_bot_delete", {
+const BotDeleteTool = Tool.make("boops_bot_delete", {
   ...shared,
   description:
     "Delete a bot's routines, threads and project. `removeHomeFolder` also deletes its home folder. Permanent.",
@@ -153,10 +153,10 @@ const BotDeleteTool = Tool.make("t3_bot_delete", {
 })
   .annotate(Tool.Destructive, true)
   .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromThreads);
-const ProjectCloneTool = Tool.make("t3_project_clone", {
+const ProjectCloneTool = Tool.make("boops_project_clone", {
   ...shared,
   description:
-    "Clone a repository (`destinationPath` new or empty). Register after with `t3_project_create`, with the same `environmentId`.",
+    "Clone a repository (`destinationPath` new or empty). Register after with `boops_project_create`, with the same `environmentId`.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     ...SourceControlCloneRepositoryInput.fields,
@@ -169,10 +169,10 @@ const ProjectCloneTool = Tool.make("t3_project_clone", {
 })
   .annotate(Tool.Destructive, true)
   .annotate(Tool.OpenWorld, true);
-const ThreadLaunchTool = Tool.make("t3_thread_launch", {
+const ThreadLaunchTool = Tool.make("boops_thread_launch", {
   ...shared,
   description:
-    "Create one new top-level thread, bound to its workspace before the agent starts. Task in `message`. Omit `projectId`, model and modes to inherit yours (outside a thread, pass `projectId` or `scratch`); modes cannot exceed yours. After an error or lost reply, retry with the same `clientRequestId`. Follow it with `t3_thread_read` or `t3_thread_wait`. Mention it with its `link`.",
+    "Create one new top-level thread, bound to its workspace before the agent starts. Task in `message`. Omit `projectId`, model and modes to inherit yours (outside a thread, pass `projectId` or `scratch`); modes cannot exceed yours. After an error or lost reply, retry with the same `clientRequestId`. Follow it with `boops_thread_read` or `boops_thread_wait`. Mention it with its `link`.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     projectId: Schema.optional(ProjectId),

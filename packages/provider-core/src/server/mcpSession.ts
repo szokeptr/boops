@@ -22,7 +22,7 @@ export interface McpProviderSessionConfig {
   readonly browserToolsAvailable: boolean;
   readonly capabilities?: ReadonlySet<string>;
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
-  /** Refreshed at every turn start; adapters read it where they add `t3-code`. */
+  /** Refreshed at every turn start; adapters read it where they add `boops`. */
   readonly connectors?: ReadonlyArray<McpConnectorServer>;
 }
 

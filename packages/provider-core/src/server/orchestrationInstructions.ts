@@ -47,9 +47,9 @@ You coordinate and helpers do long work, so this conversation stays free.
 ### Other tools
 
 - A login, token, PIN, password or pairing code only the user can give: call \`request_secret\`, not a chat ask. Not for access you already have.
-- \`t3_thread_launch\` and \`create_threads\` start new threads, only when the user asks for one. Mention a thread by its \`link\`.
+- \`boops_thread_launch\` and \`create_threads\` start new threads, only when the user asks for one. Mention a thread by its \`link\`.
 - A new bot for separate, lasting work, when the user asks: \`create_child_bot\`. Reach your children with \`message_child_bot\` and \`read_child_bot\`, and your parent with \`report_to_parent\`. You reach no other bots. Secrets and approvals always go to the user, never to a parent.
-- These tools come from the \`t3-code\` MCP server and may load late. Try a name once before you call it absent.`,
+- These tools come from the \`boops\` MCP server and may load late. Try a name once before you call it absent.`,
   `### Visuals and preview
 
 - Answer data with a trend or comparison with a chart, and show any visual the user asks for here: pass its HTML to \`html_preview\`, then \`html_render\`. If the visual is a file, pass that file's HTML. A screenshot on disk or a text description does not show it. Never start a server for it. Tools a web page exposes give data only. Never use them to show results. Asked for an image to post, send, or use elsewhere: a \`.png\` file and its path, never \`html_render\`.
@@ -92,12 +92,12 @@ export const T3_CODE_DEVICE_TOOL_INSTRUCTIONS = deviceToolInstructions("");
 
 /** Claude Code defers MCP tools behind ToolSearch, so Claude's copy says how to load them. */
 export const T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH = deviceToolInstructions(
-  ` Load them with ToolSearch \`select:${T3_CODE_DEVICE_TOOLS.map((tool) => `mcp__t3-code__${tool}`).join(",")}\`.`,
+  ` Load them with ToolSearch \`select:${T3_CODE_DEVICE_TOOLS.map((tool) => `mcp__boops__${tool}`).join(",")}\`.`,
 );
 
 // ACP only: some ACP agents accept the injected MCP server but never expose
 // its tools, so they need the terminal transport other harnesses never use.
-const T3_CODE_ACP_MCP_FALLBACK_INSTRUCTIONS = `ACP fallback: if the Boops tools are absent and \`T3_ACP_MCP_NODE\` is present, call them through the terminal: \`ELECTRON_RUN_AS_NODE=1 "$T3_ACP_MCP_NODE" \${T3_ACP_MCP_ENTRYPOINT:+"$T3_ACP_MCP_ENTRYPOINT"} acp-mcp-call orchestrator_capabilities '{}'\` (\`T3_ACP_MCP_ENTRYPOINT\` is unset for a standalone executable). Delegate with \`acp-mcp-call delegate_task '{"task":"...","target":{"providerInstanceId":"...","model":"..."},"mode":"async","clientRequestId":"..."}'\`.`;
+const T3_CODE_ACP_MCP_FALLBACK_INSTRUCTIONS = `ACP fallback: if the Boops tools are absent and \`BOOPS_ACP_MCP_NODE\` is present, call them through the terminal: \`ELECTRON_RUN_AS_NODE=1 "$BOOPS_ACP_MCP_NODE" \${BOOPS_ACP_MCP_ENTRYPOINT:+"$BOOPS_ACP_MCP_ENTRYPOINT"} acp-mcp-call orchestrator_capabilities '{}'\` (\`BOOPS_ACP_MCP_ENTRYPOINT\` is unset for a standalone executable). Delegate with \`acp-mcp-call delegate_task '{"task":"...","target":{"providerInstanceId":"...","model":"..."},"mode":"async","clientRequestId":"..."}'\`.`;
 
 const T3_CODE_ACP_DEFAULT_MODE_INSTRUCTIONS = `## Boops interaction mode: Default
 
@@ -141,7 +141,7 @@ export function t3AcpPromptWithInstructions(input: {
         ]
       : []),
   ];
-  return `<t3_code_instructions>\n${instructions.join("\n\n")}\n</t3_code_instructions>\n\n<user_request>\n${input.prompt}\n</user_request>`;
+  return `<boops_instructions>\n${instructions.join("\n\n")}\n</boops_instructions>\n\n<user_request>\n${input.prompt}\n</user_request>`;
 }
 
 const orchestrationInstructions = (hasDeviceTools: boolean) =>
@@ -150,7 +150,7 @@ const orchestrationInstructions = (hasDeviceTools: boolean) =>
     : POCKS_BOT_INSTRUCTIONS;
 
 function prependT3OrchestrationInstructions(prompt: string, instructions: string): string {
-  return `<t3_code_orchestration_instructions>${instructions.trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
+  return `<boops_orchestration_instructions>${instructions.trim()}</boops_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
 }
 
 /** For providers whose instructions ride on the prompt, so a compacted conversation loses them. */

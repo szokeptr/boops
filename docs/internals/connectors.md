@@ -8,7 +8,7 @@ bot (`Project.connectionIds`). Code: [`apps/server/src/connectors/`](../../apps/
 
 Providers do not get third-party tokens. `ProviderSessionManager` injects each turned-on, connected
 connection as an MCP server whose URL is this server's proxy, `/mcp-connectors/<serverName>`,
-authenticated with the thread's own `t3-code` MCP credential. The proxy
+authenticated with the thread's own `boops` MCP credential. The proxy
 ([`ConnectorHttp.ts`](../../apps/server/src/connectors/ConnectorHttp.ts)) checks that the
 connection is on for the calling thread's bot, adds the stored credential, and streams the answer
 back. So:
@@ -31,7 +31,7 @@ connection to the same issuer reuses the newest such client, so one Google clien
 Google connector.
 
 Agents cannot turn connections on. `connectionIds` is not in `ProjectUpdatePayload`, so
-`t3_project_update` and `projects.mutate` cannot set it; only the `Connectors` service writes it,
+`boops_project_update` and `projects.mutate` cannot set it; only the `Connectors` service writes it,
 behind `settings:write` RPCs or the user's answer to a connection card.
 
 ## Redirect origins
@@ -70,7 +70,7 @@ answered; clients show live connection status from `connectors.subscribe`, not f
 
 | Provider                   | Connectors                            | A changed set reaches the next turn by                    | Provider-native MCP config                                                                    |
 | -------------------------- | ------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Claude                     | HTTP servers beside `t3-code`         | `setMcpServers` on the live query                         | Off: `strictMcpConfig` and `ENABLE_CLAUDEAI_MCP_SERVERS=false`                                |
+| Claude                     | HTTP servers beside `boops`           | `setMcpServers` on the live query                         | Off: `strictMcpConfig` and `ENABLE_CLAUDEAI_MCP_SERVERS=false`                                |
 | Codex                      | `mcp_servers.<name>` in thread config | Unsubscribe and resume the thread (after background work) | Off: `features.apps=false`, and servers `config/read` reports for the cwd get `enabled=false` |
 | Cursor                     | Sent with every turn                  | Sent every turn                                           | On: no MCP-only switch; dropping `settingSources` would also lose rules and skills            |
 | OpenCode v1                | `mcp.add` per session                 | Add or `mcp.disconnect` at turn start                     | Off: other servers are disconnected at open                                                   |

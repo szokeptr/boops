@@ -2783,7 +2783,7 @@ describe("v2 run and attempt history", () => {
           item: {
             type: "dynamic_tool",
             status: "running",
-            toolName: "mcp__t3-code__message_child_bot",
+            toolName: "mcp__boops__message_child_bot",
             input: { projectId: "jarvis", message: "File them please" },
           },
         } as never,
@@ -3677,7 +3677,7 @@ describe("linked timeline resources", () => {
               runId,
               type: "dynamic_tool",
               status: failed ? "failed" : status,
-              toolName: "t3-code.delegate_task",
+              toolName: "boops.delegate_task",
               input: { task: taskId === "b" ? "a" : taskId, role },
               ...(status === "completed"
                 ? {

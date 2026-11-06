@@ -87,8 +87,11 @@ function tool(
   return { displayName, labels, icon, summaryAction };
 }
 
-// Codex registers "t3-code-direct" for T3 tools kept out of Code Mode.
+// Codex registers "boops-direct" for tools kept out of Code Mode. The t3 names are from older threads.
 const T3_MCP_SERVER_ALIASES = new Set([
+  "boops",
+  "boops-direct",
+  "boops_direct",
   "t3-code",
   "t3_code",
   "t3code",
@@ -176,27 +179,30 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   ),
   create_threads: tool(["Create", "Creating", "Created", "Boops threads"], "thread-create"),
   t3_thread_start: tool(["Start", "Starting", "Started", "a Boops thread"], "thread-create"),
-  t3_thread_list: tool(["List", "Listing", "Listed", "Boops threads"], "thread-list"),
-  t3_thread_read: tool(["Read", "Reading", "Read", "a Boops thread"], "thread-read"),
-  t3_thread_send: tool(["Send", "Sending", "Sent", "to a Boops thread"], "thread-send"),
-  t3_thread_wait: tool(["Wait", "Waiting", "Waited", "for a Boops thread"], "thread-wait"),
-  t3_workflow_stop: tool(
+  boops_thread_list: tool(["List", "Listing", "Listed", "Boops threads"], "thread-list"),
+  boops_thread_read: tool(["Read", "Reading", "Read", "a Boops thread"], "thread-read"),
+  boops_thread_send: tool(["Send", "Sending", "Sent", "to a Boops thread"], "thread-send"),
+  boops_thread_wait: tool(["Wait", "Waiting", "Waited", "for a Boops thread"], "thread-wait"),
+  boops_workflow_stop: tool(
     ["Stop", "Stopping", "Requested a stop for", "a workflow"],
     "workflow-stop",
   ),
-  t3_background_wait: tool(
+  boops_background_wait: tool(
     ["Update", "Updating", "Updated", "background waits"],
     "background-wait",
   ),
-  t3_thread_interrupt: tool(
+  boops_thread_interrupt: tool(
     ["Interrupt", "Interrupting", "Requested an interrupt of", "a Boops thread"],
     "thread-interrupt",
   ),
-  t3_worktree_handoff: tool(
+  boops_worktree_handoff: tool(
     ["Hand off", "Handing off", "Handed off", "thread to a git worktree"],
     "worktree-handoff",
   ),
-  t3_worktree_status: tool(["Get", "Getting", "Got", "thread worktree status"], "worktree-status"),
+  boops_worktree_status: tool(
+    ["Get", "Getting", "Got", "thread worktree status"],
+    "worktree-status",
+  ),
   preview_status: tool(["Get", "Getting", "Got", "preview browser status"], "browser", "browser"),
   preview_open: tool(
     ["Open", "Opening", "Opened", "a page in the preview browser"],
@@ -302,8 +308,8 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Run", "Running", "Requested a run of", "a scheduled task"],
     "schedule-run",
   ),
-  t3_queue: tool(["Manage", "Managing", "Managed", "queued messages"], "queue-edit"),
-  t3_pending_request: tool(
+  boops_queue: tool(["Manage", "Managing", "Managed", "queued messages"], "queue-edit"),
+  boops_pending_request: tool(
     ["Handle", "Handling", "Handled", "pending questions"],
     "question-respond",
   ),
@@ -332,70 +338,89 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Read", "Reading", "Read", "thread configuration"],
     "thread-configuration",
   ),
-  t3_thread_configure: tool(["Use", "Using", "Used", "thread model settings"], "thread-configure"),
-  t3_thread_transfer: tool(["Use", "Using", "Used", "thread transfers"], "thread-fork"),
+  boops_thread_configure: tool(
+    ["Use", "Using", "Used", "thread model settings"],
+    "thread-configure",
+  ),
+  boops_thread_transfer: tool(["Use", "Using", "Used", "thread transfers"], "thread-fork"),
   t3_thread_fork: tool(["Fork", "Forking", "Requested a fork of", "this thread"], "thread-fork"),
   t3_thread_merge_back: tool(
     ["Merge", "Merging", "Requested a merge of", "thread context"],
     "thread-merge",
   ),
-  t3_thread_search: tool(["Search", "Searching", "Searched", "thread content"], "thread-search"),
+  boops_thread_search: tool(["Search", "Searching", "Searched", "thread content"], "thread-search"),
   t3_thread_transfers: tool(["Read", "Reading", "Read", "thread transfers"], "thread-transfers"),
-  t3_thread_organize: tool(["Organize", "Organizing", "Organized", "a thread"], "thread-organize"),
+  boops_thread_organize: tool(
+    ["Organize", "Organizing", "Organized", "a thread"],
+    "thread-organize",
+  ),
   start_fresh_session: tool(["Start", "Starting", "Started", "a fresh session"], "thread-organize"),
-  t3_thread_update: tool(
+  boops_thread_update: tool(
     ["Update", "Updating", "Updated", "Boops thread metadata"],
     "thread-update",
   ),
-  t3_worktree_list: tool(["List", "Listing", "Listed", "workspace branches"], "worktree-list"),
-  t3_preview_list: tool(["List", "Listing", "Listed", "preview tabs"], "browser", "browser"),
-  t3_preview_close: tool(["Close", "Closing", "Closed", "a preview tab"], "browser", "browser"),
-  t3_environment_read: tool(
+  boops_worktree_list: tool(["List", "Listing", "Listed", "workspace branches"], "worktree-list"),
+  boops_preview_list: tool(["List", "Listing", "Listed", "preview tabs"], "browser", "browser"),
+  boops_preview_close: tool(["Close", "Closing", "Closed", "a preview tab"], "browser", "browser"),
+  boops_environment_read: tool(
     ["Read", "Reading", "Read", "environment preferences"],
     "environment-read",
   ),
-  t3_environment_links: tool(
+  boops_environment_links: tool(
     ["List", "Listing", "Listed", "linked environments"],
     "environment-links",
   ),
-  t3_environment_link: tool(
+  boops_environment_link: tool(
     ["Ask to link", "Asking to link", "Asked to link", "an environment"],
     "environment-link",
   ),
-  t3_environment_unlink: tool(
+  boops_environment_unlink: tool(
     ["Forget", "Forgetting", "Forgot", "a linked environment"],
     "environment-unlink",
   ),
-  t3_environment_preferences_update: tool(
+  boops_environment_preferences_update: tool(
     ["Update", "Updating", "Updated", "environment preferences"],
     "environment-update",
   ),
-  t3_thread_launch: tool(["Launch", "Launching", "Launched", "a project thread"], "thread-create"),
-  t3_project_list: tool(["List", "Listing", "Listed", "projects"], "project-list"),
-  t3_project_read: tool(["Read", "Reading", "Read", "a project"], "project-read"),
-  t3_project_create: tool(["Register", "Registering", "Registered", "a project"], "project-create"),
-  t3_project_update: tool(["Update", "Updating", "Updated", "a project"], "project-update"),
-  t3_bot_archive: tool(
+  boops_thread_launch: tool(
+    ["Launch", "Launching", "Launched", "a project thread"],
+    "thread-create",
+  ),
+  boops_project_list: tool(["List", "Listing", "Listed", "projects"], "project-list"),
+  boops_project_read: tool(["Read", "Reading", "Read", "a project"], "project-read"),
+  boops_project_create: tool(
+    ["Register", "Registering", "Registered", "a project"],
+    "project-create",
+  ),
+  boops_project_update: tool(["Update", "Updating", "Updated", "a project"], "project-update"),
+  boops_bot_archive: tool(
     ["Suggest archiving", "Suggesting archiving", "Suggested archiving", "a bot"],
     "project-update",
   ),
-  t3_bot_unarchive: tool(["Unarchive", "Unarchiving", "Unarchived", "a bot"], "project-update"),
-  t3_bot_delete: tool(["Delete", "Deleting", "Deleted", "a bot"], "project-delete"),
-  t3_project_clone: tool(["Clone", "Cloning", "Cloned", "a repository"], "project-clone"),
-  t3_attachment_prepare_upload: tool(
+  boops_bot_unarchive: tool(["Unarchive", "Unarchiving", "Unarchived", "a bot"], "project-update"),
+  boops_bot_delete: tool(["Delete", "Deleting", "Deleted", "a bot"], "project-delete"),
+  boops_project_clone: tool(["Clone", "Cloning", "Cloned", "a repository"], "project-clone"),
+  boops_attachment_prepare_upload: tool(
     ["Prepare", "Preparing", "Prepared", "an attachment upload"],
     "attachment-prepare",
   ),
-  t3_attachment_discard: tool(
+  boops_attachment_discard: tool(
     ["Discard", "Discarding", "Discarded", "a pending attachment"],
     "attachment-discard",
   ),
-  t3_thread_send_attachments: tool(["Send", "Sending", "Sent", "attachments"], "attachment-send"),
+  boops_thread_send_attachments: tool(
+    ["Send", "Sending", "Sent", "attachments"],
+    "attachment-send",
+  ),
   html_preview: tool(["Preview", "Previewing", "Previewed", "an HTML page"], "html-preview"),
   html_render: tool(["Render", "Rendering", "Rendered", "an HTML page"], "html-render"),
 };
 
 export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(T3_MCP_TOOLS));
+
+const LEGACY_TOOL_NAMES = Object.keys(T3_MCP_TOOLS)
+  .filter((tool) => tool.startsWith("boops_"))
+  .map((tool) => `t3_${tool.slice(6)}`);
 
 function normalizeT3McpToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
@@ -417,8 +442,19 @@ function resolveT3McpToolName(value: string): string | null {
   return name;
 }
 
-// ACP tool prefixes vary; match loosely but require a known display-name entry.
+// Older threads recorded tools as `t3_*` before they became `boops_*`.
+function canonicalToolName(tool: string): string {
+  const renamed = tool.startsWith("t3_") ? `boops_${tool.slice(3)}` : tool;
+  return Object.hasOwn(T3_MCP_TOOLS, renamed) ? renamed : tool;
+}
+
 function parseT3McpToolName(value: string): string | null {
+  const name = parseRawT3McpToolName(value);
+  return name === null ? null : canonicalToolName(name);
+}
+
+// ACP tool prefixes vary; match loosely but require a known display-name entry.
+function parseRawT3McpToolName(value: string): string | null {
   const label = normalizeT3McpToolLabel(value);
   const mcpMatch = /^mcp__(?<server>.+?)__(?<tool>.+)$/i.exec(label);
   if (mcpMatch?.groups) {
@@ -431,22 +467,23 @@ function parseT3McpToolName(value: string): string | null {
   }
 
   const namespaceMatch =
-    /^(?<server>t3[-_]code[-_]direct|t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(
+    /^(?<server>boops[-_]direct|boops|t3[-_]code[-_]direct|t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(
       label,
     );
   if (namespaceMatch?.groups) {
     return namespaceMatch.groups.tool ?? null;
   }
 
+  if (Object.hasOwn(T3_MCP_TOOLS, label)) return label;
   const prefixed = /^(?:mcp[-_]{1,2})?(?:t3[-_ ]?code|boops)(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(
     label,
   );
   const candidate = prefixed?.groups?.tool ?? label;
-  if (Object.hasOwn(T3_MCP_TOOLS, candidate)) return candidate;
+  if (Object.hasOwn(T3_MCP_TOOLS, canonicalToolName(candidate))) return candidate;
   // OpenCode 2 thread prefixes can contain underscores; choose the longest known tool-name suffix.
-  if (!/^t3-code-/i.test(label)) return null;
+  if (!/^(?:boops|t3-code)-/i.test(label)) return null;
   let longest: string | null = null;
-  for (const tool of Object.keys(T3_MCP_TOOLS)) {
+  for (const tool of [...Object.keys(T3_MCP_TOOLS), ...LEGACY_TOOL_NAMES]) {
     if (label.endsWith(`_${tool}`) && tool.length > (longest?.length ?? 0)) longest = tool;
   }
   return longest;
@@ -478,9 +515,9 @@ const asSummaryInput = (input: unknown): SummaryInput | undefined =>
 /** Action tools present each call as the single-purpose tool its action replaced. */
 const ACTION_TOOLS: Readonly<Record<string, (action: string) => string | undefined>> = {
   preview_act: (action) => `preview_${action}`,
-  t3_queue: (action) => `t3_queue_${action}`,
-  t3_pending_request: (action) => `t3_pending_request_${action}`,
-  t3_thread_transfer: (action) =>
+  boops_queue: (action) => `t3_queue_${action}`,
+  boops_pending_request: (action) => `t3_pending_request_${action}`,
+  boops_thread_transfer: (action) =>
     ({ fork: "t3_thread_fork", merge_back: "t3_thread_merge_back", status: "t3_thread_transfers" })[
       action
     ],
@@ -504,7 +541,7 @@ export function resolveT3McpToolDefinition(
 const ACTION_SUMMARIES: Readonly<
   Record<string, (input: SummaryInput) => T3McpToolSummaryAction | undefined>
 > = {
-  t3_thread_configure: ({ modelSelection }) =>
+  boops_thread_configure: ({ modelSelection }) =>
     modelSelection === undefined ? "thread-configuration" : "thread-configure",
   schedule_task: ({ scheduledTaskId }) =>
     scheduledTaskId === undefined ? "schedule-create" : "schedule-update",

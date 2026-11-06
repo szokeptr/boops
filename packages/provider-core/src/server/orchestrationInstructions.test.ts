@@ -32,7 +32,7 @@ describe("Boops device instructions", () => {
     }
     assert.notInclude(T3_CODE_DEVICE_TOOL_INSTRUCTIONS, "ToolSearch");
     const loadLine =
-      " Load them with ToolSearch `select:mcp__t3-code__device_list,mcp__t3-code__device_open,mcp__t3-code__device_screenshot,mcp__t3-code__device_close`.";
+      " Load them with ToolSearch `select:mcp__boops__device_list,mcp__boops__device_open,mcp__boops__device_screenshot,mcp__boops__device_close`.";
     assert.include(T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH, loadLine);
     assert.equal(
       T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH.replace(loadLine, ""),

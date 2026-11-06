@@ -51,10 +51,10 @@ export function buildCodexAdditionalContext(
         { kind: "application" as const, value: section },
       ]),
     ),
-    t3_code_runtime: {
+    boops_runtime: {
       kind: "application",
       value: buildRuntimeInstructions({ harness: "Codex", ...runtime }),
     },
-    ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
+    ...(tools ? { boops_tools: { kind: "application", value: tools } } : {}),
   };
 }

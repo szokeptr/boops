@@ -1378,9 +1378,9 @@ const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 const CODEX_CONNECTOR_MCP_TOOL_TIMEOUT_SEC = 5 * 60;
 const CODEX_CONFIG_READ_TIMEOUT = "10 seconds";
 // Holds T3 tools Codex must call directly, never from Code Mode. Calls arrive as
-// `t3-code-direct.<tool>`; t3McpToolPresentation.ts must keep resolving that form.
-const CODEX_T3_DIRECT_MCP_SERVER = "t3-code-direct";
-const CODEX_DIRECT_ONLY_T3_TOOL = "t3_thread_wait";
+// `boops-direct.<tool>`; t3McpToolPresentation.ts must keep resolving that form.
+const CODEX_T3_DIRECT_MCP_SERVER = "boops-direct";
+const CODEX_DIRECT_ONLY_T3_TOOL = "boops_thread_wait";
 
 /**
  * User, project and system MCP servers in Codex's effective config for a cwd. Launch-argument
@@ -1424,7 +1424,7 @@ function codexThreadRuntimeParams(input: {
         };
   const connectors = mcpSession?.connectors ?? [];
   const t3ServerNames = new Set([
-    "t3-code",
+    "boops",
     CODEX_T3_DIRECT_MCP_SERVER,
     ...connectors.map((connector) => connector.name),
   ]);
@@ -1441,7 +1441,7 @@ function codexThreadRuntimeParams(input: {
         ? {}
         : {
             // Override only T3's servers so launch-argument MCP servers survive.
-            "mcp_servers.t3-code": { ...t3Server, disabled_tools: [CODEX_DIRECT_ONLY_T3_TOOL] },
+            "mcp_servers.boops": { ...t3Server, disabled_tools: [CODEX_DIRECT_ONLY_T3_TOOL] },
             // Code Mode runs a blocking wait as a nested call, and the model keeps working
             // around it. A second, direct-only registration makes it a plain tool call.
             [`mcp_servers.${CODEX_T3_DIRECT_MCP_SERVER}`]: {

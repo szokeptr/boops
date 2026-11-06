@@ -211,7 +211,7 @@ it.effect(
           ),
         );
         const result = yield* toolkit
-          .handle("t3_thread_launch", targeted === false ? input : { ...input, projectId })
+          .handle("boops_thread_launch", targeted === false ? input : { ...input, projectId })
           .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
         return { result: result.at(-1)?.result, launched, projectId, modelSelection };
       });
@@ -223,7 +223,7 @@ it.effect(
       expect(belowCeiling.result).toMatchObject({
         projectId: belowCeiling.projectId,
         modelSelection: belowCeiling.modelSelection,
-        link: `<t3-thread://v2/environment/${belowCeiling.launched[0]?.threadId}>`,
+        link: `<boops-thread://v2/environment/${belowCeiling.launched[0]?.threadId}>`,
       });
       expect(belowCeiling.launched[0]?.runtimeMode).toBe("approval-required");
       expect(belowCeiling.launched[0]?.initialMessage?.senderThreadId).toBeUndefined();
@@ -312,7 +312,7 @@ it.effect("a launch steps an inherited mode down to the provider's, and refuses 
         ),
       );
       const result = yield* toolkit
-        .handle("t3_thread_launch", {
+        .handle("boops_thread_launch", {
           projectId,
           title: "Fix",
           modelSelection: { instanceId: pi, model: "pi-model" },
@@ -348,7 +348,7 @@ it.effect("a launch retried with the same clientRequestId replays the first one"
     );
     const launch = (clientRequestId: string | undefined) =>
       toolkit
-        .handle("t3_thread_launch", {
+        .handle("boops_thread_launch", {
           title: "Fix",
           projectId,
           message: "Fix the bug",
@@ -386,7 +386,7 @@ it.effect("a launch key of any length or content gives a short id and never a de
     );
     const launch = (clientRequestId: string) =>
       toolkit
-        .handle("t3_thread_launch", { title: "Fix", projectId, clientRequestId })
+        .handle("boops_thread_launch", { title: "Fix", projectId, clientRequestId })
         .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
 
     // Percent-encoding would grow this six times; scratch folders are named from the id.
@@ -414,7 +414,7 @@ it.effect("a retried launch replays after the project loses its default model", 
       ),
     );
     const launch = toolkit
-      .handle("t3_thread_launch", { title: "Fix", projectId, clientRequestId: "fix-1" })
+      .handle("boops_thread_launch", { title: "Fix", projectId, clientRequestId: "fix-1" })
       .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
 
     yield* launch;
@@ -460,7 +460,7 @@ it.effect("a launch binds only an existing checkout that is one of the project's
     );
     const launchInto = (worktreePath: string) =>
       toolkit
-        .handle("t3_thread_launch", {
+        .handle("boops_thread_launch", {
           title: "Fix",
           projectId,
           workspaceStrategy: { type: "existing_worktree", worktreePath },
@@ -512,7 +512,7 @@ it.effect("a launch into a new worktree creates nothing when its base ref has no
     );
     const launchFrom = (baseRef: string) =>
       toolkit
-        .handle("t3_thread_launch", {
+        .handle("boops_thread_launch", {
           title: "Fix",
           projectId,
           workspaceStrategy: { type: "worktree", baseRef, startFromOrigin: false },
@@ -556,7 +556,7 @@ it.effect("a retried worktree launch replays after its base ref is gone", () =>
       ),
     );
     const launch = toolkit
-      .handle("t3_thread_launch", {
+      .handle("boops_thread_launch", {
         title: "Fix",
         projectId,
         clientRequestId: "fix-worktree",
@@ -611,7 +611,7 @@ it.effect("a client launches with the fallback for an exhausted default", () =>
       ),
     );
     const result = yield* toolkit
-      .handle("t3_thread_launch", {
+      .handle("boops_thread_launch", {
         projectId,
         title: "Fallback",
       })
@@ -693,7 +693,7 @@ const botLifecycleHarness = (input: {
     }),
   ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
   const call = Effect.fn("test.callBotTool")(function* (
-    name: "t3_bot_archive" | "t3_bot_unarchive" | "t3_bot_delete",
+    name: "boops_bot_archive" | "boops_bot_unarchive" | "boops_bot_delete",
     params: object,
   ) {
     const toolkit = yield* ProjectToolkit.pipe(
@@ -724,21 +724,21 @@ it.effect("a bot lists no delete or unarchive tool and is refused them by name",
     const calls: Array<string> = [];
     const bot = botLifecycleHarness({ caller: "bot", calls });
     const listed = yield* bot.listed;
-    expect(listed).toContain("t3_bot_archive");
+    expect(listed).toContain("boops_bot_archive");
     expect(listed.filter((name) => /delete|unarchive/.test(name))).toEqual([]);
-    expect(yield* bot.call("t3_bot_delete", { projectId: bot.projectId })).toMatchObject({
+    expect(yield* bot.call("boops_bot_delete", { projectId: bot.projectId })).toMatchObject({
       code: "capability_denied",
     });
-    expect(yield* bot.call("t3_bot_unarchive", { projectId: bot.projectId })).toMatchObject({
+    expect(yield* bot.call("boops_bot_unarchive", { projectId: bot.projectId })).toMatchObject({
       code: "capability_denied",
     });
     expect(calls).toEqual([]);
 
     const client = botLifecycleHarness({ caller: "client", calls });
     expect(yield* client.listed).toEqual(
-      expect.arrayContaining(["t3_bot_delete", "t3_bot_unarchive"]),
+      expect.arrayContaining(["boops_bot_delete", "boops_bot_unarchive"]),
     );
-    yield* client.call("t3_bot_delete", { projectId: client.projectId, removeHomeFolder: true });
+    yield* client.call("boops_bot_delete", { projectId: client.projectId, removeHomeFolder: true });
     expect(calls).toEqual([`delete:${client.projectId}`]);
   }),
 );
@@ -749,7 +749,7 @@ it.effect("a bot's archive waits on the user's card, and reaches only itself", (
       Effect.gen(function* () {
         const calls: Array<string> = [];
         const bot = botLifecycleHarness({ caller: "bot", card, calls });
-        const result = yield* bot.call("t3_bot_archive", { reason: "The trip is over." });
+        const result = yield* bot.call("boops_bot_archive", { reason: "The trip is over." });
         return { result, calls, bot };
       });
 
@@ -764,7 +764,7 @@ it.effect("a bot's archive waits on the user's card, and reaches only itself", (
     });
     expect(approved.calls).toEqual(["card:Archive Ledger?", `archive:${approved.bot.projectId}`]);
 
-    const elsewhere = yield* approved.bot.call("t3_bot_archive", {
+    const elsewhere = yield* approved.bot.call("boops_bot_archive", {
       projectId: approved.bot.otherProjectId,
       reason: "Unused.",
     });

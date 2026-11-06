@@ -551,8 +551,8 @@ it.effect("fences an invited member's conversation to her own threads, reads inc
     const threadTool = { ...probe, parameters: Schema.Struct({ threadId: ThreadId }) };
     // Real tool names: a member's conversation reaches only the tools listed for it.
     const MemberToolkit = Toolkit.make(
-      Tool.make("t3_thread_send", threadTool),
-      Tool.make("t3_thread_read", threadTool),
+      Tool.make("boops_thread_send", threadTool),
+      Tool.make("boops_thread_read", threadTool),
       Tool.make("delegate_task", {
         ...probe,
         parameters: Schema.Struct({
@@ -564,11 +564,11 @@ it.effect("fences an invited member's conversation to her own threads, reads inc
     const server = McpHttpServer.toolkitRegistration(
       MemberToolkit,
       McpToolAccess.toLayer(MemberToolkit, {
-        t3_thread_send: McpToolAccess.writesThreads(
+        boops_thread_send: McpToolAccess.writesThreads(
           (input) => [input.threadId],
           () => ran,
         ),
-        t3_thread_read: McpToolAccess.readsThreads(
+        boops_thread_read: McpToolAccess.readsThreads(
           (input) => [input.threadId],
           () => ran,
         ),
@@ -587,16 +587,16 @@ it.effect("fences an invited member's conversation to her own threads, reads inc
     const owner = threadCaller(ownerThread);
     const outcomes = yield* Effect.forEach(
       [
-        ["t3_thread_send", anna, { threadId: annaOther }],
-        ["t3_thread_send", anna, { threadId: ownerThread }],
-        ["t3_thread_send", anna, { threadId: bobThread }],
-        ["t3_thread_read", anna, { threadId: annaOther }],
-        ["t3_thread_read", anna, { threadId: ownerThread }],
-        ["t3_thread_read", anna, { threadId: bobThread }],
+        ["boops_thread_send", anna, { threadId: annaOther }],
+        ["boops_thread_send", anna, { threadId: ownerThread }],
+        ["boops_thread_send", anna, { threadId: bobThread }],
+        ["boops_thread_read", anna, { threadId: annaOther }],
+        ["boops_thread_read", anna, { threadId: ownerThread }],
+        ["boops_thread_read", anna, { threadId: bobThread }],
         ["delegate_task", anna, {}],
         ["delegate_task", anna, { target: { environmentId: "environment-box" } }],
         ["schedule_task", anna, {}],
-        ["t3_thread_read", owner, { threadId: annaThread }],
+        ["boops_thread_read", owner, { threadId: annaThread }],
         ["schedule_task", owner, {}],
       ] as const,
       ([tool, scope, args]) => call(tool, scope, args),

@@ -223,7 +223,7 @@ describe("threadHistoryPaging", () => {
       item: {
         ...work[0]!.item,
         type: "dynamic_tool" as const,
-        toolName: "mcp__t3-code__message_child_bot",
+        toolName: "mcp__boops__message_child_bot",
         input: { projectId: "child", message: "hi" },
       },
     };

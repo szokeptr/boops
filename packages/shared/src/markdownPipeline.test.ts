@@ -126,7 +126,7 @@ it("preserves in-app thread links through the shared Markdown sanitizer", () => 
     .use(CHAT_MARKDOWN_REHYPE_PLUGINS);
   const tree = processor.runSync(
     processor.parse(
-      '[Open thread](t3-thread://v1/thread)\n\n<t3-thread://v2/environment/thread:a%3A1>\n\n<a href="javascript:alert(1)">Unsafe</a>',
+      '[Open thread](boops-thread://v1/thread)\n\n<boops-thread://v2/environment/thread:a%3A1>\n\n<a href="javascript:alert(1)">Unsafe</a>',
     ),
   );
   expect(tree.children[0]).toMatchObject({
@@ -134,7 +134,7 @@ it("preserves in-app thread links through the shared Markdown sanitizer", () => 
     children: [
       {
         tagName: "a",
-        properties: { href: "t3-thread://v1/thread" },
+        properties: { href: "boops-thread://v1/thread" },
         children: [{ type: "text", value: "Open thread" }],
       },
     ],
@@ -144,8 +144,8 @@ it("preserves in-app thread links through the shared Markdown sanitizer", () => 
     children: [
       {
         tagName: "a",
-        properties: { href: "t3-thread://v2/environment/thread:a%3A1" },
-        children: [{ type: "text", value: "t3-thread://v2/environment/thread:a%3A1" }],
+        properties: { href: "boops-thread://v2/environment/thread:a%3A1" },
+        children: [{ type: "text", value: "boops-thread://v2/environment/thread:a%3A1" }],
       },
     ],
   });

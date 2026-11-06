@@ -114,7 +114,7 @@ describe("resolveWorkEntryToolPresentation", () => {
       id: "clone",
       createdAt: "2026-09-19T00:00:00.000Z",
       tone: "tool",
-      label: "T3-code.t3_project_clone",
+      label: "T3-code.boops_project_clone",
       toolLifecycleStatus: "inProgress",
       itemType: "dynamic_tool",
       toolData: { output: { isError: true } },
@@ -132,8 +132,8 @@ describe("resolveWorkEntryToolPresentation", () => {
     expect(workEntryDisplayIndicatesToolFailure(childFailure)).toBe(false);
   });
   it.each([
-    "mcp__t3-code__preview_click",
-    "mcp__t3_code__preview_click",
+    "mcp__boops__preview_click",
+    "mcp__boops__preview_click",
     "mcp__t3code__preview_click",
     "T3-code.preview_click",
     "t3-code · preview_click completed",
@@ -190,8 +190,8 @@ describe("resolveWorkEntryToolPresentation", () => {
   it("does not brand unknown tools or another server's matching tool name", () => {
     for (const label of [
       "mcp__github__preview_click",
-      "t3-code.unknown_tool",
-      "t3-code.toString",
+      "boops.unknown_tool",
+      "boops.toString",
       "Search files",
     ]) {
       expect(resolveWorkEntryToolPresentation({ label })).toBeNull();

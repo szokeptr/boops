@@ -3,8 +3,8 @@ import { POCKS_BOT_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrat
 
 export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
 
-export const T3_MCP_URL_ENV = "T3_MCP_URL";
-export const T3_MCP_BEARER_ENV = "T3_MCP_BEARER_TOKEN";
+export const BOOPS_MCP_URL_ENV = "BOOPS_MCP_URL";
+export const BOOPS_MCP_BEARER_ENV = "BOOPS_MCP_BEARER_TOKEN";
 /** JSON `[{ name, url }]` of the bot's connectors; they take the same T3 bearer. */
 export const T3_MCP_CONNECTORS_ENV = "T3_MCP_CONNECTORS";
 export const T3_PI_RUNTIME_MODE_ENV = "T3_PI_RUNTIME_MODE";
@@ -19,8 +19,8 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import { Type } from "typebox";
 
-const URL_ENV = ${JSON.stringify(T3_MCP_URL_ENV)};
-const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
+const URL_ENV = ${JSON.stringify(BOOPS_MCP_URL_ENV)};
+const TOKEN_ENV = ${JSON.stringify(BOOPS_MCP_BEARER_ENV)};
 const CONNECTORS_ENV = ${JSON.stringify(T3_MCP_CONNECTORS_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
@@ -367,7 +367,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   if (endpoint === undefined || token === undefined) {
     pi.on("session_start", async (_event, ctx) => {
       ctx.ui.notify(
-        "t3-code MCP unavailable: T3_MCP_URL or T3_MCP_BEARER_TOKEN is missing.",
+        "Boops MCP unavailable: BOOPS_MCP_URL or BOOPS_MCP_BEARER_TOKEN is missing.",
         "warning",
       );
     });
@@ -385,42 +385,38 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   let started: Promise<void> | undefined;
 
   const registerTools = () => {
-    // Preserve public names for saved loadouts and tool selectors. Hidden
-    // canonical names reserve ownership against Pi's configured MCP servers.
-    const prefixes = supportsExposure ? ["mcp__t3-code__", "mcp__t3_code__"] : ["mcp__t3-code__"];
+    // The server name has no separator, so the public name is also the canonical one
+    // that reserves ownership against Pi's configured MCP servers.
     readOnlyMcpTools.clear();
     for (const tool of catalog) {
       const name = tool.name;
-      for (const prefix of prefixes) {
-        if (tool.annotations?.readOnlyHint === true) readOnlyMcpTools.add(\`\${prefix}\${name}\`);
-        const exposure = prefix === "mcp__t3_code__" ? "hidden" :
-          deferOptionalTools && !directTools.has(name) ? "deferred" : "direct";
-        pi.registerTool({
-          name: \`\${prefix}\${name}\`,
-          label: name,
-          description: tool.description ?? name,
-          parameters: jsonSchemaToTypebox(tool.inputSchema),
-          ...(supportsExposure ? { outputSchema: mcpOutputSchema(tool) } : {}),
-          ...(supportsExposure ? { exposure } : {}),
-          async execute(_toolCallId, params, signal) {
-            const result = await client.callTool(
-              name,
-              (params ?? {}) as Record<string, unknown>,
-              signal,
-            );
-            const content = mcpModelContent(result);
-            if (isMcpToolError(result) && !content.some((part) => part.type === "text" && part.text.length > 0)) {
-              content.push({ type: "text", text: "MCP tool t3-code/" + name + " returned an error" });
-            }
-            return {
-              content,
-              structuredContent: mcpScriptResult(result),
-              details: { server: "t3-code", tool: name },
-              ...(isMcpToolError(result) ? { isError: true } : {}),
-            };
-          },
-        });
-      }
+      if (tool.annotations?.readOnlyHint === true) readOnlyMcpTools.add("mcp__boops__" + name);
+      const exposure = deferOptionalTools && !directTools.has(name) ? "deferred" : "direct";
+      pi.registerTool({
+        name: "mcp__boops__" + name,
+        label: name,
+        description: tool.description ?? name,
+        parameters: jsonSchemaToTypebox(tool.inputSchema),
+        ...(supportsExposure ? { outputSchema: mcpOutputSchema(tool) } : {}),
+        ...(supportsExposure ? { exposure } : {}),
+        async execute(_toolCallId, params, signal) {
+          const result = await client.callTool(
+            name,
+            (params ?? {}) as Record<string, unknown>,
+            signal,
+          );
+          const content = mcpModelContent(result);
+          if (isMcpToolError(result) && !content.some((part) => part.type === "text" && part.text.length > 0)) {
+            content.push({ type: "text", text: "MCP tool boops/" + name + " returned an error" });
+          }
+          return {
+            content,
+            structuredContent: mcpScriptResult(result),
+            details: { server: "boops", tool: name },
+            ...(isMcpToolError(result) ? { isError: true } : {}),
+          };
+        },
+      });
     }
   };
 
@@ -500,7 +496,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     // Pi still applies --tools/--exclude-tools to this active loadout.
     const required = [
       ...(hasToolSearch ? ["tool_search"] : []),
-      ...(ctx.model?.api === "openai-completions" ? catalog.map((tool) => "mcp__t3-code__" + tool.name) : []),
+      ...(ctx.model?.api === "openai-completions" ? catalog.map((tool) => "mcp__boops__" + tool.name) : []),
     ];
     const missing = required.filter((name) => !active.includes(name));
     if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
@@ -515,7 +511,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
       await ensureStarted();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      ctx.ui.notify(\`t3-code MCP unavailable: \${message}\`, "warning");
+      ctx.ui.notify(\`Boops MCP unavailable: \${message}\`, "warning");
     }
     const failedConnectors = await ensureConnectors();
     if (failedConnectors.length > 0) {

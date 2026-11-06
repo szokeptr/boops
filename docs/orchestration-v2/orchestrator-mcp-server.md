@@ -35,7 +35,7 @@ The orchestration tools share the existing authenticated HTTP MCP endpoint:
 http://127.0.0.1:<server-port>/mcp
 ```
 
-The provider-visible server key is `t3-code`. The endpoint registers both the
+The provider-visible server key is `boops`. The endpoint registers both the
 preview toolkit and the orchestration toolkit.
 
 Before `ProviderSessionManager` opens a new V2 provider session, it asks
@@ -63,8 +63,8 @@ Codex gets T3's MCP server in each thread's `thread/start`, `thread/resume`,
 and `thread/fork` config, with the provider-session token in an
 `Authorization` header. The same server is registered twice:
 
-- `t3-code`: every tool except `t3_thread_wait`.
-- `t3-code-direct`: only `t3_thread_wait`, with `omit_tools_from = ["code_mode", "deferred"]`.
+- `boops`: every tool except `boops_thread_wait`.
+- `boops-direct`: only `boops_thread_wait`, with `omit_tools_from = ["code_mode", "deferred"]`.
 
 Code Mode runs a nested call as part of a script, so the model keeps working
 while a blocking wait runs. The second entry makes the wait a direct tool call,
@@ -79,7 +79,7 @@ Claude receives an HTTP MCP server in its query options:
 ```ts
 {
   mcpServers: {
-    "t3-code": {
+    "boops": {
       type: "http",
       url: "http://127.0.0.1:<port>/mcp",
       headers: {
@@ -89,7 +89,7 @@ Claude receives an HTTP MCP server in its query options:
   },
   allowedTools: [
     // existing allowed tools
-    "mcp__t3-code__*",
+    "mcp__boops__*",
   ],
 }
 ```
@@ -160,12 +160,12 @@ extension into the server cache and spawns
 `pi --mode rpc --extension <cache>/pi-t3-mcp-extension.ts` with:
 
 ```text
-T3_MCP_URL=http://127.0.0.1:<port>/mcp
-T3_MCP_BEARER_TOKEN=<provider-session-token>
+BOOPS_MCP_URL=http://127.0.0.1:<port>/mcp
+BOOPS_MCP_BEARER_TOKEN=<provider-session-token>
 ```
 
-The extension preserves public names under `mcp__t3-code__` for saved loadouts
-and tool selectors. Modern Pi also receives hidden `mcp__t3_code__` aliases,
+The extension preserves public names under `mcp__boops__` for saved loadouts
+and tool selectors. Modern Pi also receives hidden `mcp__boops__` aliases,
 which reserve the normalized namespace against configured MCP servers without
 adding declarations or search results. On Pi 0.99+,
 `orchestrator_capabilities`, `delegate_task`, and `task_status` remain directly
@@ -200,7 +200,7 @@ provider selection model-visible without allowing a request that cannot run.
 `OrchestratorToolkit` in
 [`toolkits/orchestrator/tools.ts`](../../apps/server/src/mcp/toolkits/orchestrator/tools.ts)
 is the authoritative list of orchestration tools. The sections below cover
-delegation and thread tools. `t3_thread_launch` is documented with them but
+delegation and thread tools. `boops_thread_launch` is documented with them but
 registered by the project toolkit in
 [`toolkits/project/tools.ts`](../../apps/server/src/mcp/toolkits/project/tools.ts).
 
@@ -266,7 +266,7 @@ Each independent delegated review round uses a new `delegate_task` call with the
 original brief, prior findings, responses, and unresolved objections. Track each
 round by its own `taskId` and use a distinct `clientRequestId` per round, stable
 across retries of that round.
-A follow-up that needs the same child's conversation goes through `t3_thread_send`
+A follow-up that needs the same child's conversation goes through `boops_thread_send`
 on its `childThreadId`. After the original task completes, that follow-up runs as a
 fresh task in the child thread; it does not reopen the completed task or change its
 published result.
@@ -280,7 +280,7 @@ provider session. The request becomes the V2 command
 the timeout expires. A wait timeout does not cancel the child; the result sets
 `waitTimedOut: true`, and the caller can continue with `task_status`. A pending blocking
 question also ends the wait with `hasPendingQuestion: true` and `waitTimedOut: false`.
-If `hasPendingQuestion`, pass `threadId=childThreadId` to `t3_pending_request` with
+If `hasPendingQuestion`, pass `threadId=childThreadId` to `boops_pending_request` with
 action `list`, `read` (with `requestId`), or `respond`, or ask the user; the task's completion still wakes this thread. A pending live approval for the
 task's own unfinished work also ends the wait. Its identity appears in `pendingApproval`;
 it grants no approval authority. Read the fresh full request in the child thread before
@@ -361,7 +361,7 @@ inherit the parent's project, branch, and worktree path, but they have no
 sub-agent lineage. Entries with a prompt immediately dispatch a run; entries
 without a prompt remain idle.
 
-### `t3_thread_launch`
+### `boops_thread_launch`
 
 Launches one ordinary top-level thread through the app's launch service. Use an
 explicit `workspaceStrategy` to create a new worktree (`worktree` with `baseRef`),
@@ -379,14 +379,14 @@ provider does not offer is refused, and an inherited or default one steps down
 to the broadest mode it offers. Launch has no retry key, so inspect existing threads after a failed or lost response before
 launching again. `create_threads` remains the batch option for a shared checkout.
 
-### `t3_thread_list`
+### `boops_thread_list`
 
 Lists durable thread shells in one project, newest first: `projectId` when
 given, else the calling thread's project. Callers can filter by title, run
 status, and whether app-owned sub-agent threads are included. Results are
 bounded and offset-paginated. Deleted threads are never listed.
 
-### `t3_thread_read`
+### `boops_thread_read`
 
 Reads the durable state, recent runs, and visible timeline of any thread in
 the environment by thread ID. A deleted thread returns `thread_not_found`. The
@@ -403,26 +403,26 @@ Actor and ingress are separate so agent-authored user-role messages remain
 distinguishable from human-authored messages.
 
 Agents mention another thread by the `link` its result carries,
-`<t3-thread://v2/<environmentId>/<threadId>>`, so they never format an id or
+`<boops-thread://v2/<environmentId>/<threadId>>`, so they never format an id or
 write a title, which goes stale when the user renames the thread. The
 environment that owns the thread builds the link, so forwarded results and tasks
 delegated to a linked environment name that environment. Clients open only that
 environment's thread and show its current title; a link to a thread they do not
-know renders as a label that opens nothing. Older `t3-thread://v1/<threadId>`
+know renders as a label that opens nothing. Older `boops-thread://v1/<threadId>`
 links name no environment: clients resolve them in the message's environment,
 then by a unique match in another enabled environment. An outside OAuth client,
-one that is not a linked environment, cannot render `t3-thread://` links, so it
+one that is not a linked environment, cannot render `boops-thread://` links, so it
 gets the link Copy thread copies, `https://app.t3.codes/threads/<environmentId>/<threadId>`
 on the server's `T3CODE_HOSTED_APP_URL`, for threads in this environment. The
 hosted app offers the desktop app, the mobile app, or itself.
 
 List and read results report `snoozed` and `snoozedUntil`, and
-`t3_thread_list` filters on `snoozed`. The server's `isSnoozed` follows the
+`boops_thread_list` filters on `snoozed`. The server's `isSnoozed` follows the
 client's `effectiveSnoozed`, so agents and the sidebar agree: a snoozed thread
 wakes early only when it has a pending request or fails after snoozing. Completed
 runs, background wakes, and delegated completions keep it snoozed.
 
-### `t3_thread_update`
+### `boops_thread_update`
 
 Updates metadata for the calling thread or any other thread in the environment.
 The typed actions are `rename`, `regenerate_title`, `link_pull_request`, and
@@ -436,7 +436,7 @@ resultant title, title-regeneration marker, and linked pull request. Reusing a
 receipt. Thread list and read results expose the linked pull request, and thread
 detail also exposes an in-flight title regeneration.
 
-### `t3_thread_send`
+### `boops_thread_send`
 
 Sends a message to any ordinary or delegated thread in the environment:
 
@@ -451,14 +451,14 @@ The target runtime and interaction modes may not be broader than the caller's.
 Stable command and message IDs are derived from `clientRequestId` for
 idempotent retries.
 
-### `t3_thread_wait`
+### `boops_thread_wait`
 
 Waits for a selected run to become `completed`, `failed`, `cancelled`,
 `interrupted`, or `rolled_back`. Without `runId`, it pins the latest run at call
 time; an idle thread returns immediately. A timeout reports the latest durable
 status and does not cancel work.
 
-### `t3_thread_interrupt`
+### `boops_thread_interrupt`
 
 Interrupts a selected active run through the normal V2 `run.interrupt` command.
 Without `runId`, it selects the newest interruptible run. A terminal run is

@@ -1017,7 +1017,7 @@ describe("buildThreadFeed", () => {
             ...base("ask-jarvis", "2026-06-20T00:00:07.000Z", 6),
             type: "dynamic_tool",
             status: "running",
-            toolName: "mcp__t3-code__message_child_bot",
+            toolName: "mcp__boops__message_child_bot",
             input: { projectId: "jarvis", message: "File them please" },
             output: null,
           },
@@ -1480,7 +1480,7 @@ describe("retained v2 feed presentation", () => {
           {
             ...base(id, "2026-06-20T00:00:02.000Z", index),
             type: "dynamic_tool",
-            toolName: "t3-code.delegate_task",
+            toolName: "boops.delegate_task",
             input: { task: "Identical task" },
             output,
             ...overrides,
@@ -1824,7 +1824,7 @@ describe("streamed feed updates", () => {
   const delegation: OrchestrationV2TurnItem = {
     ...item("delegation", 3, runs[0]),
     type: "dynamic_tool",
-    toolName: "t3-code.delegate_task",
+    toolName: "boops.delegate_task",
     input: { task: "Check" },
     output: { taskId: "child" },
   };

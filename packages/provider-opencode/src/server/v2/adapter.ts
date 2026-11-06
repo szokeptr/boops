@@ -363,19 +363,19 @@ const rule = (action: string, effect: Rule["effect"]): Rule => ({ action, resour
 
 /**
  * OpenCode hides tools for names over 64 chars and rejects names over 100; hash long thread IDs.
- * A connector's suffix keeps the `t3-code-` prefix, so other threads' connectors stay denied.
+ * A connector's suffix keeps the `boops-` prefix, so other threads' connectors stay denied.
  */
 export const t3McpServerName = Effect.fn("t3McpServerName")(function* (
   threadId: string,
   suffix = "",
 ) {
-  const name = `t3-code-${threadId.replaceAll(/[^a-zA-Z0-9_-]/g, "_")}${suffix}`;
+  const name = `boops-${threadId.replaceAll(/[^a-zA-Z0-9_-]/g, "_")}${suffix}`;
   if (name.length <= 64) return name;
   const crypto = yield* Digest.Digest;
   const digest = yield* crypto
     .digest(Digest.sha256, new TextEncoder().encode(threadId))
     .pipe(Effect.orDie);
-  return `t3-code-${Hex.encode(digest).slice(0, 16)}${suffix}`;
+  return `boops-${Hex.encode(digest).slice(0, 16)}${suffix}`;
 });
 
 // Last match wins: deny all threads' T3 servers, then allow only this thread's.
@@ -383,7 +383,7 @@ const mcpRules = (mcpServerNames: ReadonlyArray<string>): ReadonlyArray<Rule> =>
   mcpServerNames.length === 0
     ? []
     : [
-        { action: "t3-code-*", resource: "*", effect: "deny" },
+        { action: "boops-*", resource: "*", effect: "deny" },
         ...mcpServerNames.map((name): Rule => ({
           action: `${name}_*`,
           resource: "*",
@@ -554,7 +554,7 @@ const claudeUsageLimit = (message: string | undefined) =>
     : undefined;
 
 const INTERRUPT_TIMEOUT = "10 seconds";
-const INSTRUCTIONS_KEY = "t3-code";
+const INSTRUCTIONS_KEY = "boops";
 const RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = "2 seconds";
 const RECONCILE_TIMEOUT = "15 seconds";

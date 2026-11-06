@@ -44,7 +44,7 @@ it("grades Codex shell and subagent calls with the shared rules", () => {
   const calls = [
     { name: "exec_command", input: { cmd: "sleep 60" } },
     { name: "collaboration.spawn_agent", input: { task: "review" } },
-    { name: "mcp__t3_code__delegate_task", input: {} },
+    { name: "mcp__boops__delegate_task", input: {} },
     { name: "request_user_input", input: { questions: [{ question: "What's the PIN?" }] } },
     { name: "request_user_input_async", input: { questions: [] } },
   ].map(({ name, input }) => ({
@@ -114,7 +114,7 @@ it("counts the new threads an agent asks for, one brief per thread, over both cr
     input: { threads: prompts.map((prompt) => ({ prompt })) },
   });
   const launch = (message: string, failed = false) => ({
-    tool: "t3_thread_launch",
+    tool: "boops_thread_launch",
     input: { message },
     failed,
   });
@@ -133,7 +133,7 @@ it("counts the new threads an agent asks for, one brief per thread, over both cr
   assert.deepEqual(failed(expect, run(batch("reconnect, csv, admin", "csv", "csv"))), [label]);
   assert.deepEqual(failed(expect, run(batch("reconnect", "csv", "admin", "docs"))), [label]);
   for (const call of [
-    { tool: "t3_thread_launch", input: { prompt: "csv" } },
+    { tool: "boops_thread_launch", input: { prompt: "csv" } },
     { tool: "create_threads", input: { threads: [{ message: "csv" }] } },
   ]) {
     assert.deepEqual(failed(expect, run(launch("reconnect"), launch("admin"), call)), [label]);
@@ -142,7 +142,7 @@ it("counts the new threads an agent asks for, one brief per thread, over both cr
     failed(
       expect,
       run(launch("reconnect"), launch("admin"), {
-        tool: "t3_thread_launch",
+        tool: "boops_thread_launch",
         input: { title: "CSV", message: "Fix reconnect" },
       }),
     ),
@@ -187,13 +187,13 @@ it("passes a good run and names every rule a bad run breaks", () => {
   const expect = {
     calls: [{ tool: "delegate_task", args: { task: "~FINDING", "target.options": "~max" } }],
     callsMustNot: [{ tool: "delegate_task", args: { runtimeMode: "approval-required" } }],
-    notCalls: ["t3_thread_send"],
+    notCalls: ["boops_thread_send"],
     order: ["orchestrator_capabilities", "delegate_task"],
     minCalls: { orchestrator_capabilities: 1 },
     maxCalls: { task_status: 0 },
     endsTurnAfter: "delegate_task",
     shellMustNot: ["\\bsleep\\b"],
-    textMust: ["t3-thread://v2/"],
+    textMust: ["boops-thread://v2/"],
     textMustNot: ["Paste .*token"],
     linked: ["~/pull/124"],
     linkedNumbers: [124],
@@ -207,7 +207,7 @@ it("passes a good run and names every rule a bad run breaks", () => {
         input: { task: "Prior findings: ...", target: { options: { reasoningEffort: "max" } } },
       },
     ],
-    text: "Started <t3-thread://v2/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/11111111-1111-4111-8111-111111111111>. Do not paste a token.",
+    text: "Started <boops-thread://v2/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/11111111-1111-4111-8111-111111111111>. Do not paste a token.",
     stopReason: "end_turn",
     linked: ["https://github.com/acme/app/pull/124"],
   };
@@ -220,7 +220,7 @@ it("passes a good run and names every rule a bad run breaks", () => {
         tool: "delegate_task",
         input: { task: "Review again", runtimeMode: "approval-required" },
       },
-      { step: 1, tool: "t3_thread_send", input: {} },
+      { step: 1, tool: "boops_thread_send", input: {} },
       { step: 2, tool: "Monitor", input: { command: "sleep 60" } },
       { step: 3, tool: "task_status", input: { taskId: "task-1" } },
     ],
@@ -230,13 +230,13 @@ it("passes a good run and names every rule a bad run breaks", () => {
   assert.deepEqual(failed(expect, bad), [
     'calls delegate_task {"task":"~FINDING","target.options":"~max"}',
     'callsMustNot delegate_task {"runtimeMode":"approval-required"}',
-    "notCalls t3_thread_send",
+    "notCalls boops_thread_send",
     "order orchestrator_capabilities > delegate_task",
     "minCalls orchestrator_capabilities >= 1",
     "maxCalls task_status <= 0",
     "endsTurnAfter delegate_task",
     "shellMustNot /\\bsleep\\b/",
-    "textMust /t3-thread://v2//",
+    "textMust /boops-thread://v2//",
     "textMustNot /Paste .*token/",
     "linked ~/pull/124",
     "linkedNumbers",
@@ -246,13 +246,13 @@ it("passes a good run and names every rule a bad run breaks", () => {
 it("bounds numbers and reads target.options in either schema form", () => {
   const expect = {
     calls: [
-      { tool: "t3_thread_read", args: { limit: "<=20" } },
+      { tool: "boops_thread_read", args: { limit: "<=20" } },
       { tool: "delegate_task", args: { "target.options.effort": "max", timeoutMs: ">=60000" } },
     ],
   };
   const run = (limit: unknown, options: unknown, timeoutMs: number): SampleRun => ({
     calls: [
-      { step: 0, tool: "t3_thread_read", input: { limit } },
+      { step: 0, tool: "boops_thread_read", input: { limit } },
       { step: 0, tool: "delegate_task", input: { target: { options }, timeoutMs } },
     ],
     text: "",
@@ -290,14 +290,14 @@ const template = {
     {
       role: "system",
       content:
-        "You are powered by the model named Opus 5.5. The exact model ID is claude-opus-5-5.\n\nThe following deferred tools are now available via ToolSearch. Load them first:\nMonitor\nmcp__t3-code__retired_tool\n\nAfter the list.",
+        "You are powered by the model named Opus 5.5. The exact model ID is claude-opus-5-5.\n\nThe following deferred tools are now available via ToolSearch. Load them first:\nMonitor\nmcp__boops__retired_tool\n\nAfter the list.",
     },
     { role: "assistant", content: [{ type: "text", text: "A later turn." }] },
   ],
   tools: [
     { name: "mcp__host__term_Bash", input_schema: { type: "object" } },
     { name: "mcp__host__clown_ToolSearch", input_schema: { type: "object" } },
-    { name: "mcp__t3-code__retired_tool", input_schema: { type: "object" }, defer_loading: true },
+    { name: "mcp__boops__retired_tool", input_schema: { type: "object" }, defer_loading: true },
   ],
 };
 
@@ -335,19 +335,19 @@ it("rebuilds the template from this checkout and sends a child Boops' task promp
   assert.equal(base.environment.cwd, "/home/user/app");
   assert.include(system[2], "model named Sonnet 5.5. The exact model ID is claude-sonnet-5-5.");
   const deferred = system[2]?.split("Load them first:\n")[1]?.split("\n\n")[0]?.split("\n") ?? [];
-  assert.includeMembers(deferred, ["Monitor", "mcp__t3-code__delegate_task"]);
-  assert.notInclude(deferred, "mcp__t3-code__retired_tool");
+  assert.includeMembers(deferred, ["Monitor", "mcp__boops__delegate_task"]);
+  assert.notInclude(deferred, "mcp__boops__retired_tool");
   // A delegated child is never offered the tools T3 hides from subagents.
-  assert.include(deferred, "mcp__t3-code__watch_pull_request");
+  assert.include(deferred, "mcp__boops__watch_pull_request");
   const child = buildBase(template, {
     model: "claude-sonnet-5-5",
     keepUserInstructions: false,
     subagent: true,
   });
-  assert.notInclude(String(child.system[2]?.text), "mcp__t3-code__watch_pull_request");
+  assert.notInclude(String(child.system[2]?.text), "mcp__boops__watch_pull_request");
   assert.notInclude(
     child.t3.map((tool) => tool.name),
-    "mcp__t3-code__unwatch_pull_request",
+    "mcp__boops__unwatch_pull_request",
   );
   const reminders = buildMessages(makeSample(childCase, base))[0]?.content.map((b) => b.text);
   assert.equal(reminders?.[0], "<system-reminder>\n# currentDate\n</system-reminder>");
@@ -371,11 +371,11 @@ it("lists link tools only while a case turns the beta on, and sends chips as Boo
   });
   assert.notInclude(
     off.t3.map((tool) => tool.name),
-    "mcp__t3-code__t3_environment_link",
+    "mcp__boops__boops_environment_link",
   );
   assert.include(
     on.t3.map((tool) => tool.name),
-    "mcp__t3-code__t3_environment_link",
+    "mcp__boops__boops_environment_link",
   );
 
   const testCase: McpToolUseCase = {
@@ -453,7 +453,7 @@ it("replays earlier capability results with the model under test as the caller",
 it("gives each launched thread its own id, and reading it back shows that thread's brief", () => {
   const base = buildBase(template, { model: "claude-sonnet-5-5", keepUserInstructions: false });
   const sample = makeSample(childCase, base);
-  const one = t3Default(sample, "t3_thread_launch", {
+  const one = t3Default(sample, "boops_thread_launch", {
     title: "Reconnect",
     message: "Fix reconnect",
   });
@@ -477,7 +477,7 @@ it("gives each launched thread its own id, and reading it back shows that thread
   );
   assert.equal(new Set(ids).size, 3);
   const read = (threadId: unknown) =>
-    t3Default(sample, "t3_thread_read", { threadId }) as {
+    t3Default(sample, "boops_thread_read", { threadId }) as {
       thread: { title: string; status: string; createdBy?: string };
       items: Array<{ text: string; createdBy: string; creationSource: string }>;
     };
@@ -506,7 +506,7 @@ it("does not record a deferred tool called before it was loaded", () => {
   const sample = makeSample(childCase, base);
   const use = (name: string) => ({ type: "tool_use" as const, id: name, name, input: {} });
   const ran = ranCalls(sample, 0, [
-    use("mcp__t3-code__link_pull_request"),
+    use("mcp__boops__link_pull_request"),
     use("mcp__host__term_Bash"),
   ]);
   assert.deepEqual(
@@ -646,7 +646,7 @@ it.effect("saves a new secret file for each request and tells the shell simulato
   Effect.gen(function* () {
     const base = buildBase(template, { model: "claude-sonnet-5-5", keepUserInstructions: false });
     const sample = makeSample(childCase, base);
-    sample.tools.push({ name: "mcp__t3-code__request_secret" });
+    sample.tools.push({ name: "mcp__boops__request_secret" });
     const config = {
       apiKey: "",
       model: "claude-sonnet-5-5",
@@ -658,7 +658,7 @@ it.effect("saves a new secret file for each request and tells the shell simulato
       answerToolCall(sample, config, {
         type: "tool_use",
         id,
-        name: "mcp__t3-code__request_secret",
+        name: "mcp__boops__request_secret",
         input: { label: "Token", delivery },
       }).pipe(Effect.map((result) => JSON.parse(String(result.content))));
     const first = yield* request("a", "file");
@@ -683,11 +683,11 @@ it.effect("saves a new secret file for each request and tells the shell simulato
       },
       base,
     );
-    declined.tools.push({ name: "mcp__t3-code__request_secret" });
+    declined.tools.push({ name: "mcp__boops__request_secret" });
     yield* answerToolCall(declined, config, {
       type: "tool_use",
       id: "d",
-      name: "mcp__t3-code__request_secret",
+      name: "mcp__boops__request_secret",
       input: { delivery: "file" },
     });
     assert.deepEqual(declined.secretFiles, []);
@@ -712,11 +712,11 @@ it.effect("saves a pasted value with no card where request_secret takes one", ()
       },
       base,
     );
-    sample.tools.push({ name: "mcp__t3-code__request_secret" });
+    sample.tools.push({ name: "mcp__boops__request_secret" });
     const result = yield* answerToolCall(sample, config, {
       type: "tool_use",
       id: "a",
-      name: "mcp__t3-code__request_secret",
+      name: "mcp__boops__request_secret",
       input: { label: "Pixel PIN", value: "482916" },
     }).pipe(Effect.map((block) => JSON.parse(String(block.content))));
     if (!savesPastedSecrets) {
@@ -1272,7 +1272,7 @@ it("fails transcript recovery that saves the old thread's password with request_
   const file = "/home/user/.t3/userdata/secrets/files/7d2e4f6a8b0c1d3e5f7a9b1c3d5e7f90";
   const read = {
     step: 0,
-    tool: "t3_thread_read",
+    tool: "boops_thread_read",
     input: { threadId: "old" },
     output: JSON.stringify({ items: [{ role: "user", text: `The QA password is ${old}` }] }),
   };
@@ -1457,7 +1457,7 @@ it.each([
 });
 
 it("rejects a bypass mutation in every delegated or launched child brief", () => {
-  const good = ["delegate_task", "delegate_task", "t3_thread_launch"].map((tool, step) => ({
+  const good = ["delegate_task", "delegate_task", "boops_thread_launch"].map((tool, step) => ({
     step,
     tool,
     input: {
@@ -3060,7 +3060,7 @@ it("R6 separates ORC device routing from unrelated thread links", () => {
   const c = deviceCases().find((c) => c.id === "ORC-01")!;
   const calls = [0, 1, 2].map((step) => ({
     step,
-    tool: "t3_thread_launch",
+    tool: "boops_thread_launch",
     input: { message: "Use device_open and its returned launcher for screenshots." },
   }));
   assert.isTrue(
@@ -3074,7 +3074,7 @@ it("R6 separates ORC device routing from unrelated thread links", () => {
   assert.isFalse(
     gradeSample(c.expect, {
       calls: [{ step: 0, tool: "orchestrator_capabilities", input: {} }, ...calls],
-      text: "t3-thread://v1/example",
+      text: "boops-thread://v1/example",
       stopReason: "end_turn",
     }).every((c) => c.pass),
   );
