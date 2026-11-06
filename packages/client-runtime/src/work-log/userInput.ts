@@ -42,3 +42,17 @@ export function hasQuestionAnswer(answer: UserInputAttachmentAnswerPayload): boo
     Object.values(answer.attachmentsByQuestionId).some((attachments) => attachments.length > 0)
   );
 }
+
+/** An answered question as chat: what the agent asked, then what the user replied. */
+export function getQuestionAnswerExchange(answer: UserInputAttachmentAnswerPayload): {
+  readonly question: string;
+  readonly reply: string;
+} {
+  return {
+    question: Object.values(answer.questionTextById ?? {})
+      .map((text) => text.trim())
+      .filter(Boolean)
+      .join("\n\n"),
+    reply: hasQuestionAnswer(answer) ? getQuestionAnswerPreview(answer) : "",
+  };
+}

@@ -2711,6 +2711,42 @@ describe("v2 run and attempt history", () => {
     ]);
     expect(directMessage(true).at(-1)).toEqual(["working-indicator-row", "working"]);
 
+    // An answered question reads as the bot asking and you replying, where it was asked.
+    const answered = deriveMessagesTimelineRows({
+      timelineEntries: [
+        ...timelineEntries,
+        {
+          id: "question-entry",
+          kind: "work" as const,
+          createdAt: "2026-01-01T00:00:12Z",
+          entry: {
+            id: "question",
+            createdAt: "2026-01-01T00:00:12Z",
+            runId: "turn-1" as never,
+            label: "Answered questions",
+            tone: "info" as const,
+            questionAnswer: {
+              requestId: "request-1",
+              questionTextById: { purpose: "What should I take off your plate first?" },
+              answers: { purpose: "Email and calendar" },
+              attachmentsByQuestionId: {},
+            },
+          },
+        },
+      ],
+      isWorking: false,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      directMessage: true,
+    }).flatMap((row) =>
+      row.kind === "message" ? [[row.id, row.message.role, row.message.text]] : [],
+    );
+    expect(answered.slice(-3)).toEqual([
+      ["question-entry:question", "assistant", "What should I take off your plate first?"],
+      ["question-entry:reply", "user", "Email and calendar"],
+      ["assistant-final-entry", "assistant", "Done"],
+    ]);
+
     // Talk with a parent or child bot folds into one pill until the user writes again.
     const message = (id: string, role: "user" | "assistant", at: string, extra = {}) => ({
       id: `${id}-entry`,

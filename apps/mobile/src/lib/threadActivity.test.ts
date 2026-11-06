@@ -946,6 +946,38 @@ describe("buildThreadFeed", () => {
       deriveDirectMessageFeed(dmFeed, "2026-06-20T00:00:01.000Z").map((entry) => entry.type),
     ).toEqual(["message", "message", "message", "message", "thinking"]);
 
+    // An answered question reads as the bot asking and you replying, where it was asked.
+    const hatchRequestId = RuntimeRequestId.make("hatch-question");
+    const answeredFeed = buildThreadFeed([
+      projected(userMessage(), 0),
+      projected(
+        {
+          ...base("hatch-question", "2026-06-20T00:00:02.000Z", 1),
+          type: "user_input_request",
+          requestId: hatchRequestId,
+          questions: [],
+          questionAnswer: {
+            requestId: hatchRequestId,
+            questionTextById: { purpose: "What should I take off your plate first?" },
+            answers: { purpose: "Email and calendar" },
+            attachmentsByQuestionId: {},
+          },
+        },
+        1,
+      ),
+      projected(assistantMessage(), 2),
+    ]);
+    expect(
+      deriveDirectMessageFeed(answeredFeed, null).flatMap((entry) =>
+        entry.type === "message" ? [[entry.message.role, entry.message.text]] : [],
+      ),
+    ).toEqual([
+      ["user", "Run checks"],
+      ["assistant", "What should I take off your plate first?"],
+      ["user", "Email and calendar"],
+      ["assistant", "Done"],
+    ]);
+
     // Talk with a parent or child bot folds into one exchange until the user writes again.
     const fromJarvis = (id: string, ordinal: number, at: string) => ({
       ...userMessage(at),

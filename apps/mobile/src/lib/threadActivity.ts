@@ -79,6 +79,7 @@ import {
   IDLE_COMPACTING_LABELS,
   resolveUserMessagePresentation,
 } from "@t3tools/client-runtime/user-message";
+import { getQuestionAnswerExchange } from "@t3tools/client-runtime/work-log/user-input";
 
 export type PendingApproval = ThreadPendingApproval;
 export type PendingUserInput = ThreadPendingUserInput;
@@ -1677,27 +1678,60 @@ export function deriveDirectMessageFeed(
   typingSince: string | null,
   parentProjectId: ProjectId | null = null,
 ): ThreadFeedEntry[] {
-  const kept = feed.filter((entry) => {
+  const kept = feed.flatMap((entry): ThreadFeedEntry[] => {
     switch (entry.type) {
       case "message":
-        return (
-          entry.message.role === "assistant" ||
+        return entry.message.role === "assistant" ||
           (!isCompactionCommandMessage(entry.message) &&
             resolveUserMessagePresentation(entry.message).attribution !== "system")
-        );
+          ? [entry]
+          : [];
       case "activity-group":
-        return DIRECT_MESSAGE_ITEM_TYPES.has(entry.activities[0]?.projectedItem.item.type ?? "");
+        return DIRECT_MESSAGE_ITEM_TYPES.has(entry.activities[0]?.projectedItem.item.type ?? "")
+          ? [entry]
+          : entry.activities.flatMap(answeredQuestionMessages);
       case "html-render":
       case "mcp-app":
-        return true;
+        return [entry];
       default:
-        return false;
+        return [];
     }
   });
   const folded = foldBotExchanges(kept, sentBotMessages(feed, parentProjectId));
   const last = folded.at(-1);
   const replying = last?.type === "message" && last.message.streaming;
   return typingSince === null || replying ? folded : [...folded, thinkingRow(typingSince, null)];
+}
+
+/**
+ * A DM drops the work an answered question lives in, so it reads as the bot asking and you
+ * replying. Neither bubble is a real message, so neither is editable.
+ */
+function answeredQuestionMessages(activity: ThreadFeedActivity): ThreadFeedEntry[] {
+  const answer = activity.workEntry.questionAnswer;
+  if (answer === undefined) return [];
+  const { question, reply } = getQuestionAnswerExchange(answer);
+  const bubble = (side: "question" | "reply", role: "assistant" | "user", text: string) => ({
+    type: "message" as const,
+    id: `${activity.id}:${side}`,
+    createdAt: activity.createdAt,
+    message: {
+      id: `${side}:${answer.requestId}` as MessageId,
+      role,
+      text,
+      attachments: [],
+      runId: null,
+      streaming: false,
+      visibility: activity.projectedItem.visibility,
+      sourceThreadId: activity.projectedItem.sourceThreadId,
+      createdAt: activity.createdAt,
+      updatedAt: activity.createdAt,
+    },
+  });
+  return [
+    ...(question ? [bubble("question", "assistant", question)] : []),
+    ...(reply ? [bubble("reply", "user", reply)] : []),
+  ];
 }
 
 const sentBotMessageCache = new WeakMap<ThreadFeedActivity, ThreadFeedSentBotMessage>();
