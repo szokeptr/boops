@@ -1,5 +1,6 @@
 import { DraftEnvironmentControl } from "./DraftEnvironmentControl";
 import { NativeScrollEdgeEffectsContext } from "../../native/NativeScrollViewMarker";
+import { BotAvatarSlot } from "../bots/BotAvatarSlot";
 import { DraftThreadHeader } from "./DraftThreadHeader";
 import { threadHeaderAppearance } from "./thread-header-appearance";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
@@ -655,7 +656,25 @@ export function NewTaskDraftScreen(props: {
       The shared content is no longer in the inbox. You can continue editing this task draft.
     </Text>
   ) : null;
-  const hero = flow.isScratchDraft ? (
+  // A bot's draft is a new conversation with it: no project or machine to choose.
+  const isBotDraft = !flow.isScratchDraft && selectedProject.mainThreadId != null;
+  const hero = isBotDraft ? (
+    <View className="items-center gap-4 px-6" testID="new-task-hero">
+      <BotAvatarSlot
+        avatar={selectedProject.avatar ?? null}
+        name={selectedProject.title}
+        status="idle"
+        size={64}
+      />
+      <Text className="text-center text-2xl font-t3-medium tracking-tight text-foreground">
+        New conversation with{" "}
+        <Text className="text-2xl font-t3-bold tracking-tight text-foreground">
+          {selectedProject.title}
+        </Text>
+      </Text>
+      {shareUnavailableNotice}
+    </View>
+  ) : flow.isScratchDraft ? (
     <View className="items-center gap-2 px-6" testID="new-task-hero">
       <Text className="text-center text-2xl font-t3-medium tracking-tight text-foreground">
         What should we work on?
@@ -791,7 +810,12 @@ export function NewTaskDraftScreen(props: {
       <ThreadScreenBinding
         environmentId={selectedProject.environmentId}
         header={
-          <DraftThreadHeader thread={thread} project={selectedProject} cwd={composerWorkspaceCwd} />
+          <DraftThreadHeader
+            thread={thread}
+            project={selectedProject}
+            cwd={composerWorkspaceCwd}
+            bot={isBotDraft}
+          />
         }
         draftMode={{
           content: heroViewport,
@@ -828,6 +852,9 @@ export function NewTaskDraftScreen(props: {
           interactionLocked: isComposerInteractionLocked,
         }}
         canOperateThread={canOperate}
+        {...(isBotDraft
+          ? { botName: selectedProject.title, botAvatar: selectedProject.avatar ?? null }
+          : {})}
         selectedThread={thread}
         selectedThreadDetailRef={null}
         contentPresentation={{ kind: "ready" }}

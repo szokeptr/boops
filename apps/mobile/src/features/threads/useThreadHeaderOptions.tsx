@@ -1,5 +1,5 @@
 import { useWorkspaceSidebarHeaderItem } from "../layout/useWorkspaceSidebarHeaderItem";
-import { BotConversationTitle, type ConversationBot } from "../bots/BotConversationTitle";
+import { BotConversationTitle, type ConversationHeaderBot } from "../bots/BotConversationTitle";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { threadHeaderAppearance } from "./thread-header-appearance";
 import { isDuoDevice } from "../../lib/device-type";
@@ -26,7 +26,7 @@ export function useThreadHeaderOptions(props: {
   readonly onReturnToThread?: () => void;
   readonly draft?: boolean;
   /** A bot's conversation is headed by the bot. */
-  readonly bot?: ConversationBot | null;
+  readonly bot?: ConversationHeaderBot | null;
 }) {
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const deviceType = useDeviceType();
@@ -112,7 +112,7 @@ export function useThreadHeaderOptions(props: {
       threadId,
       bot?.name,
       bot?.avatar,
-      bot?.conversation,
+      bot?.threadId,
     ],
     fallback:
       !layout.usesSplitView && !props.usesNativeHeaderGlass ? (

@@ -14,6 +14,8 @@ export function DraftThreadHeader(props: {
   readonly thread: EnvironmentThreadShell;
   readonly project: EnvironmentProject;
   readonly cwd: string | null;
+  /** A bot's draft is a new conversation with it, headed by the bot. */
+  readonly bot?: boolean;
 }) {
   const navigation = useNavigation();
   const { themeVariables } = useAppearancePreferences();
@@ -32,7 +34,18 @@ export function DraftThreadHeader(props: {
   return (
     <ThreadHeader
       draft
-      title="New thread"
+      title={props.bot ? "New conversation" : "New thread"}
+      bot={
+        props.bot
+          ? {
+              environmentId,
+              projectId: props.project.id,
+              threadId: null,
+              name: props.project.title,
+              avatar: props.project.avatar ?? null,
+            }
+          : null
+      }
       subtitle=""
       headerColor={themeVariables["--color-header"]}
       usesNativeHeaderGlass={NATIVE_LIQUID_GLASS_SUPPORTED}
