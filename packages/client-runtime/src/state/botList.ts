@@ -56,6 +56,8 @@ export interface BotRow {
   readonly activityThreadCount: number;
   /** Name of the bot that created this one, for the "made by" badge. */
   readonly madeBy: string | null;
+  /** Pinned bots lead the list as avatars, in the order they were pinned. */
+  readonly pinnedAt: string | null;
 }
 
 export interface BotListInput {
@@ -269,9 +271,24 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
                 projectId: project.parentBotProjectId,
               }),
             ) ?? null),
+      pinnedAt: project.pinnedAt ?? null,
     });
   }
   return rows.sort((a, b) => compareByActivity(a, b, a.key, b.key));
+}
+
+/** Pinned bots, oldest pin first so pins do not reshuffle, then the rest by activity. */
+export function splitPinnedBots<Row extends Pick<BotRow, "key" | "pinnedAt">>(
+  rows: ReadonlyArray<Row>,
+): { readonly pinned: ReadonlyArray<Row>; readonly unpinned: ReadonlyArray<Row> } {
+  const pinned = rows
+    .filter((row) => row.pinnedAt !== null)
+    .sort(
+      (a, b) =>
+        (toSortableTimestamp(a.pinnedAt!) ?? 0) - (toSortableTimestamp(b.pinnedAt!) ?? 0) ||
+        a.key.localeCompare(b.key),
+    );
+  return { pinned, unpinned: rows.filter((row) => row.pinnedAt === null) };
 }
 
 /**

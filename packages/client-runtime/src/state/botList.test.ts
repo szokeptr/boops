@@ -17,6 +17,7 @@ import {
   deriveBotList,
   liveBotDescendants,
   resolveBotMainThreadId,
+  splitPinnedBots,
 } from "./botList.ts";
 import { presentThreadShell, scopeProject } from "./models.ts";
 import { v2Project, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
@@ -294,6 +295,19 @@ describe("deriveBotList", () => {
         lastActivityAt: "2026-06-01T00:00:00.000Z",
       },
     ]);
+
+    // Pins lead in the order they were made, whatever the activity.
+    const pinnedAt = (row: (typeof rows)[number], iso: string | null) => ({
+      ...row,
+      pinnedAt: iso,
+    });
+    const { pinned, unpinned } = splitPinnedBots([
+      pinnedAt(rows[0]!, "2026-06-05T00:00:00.000Z"),
+      rows[1]!,
+      pinnedAt(rows[2]!, "2026-06-04T00:00:00.000Z"),
+    ]);
+    expect(pinned.map((row) => row.key)).toEqual([`${laptop}:empty`, `${vps}:chatty`]);
+    expect(unpinned.map((row) => row.key)).toEqual([`${laptop}:quiet`]);
   });
 
   it("marks a bot unread when its main thread finished after the last visit", () => {

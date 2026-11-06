@@ -3,15 +3,26 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { useNavigationState, type NavigationState } from "@react-navigation/native";
 
 import { uuidv4 } from "../../lib/uuid";
+import { projectEnvironment } from "../../state/projects";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 import { botActivityDetail, botRowDetail } from "./bot-destinations";
 
-/** Opens a bot's conversation, starting one when it has none, or its Activity page. */
+/** Opens a bot's conversation, starting one when it has none, or its Activity page; pins it. */
 export function useBotNavigation() {
   const selectDetail = useSelectWorkspaceDetail();
+  const updateProject = useAtomCommand(projectEnvironment.update, {
+    label: "bot pin",
+    reportFailure: true,
+  });
   return {
-    openBot: (row: BotRow) => selectDetail(botRowDetail(row, uuidv4())),
-    openActivity: (row: BotRow) => selectDetail(botActivityDetail(row)),
+    onOpen: (row: BotRow) => selectDetail(botRowDetail(row, uuidv4())),
+    onOpenActivity: (row: BotRow) => selectDetail(botActivityDetail(row)),
+    onSetPinned: (row: BotRow, pinned: boolean) =>
+      void updateProject({
+        environmentId: row.environmentId,
+        input: { projectId: row.projectId, pinned },
+      }),
   };
 }
 
