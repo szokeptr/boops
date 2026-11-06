@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { PanelLeftIcon } from "lucide-react";
 import * as Schema from "effect/Schema";
 import {
   useEffect,
@@ -31,7 +32,6 @@ import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import { useEnvironmentIdentificationMode } from "../hooks/useSettings";
 import {
   PanelAnimationSuppressionProvider,
   usePanelAnimationSettings,
@@ -42,7 +42,6 @@ import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 import BotSidebar from "./bots/BotSidebar";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
-import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import {
   clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
@@ -53,6 +52,7 @@ import {
 } from "./threadSidebarWidth";
 import {
   Sidebar,
+  SidebarMenuButton,
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
@@ -294,8 +294,6 @@ function SidebarControl() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar, isMobile, mobileSheetMounted } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
-  const environmentIdentificationMode = useEnvironmentIdentificationMode();
-  const stageBackdropVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
   const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle", {
     context: { usagePageOpen },
   });
@@ -351,28 +349,39 @@ function SidebarControl() {
     <div
       ref={appShellCommandsRef}
       className={cn(
-        "pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center",
+        "pointer-events-none fixed z-50 flex items-center",
+        // On desktop this sits exactly where the footer's hide button was.
+        isMobile
+          ? "left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] ml-px h-[var(--workspace-topbar-height)]"
+          : "bottom-[var(--sidebar-content-inset)] left-[var(--sidebar-content-inset)]",
         isMobile && mobileSheetMounted && "hidden",
       )}
       data-sidebar-control=""
     >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <SidebarTrigger
-              variant={isSidebarVisible && stageBackdropVariant ? "media-navigation" : "ghost"}
-              className={cn(
-                "pointer-events-auto",
-                isSidebarVisible && stageBackdropVariant && "relative top-auto translate-y-0",
-              )}
-              aria-label="Toggle main sidebar"
-            />
-          }
-        />
-        <TooltipPopup side="bottom">
-          Toggle main sidebar{shortcutLabel ? ` (${shortcutLabel})` : ""}
-        </TooltipPopup>
-      </Tooltip>
+      {/* An open sidebar carries its own toggle in the footer. */}
+      {isSidebarVisible ? null : (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              isMobile ? (
+                <SidebarTrigger className="pointer-events-auto" aria-label="Show main sidebar" />
+              ) : (
+                <SidebarMenuButton
+                  aria-label="Show main sidebar"
+                  className="pointer-events-auto"
+                  onClick={toggleSidebar}
+                  size="icon"
+                >
+                  <PanelLeftIcon />
+                </SidebarMenuButton>
+              )
+            }
+          />
+          <TooltipPopup side={isMobile ? "bottom" : "top"}>
+            Show sidebar{shortcutLabel ? ` (${shortcutLabel})` : ""}
+          </TooltipPopup>
+        </Tooltip>
+      )}
     </div>
   );
 }
