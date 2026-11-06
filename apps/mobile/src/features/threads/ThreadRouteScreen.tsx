@@ -4,6 +4,7 @@ import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
 import { useWorktreeSetup } from "./use-worktree-setup";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
+import { isBotConversationThread } from "@t3tools/client-runtime/state/bot-list";
 import { AppBar } from "../../components/ui/AppBar";
 import {
   StackActions,
@@ -440,11 +441,17 @@ function ThreadRouteContent(
       : scopeThreadRef(delegatedFrom.environmentId, delegatedFrom.threadId);
   // The title it had at delegation, until this client sees the parent itself.
   const delegatedFromThread = useThreadShell(delegatedFromRef);
+  // Chats the user starts beside a bot's main one read like it too; helpers show their work.
   const conversationBot =
-    selectedThreadProject &&
+    selectedThreadProject?.mainThreadId != null &&
     selectedThread &&
-    selectedThreadProject.mainThreadId === selectedThread.id
-      ? { name: selectedThreadProject.title, avatar: selectedThreadProject.avatar ?? null }
+    isBotConversationThread(selectedThread, selectedThreadProject.mainThreadId)
+      ? {
+          name: selectedThreadProject.title,
+          avatar: selectedThreadProject.avatar ?? null,
+          conversation:
+            selectedThread.id === selectedThreadProject.mainThreadId ? null : selectedThread.title,
+        }
       : null;
   const headerSubtitle = [
     selectedThreadProject?.title ?? null,

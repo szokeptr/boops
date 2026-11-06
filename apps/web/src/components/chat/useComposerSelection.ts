@@ -57,8 +57,8 @@ interface ComposerSelectionInput {
     SetStateAction<Record<string, boolean>>
   >;
   readonly scheduleComposerFocus: () => void;
-  /** A bot's conversation switches model through a fresh session, on any provider. */
-  readonly isBotConversation: boolean;
+  /** A bot's main conversation switches model through a fresh session, on any provider. */
+  readonly isBotMainConversation: boolean;
 }
 
 /**
@@ -86,10 +86,10 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     setPendingServerThreadEnvModeEntry,
     setPendingServerThreadStartFromOriginByThreadId,
     scheduleComposerFocus,
-    isBotConversation,
+    isBotMainConversation,
   } = input;
   // A bot's switch starts a fresh session, so it needs no handoff support.
-  const supportsProviderSwitchingViaHandoff = supportsHandoff || isBotConversation;
+  const supportsProviderSwitchingViaHandoff = supportsHandoff || isBotMainConversation;
   const startFreshSession = useOrchestrationCommand(threadEnvironment.startFreshSession, {
     reportFailure: false,
   });
@@ -226,7 +226,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     );
     setStickyComposerModelSelection(nextModelSelection);
     if (
-      isBotConversation &&
+      isBotMainConversation &&
       activeThread.activeProviderThreadId !== null &&
       (nextModelSelection.instanceId !== activeThread.modelSelection.instanceId ||
         nextModelSelection.model !== activeThread.modelSelection.model)

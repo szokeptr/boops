@@ -112,6 +112,10 @@ export const BotDeleteInput = Schema.Struct({
 });
 export type BotDeleteInput = typeof BotDeleteInput.Type;
 
+/** The background thread a bot's Heartbeat routine runs in, out of its conversations. */
+export const botHeartbeatThreadId = (projectId: ProjectId) =>
+  ThreadId.make(`heartbeat:${projectId}`);
+
 type Timestamp = string | DateTime.DateTime;
 
 const epochMillis = (at: Timestamp) =>

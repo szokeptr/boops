@@ -25,7 +25,7 @@ export function useThreadHeaderOptions(props: {
   readonly controls: ThreadHeaderControlsProps;
   readonly onReturnToThread?: () => void;
   readonly draft?: boolean;
-  /** A bot's main conversation is headed by the bot. */
+  /** A bot's conversation is headed by the bot. */
   readonly bot?: ConversationBot | null;
 }) {
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
@@ -112,6 +112,7 @@ export function useThreadHeaderOptions(props: {
       threadId,
       bot?.name,
       bot?.avatar,
+      bot?.conversation,
     ],
     fallback:
       !layout.usesSplitView && !props.usesNativeHeaderGlass ? (

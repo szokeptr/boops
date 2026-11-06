@@ -33,6 +33,8 @@ import {
   usePrimaryEnvironmentId,
   useEnvironmentProviders,
 } from "~/state/environments";
+import { BotAvatar } from "../bots/BotAvatar";
+import { openCreateBotDialog } from "../CreateBotDialog";
 import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { isProjectPinShortcut, ProjectPinButton } from "../ProjectPinButton";
@@ -160,12 +162,14 @@ export function DraftHeroHeadline({
   const isScratchDraft =
     activeProject !== null &&
     isScratchProject(activeProject, scratchWorkspaceRootFor(activeProject.environmentId));
+  // A bot's draft is a new conversation with it, so the hero speaks of bots, not projects.
+  const botDraft = !isScratchDraft && activeProject?.mainThreadId != null ? activeProject : null;
 
   // Pinning from a row keeps rows in place while the picker is open.
   const pickerItems: readonly PickerItem[] = useOrderWhileOpen(
     [
       ...menuEntries.map(({ group }) => ({ value: group.projectKey, label: group.displayName })),
-      { value: ADD_PROJECT_VALUE, label: "Add project" },
+      { value: ADD_PROJECT_VALUE, label: botDraft ? "New bot" : "Add project" },
     ],
     (item) => item.value,
     pickerOpen,
@@ -280,7 +284,8 @@ export function DraftHeroHeadline({
         if (!item) return;
         setPickerOpen(false);
         if (item.value === ADD_PROJECT_VALUE) {
-          openAddProject();
+          if (botDraft) openCreateBotDialog();
+          else openAddProject();
           return;
         }
         const entry = projectEntryByKey.get(item.value);
@@ -311,8 +316,8 @@ export function DraftHeroHeadline({
       </Tooltip>
       <ComboboxPopup align="center" className="w-72 overflow-hidden">
         <ComboboxSearchInput
-          aria-label="Search projects"
-          placeholder="Search projects..."
+          aria-label={botDraft ? "Search bots" : "Search projects"}
+          placeholder={botDraft ? "Search bots..." : "Search projects..."}
           value={pickerQuery}
           onChange={(event) => setPickerQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -326,7 +331,7 @@ export function DraftHeroHeadline({
             toggleProjectGroupPin(group);
           }}
         />
-        <ComboboxEmpty>No matching projects.</ComboboxEmpty>
+        <ComboboxEmpty>{botDraft ? "No matching bots." : "No matching projects."}</ComboboxEmpty>
         <ComboboxList>
           {(item: PickerItem) => {
             const entry = projectEntryByKey.get(item.value);
@@ -334,6 +339,14 @@ export function DraftHeroHeadline({
               <ComboboxItem key={item.value} hideIndicator value={item}>
                 {item.value === ADD_PROJECT_VALUE ? (
                   <FolderPlusIcon className="size-4 shrink-0" />
+                ) : entry?.targetProject.mainThreadId != null ? (
+                  <BotAvatar
+                    avatar={entry.targetProject.avatar ?? null}
+                    name={entry.targetProject.title}
+                    status="idle"
+                    size={16}
+                    className="shrink-0"
+                  />
                 ) : entry ? (
                   <ProjectFavicon project={entry.group} className="size-4 shrink-0" />
                 ) : null}
@@ -408,6 +421,18 @@ export function DraftHeroHeadline({
         machineLabel={environment?.label ?? null}
         serverVersion={environment?.serverConfig?.environment.serverVersion ?? null}
       />
+    );
+  }
+
+  if (botDraft) {
+    return (
+      <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-4">
+        <BotAvatar avatar={botDraft.avatar ?? null} name={botDraft.title} status="idle" size={64} />
+        <h1 className="flex w-full flex-wrap items-baseline justify-center gap-x-2 text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
+          <span>New conversation with</span>
+          <span className="min-w-0 max-w-full font-medium">{projectSelector}</span>
+        </h1>
+      </div>
     );
   }
 
