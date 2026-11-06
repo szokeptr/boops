@@ -1,13 +1,15 @@
-import type { ProjectAvatar } from "@t3tools/contracts";
+import type { BotAvatarShape, ProjectAvatar } from "@t3tools/contracts";
 import * as Base64 from "effect/encoding/Base64";
 
-/** Visor: a rounded bot with a dark visor, drawn as primitives on a 64×64 canvas. */
-export const VISOR_CANVAS = 64;
+/** A soft blob with big ink eyes, drawn as primitives on a 64×64 canvas. */
+export const AVATAR_CANVAS = 64;
 
 export type BotAvatarStatus = "idle" | "working" | "needs-you" | "dozing";
 export type BotHatchStage = "egg" | "crack" | "cap";
+/** What the face shows: a status, or the happy squint a click plays. */
+export type BotAvatarFace = BotAvatarStatus | "happy";
 
-export interface VisorRect {
+export interface AvatarRect {
   readonly kind: "rect";
   readonly x: number;
   readonly y: number;
@@ -18,7 +20,7 @@ export interface VisorRect {
   readonly opacity?: number;
 }
 
-export interface VisorCircle {
+export interface AvatarCircle {
   readonly kind: "circle";
   readonly cx: number;
   readonly cy: number;
@@ -26,7 +28,7 @@ export interface VisorCircle {
   readonly fill: string;
 }
 
-export interface VisorPath {
+export interface AvatarPath {
   readonly kind: "path";
   readonly d: string;
   readonly fill?: string;
@@ -34,16 +36,18 @@ export interface VisorPath {
   readonly strokeWidth?: number;
   readonly linecap?: "round";
   readonly opacity?: number;
+  /** An SVG transform list; web and react-native-svg both take the string form. */
+  readonly transform?: string;
 }
 
 /** Back to front; renderers map each 1:1 and give strokes round joins. */
-export type VisorShape = VisorRect | VisorCircle | VisorPath;
+export type AvatarShape = AvatarRect | AvatarCircle | AvatarPath;
 
 /** A React key from geometry; no two shapes in one avatar share it. */
-export function visorShapeKey(shape: VisorShape): string {
+export function avatarShapeKey(shape: AvatarShape): string {
   if (shape.kind === "rect") return `r${shape.x},${shape.y}`;
   if (shape.kind === "circle") return `c${shape.cx},${shape.cy}`;
-  return `p${shape.d}`;
+  return `p${shape.d}${shape.transform ?? ""}`;
 }
 
 type Rgb = readonly [number, number, number];
@@ -68,8 +72,10 @@ const GLOW: Readonly<Record<ProjectAvatar["glow"], string>> = {
   cyan: "#8fe9ff",
   white: "#f2efff",
 };
-const VISOR = "#1d1a2a";
-const AMBER = "#ffc23d";
+const INK = "#1b1726";
+const AMBER = "#ffb321";
+const AMBER_EDGE = "#e8951a";
+const BOW = "#ff7a9a";
 const SHELL = "#fbf3e2";
 const SHELL_EDGE = "#c9b48f";
 
@@ -103,295 +109,542 @@ const fromHex = (value: string): Rgb => [
 ];
 // Hex rather than CSS hsl(): react-native-svg and older RN colour parsers lack the space syntax.
 const hsl = (h: number, s: number, l: number) => hex(hslToRgb(h, s, l));
-const SPROUT_LIGHT = hsl(110, 45, 55);
-const SPROUT_DARK = hsl(110, 45, 48);
+const SPROUT_LIGHT = hsl(110, 48, 55);
+const SPROUT_DARK = hsl(110, 48, 46);
 
-export interface VisorColors {
+export interface AvatarColors {
   readonly body: string;
+  /** The belly crescent. */
   readonly shade: string;
+  /** Accessory strokes. */
+  readonly deep: string;
   readonly light: string;
+  readonly blush: string;
+  /** Tips of antennae and ears. */
   readonly glow: string;
 }
 
-export function visorColors(avatar: ProjectAvatar): VisorColors {
+export function avatarColors(avatar: ProjectAvatar): AvatarColors {
   const h = HUE_DEGREES[avatar.hue];
   return {
-    body: hsl(h, 62, 66),
-    shade: hsl(h, 40, 46),
-    light: hsl(h, 70, 82),
+    body: hsl(h, 64, 67),
+    shade: hsl(h, 48, 57),
+    deep: hsl(h, 42, 44),
+    light: hsl(h, 80, 84),
+    blush: hsl(h - 10, 85, 62),
     glow: GLOW[avatar.glow],
   };
 }
 
-/** Your bubbles in a bot's DM wear its body colour, inked like its visor so text reads in both themes. */
+/** Your bubbles in a bot's DM wear its body colour, inked like its eyes so text reads in both themes. */
 export function botBubbleColors(avatar: ProjectAvatar): {
   readonly background: string;
   readonly foreground: string;
 } {
-  return { background: visorColors(avatar).body, foreground: VISOR };
+  return { background: avatarColors(avatar).body, foreground: INK };
 }
 
-const BODY = { x: 10, y: 12, w: 44, h: 44, r: 16 } as const;
-const VIS = { x: 13, y: 26, w: 38, h: 22 } as const;
-const EYE_CY = VIS.y + VIS.h / 2;
-const EYE_L = 25;
-const EYE_R = 39;
-const GLINT = { x0: 18, y0: VIS.y + 4, cx: 22, cy: VIS.y + 1.5, x1: 27, y1: VIS.y + 1.5 } as const;
-
-function pill(
-  cx: number,
-  cy: number,
-  w: number,
-  h: number,
-  fill: string,
-  opacity?: number,
-): VisorRect {
-  return {
-    kind: "rect",
-    x: cx - w / 2,
-    y: cy - h / 2,
-    w,
-    h,
-    r: Math.min(w, h) / 2,
-    fill,
-    ...(opacity === undefined ? {} : { opacity }),
-  };
+interface Body {
+  readonly d: string;
+  /** Where the outline peaks; head accessories and the hatch cap sit on it. */
+  readonly top: number;
+  readonly eyeY: number;
+  /** Each eye's distance from the centre line. */
+  readonly eyeGap: number;
+  /** Half the body's width at eye height, where headphone cups hang. */
+  readonly halfWidth: number;
+  readonly shine: string;
+  /** The bow sits on the right shoulder, which pointy tops pull inward. */
+  readonly bowX: number;
 }
 
-/** The eyes carry the status: amber needs you, pills work, dim lines doze. */
-function eyeShapes(status: BotAvatarStatus, glow: string, offsetX = 0): ReadonlyArray<VisorRect> {
-  const L = EYE_L + offsetX;
-  const R = EYE_R + offsetX;
-  switch (status) {
-    case "working":
-      return [pill(L - 1, EYE_CY, 9, 4, glow), pill(R - 1, EYE_CY, 9, 4, glow)];
-    case "needs-you":
-      return [pill(L, EYE_CY, 6.5, 12, AMBER), pill(R, EYE_CY, 6.5, 12, AMBER)];
-    case "dozing":
-      return [pill(L, EYE_CY, 8, 2, glow, 0.45), pill(R, EYE_CY, 8, 2, glow, 0.45)];
-    case "idle":
-      return [pill(L, EYE_CY, 6, 10, glow), pill(R, EYE_CY, 6, 10, glow)];
-  }
+const BODIES: Readonly<Record<BotAvatarShape, Body>> = {
+  gumdrop: {
+    d: "M32 9C47 9 56 19 56 34C56 49 47 57 32 57S8 49 8 34C8 19 17 9 32 9Z",
+    top: 9,
+    eyeY: 33,
+    eyeGap: 8.5,
+    halfWidth: 24,
+    shine: "M15.5 24Q19 14.5 29 13",
+    bowX: 46,
+  },
+  round: {
+    d: "M32 11A23 23 0 1 1 31.99 11Z",
+    top: 11,
+    eyeY: 34,
+    eyeGap: 8.5,
+    halfWidth: 23,
+    shine: "M15 27Q18 17 28 14.5",
+    bowX: 46,
+  },
+  box: {
+    d: "M25 11H39C49 11 55 17 55 27V41C55 51 49 57 39 57H25C15 57 9 51 9 41V27C9 17 15 11 25 11Z",
+    top: 11,
+    eyeY: 33,
+    eyeGap: 9,
+    halfWidth: 23,
+    shine: "M14 28Q14 17 25 15.5",
+    bowX: 46,
+  },
+  onigiri: {
+    d: "M32 10C36.5 10 39.5 12.5 42.5 17.5L54.5 40C59 49 53 57 44 57H20C11 57 5 49 9.5 40L21.5 17.5C24.5 12.5 27.5 10 32 10Z",
+    top: 10,
+    eyeY: 38,
+    eyeGap: 7.5,
+    halfWidth: 21,
+    shine: "M20 28Q22.5 19.5 28 15.5",
+    bowX: 41,
+  },
+  bean: {
+    d: "M32 7C43 7 51 14 51 25V39C51 50 43 57 32 57S13 50 13 39V25C13 14 21 7 32 7Z",
+    top: 7,
+    eyeY: 30,
+    eyeGap: 8,
+    halfWidth: 19,
+    shine: "M18 23Q18.5 13.5 27 11.5",
+    bowX: 44,
+  },
+  mochi: {
+    d: "M32 17C49 17 58 27 58 40C58 51 48 57 32 57S6 51 6 40C6 27 15 17 32 17Z",
+    top: 17,
+    eyeY: 38,
+    eyeGap: 9.5,
+    halfWidth: 26,
+    shine: "M13 32Q17 22.5 27 20.5",
+    bowX: 46,
+  },
+  ghost: {
+    d: "M32 9C46 9 55 18 55 32V52C55 57.5 50 58.5 47.5 55C45.5 52 42 52 40 55C37.5 58.5 34.5 58.5 32 55C29.5 58.5 26.5 58.5 24 55C22 52 18.5 52 16.5 55C14 58.5 9 57.5 9 52V32C9 18 18 9 32 9Z",
+    top: 9,
+    eyeY: 31,
+    eyeGap: 8.5,
+    halfWidth: 23,
+    shine: "M15 25Q17.5 15 27 13",
+    bowX: 46,
+  },
+  drop: {
+    d: "M32 7C38 15 56 23 56 38C56 50 46 57 32 57S8 50 8 38C8 23 26 15 32 7Z",
+    top: 7,
+    eyeY: 38,
+    eyeGap: 8.5,
+    halfWidth: 24,
+    shine: "M16 34Q18 25 25 20",
+    bowX: 39,
+  },
+};
+
+const bodyOf = (avatar: ProjectAvatar) => BODIES[avatar.shape ?? "gumdrop"];
+
+/** Where the eyes sit, so a renderer can pivot a blink on them. */
+export function avatarEyeLine(avatar: ProjectAvatar): number {
+  return bodyOf(avatar).eyeY;
+}
+
+/** Below this many pixels accessories turn to noise and drop. */
+export const AVATAR_ACCESSORY_MIN_SIZE = 24;
+/** Below this, highlights, blush, and badges drop and the eyes thicken to stay legible. */
+const DETAIL_MIN_SIZE = 28;
+const BELLY_SQUASH = 0.92;
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+function pill(cx: number, cy: number, w: number, h: number): string {
+  const r = Math.min(w, h) / 2;
+  return `M${round2(cx - w / 2)} ${round2(cy - h / 2 + r)}a${r} ${r} 0 0 1 ${w} 0v${round2(h - 2 * r)}a${r} ${r} 0 0 1 ${-w} 0z`;
+}
+
+function ellipse(cx: number, cy: number, rx: number, ry: number): string {
+  return `M${round2(cx - rx)} ${cy}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0z`;
 }
 
 function accessoryShapes(
   accessory: ProjectAvatar["accessory"],
-  c: VisorColors,
-): ReadonlyArray<VisorShape> {
-  const stroke = (d: string, strokeWidth = 2.8): VisorPath => ({
+  body: Body,
+  c: AvatarColors,
+): { readonly behind: ReadonlyArray<AvatarShape>; readonly front: ReadonlyArray<AvatarShape> } {
+  const lift = body.top - 9;
+  const stroke = (d: string, strokeWidth = 2.6): AvatarPath => ({
     kind: "path",
     d,
-    stroke: c.shade,
+    stroke: c.deep,
     strokeWidth,
     linecap: "round",
+    ...(lift === 0 ? {} : { transform: `translate(0 ${lift})` }),
   });
+  const at = (y: number) => y + lift;
   switch (accessory) {
     case "none":
-      return [];
+      return { behind: [], front: [] };
     case "antenna":
-      return [stroke("M32 12V5", 2.6), { kind: "circle", cx: 32, cy: 5, r: 3.2, fill: c.glow }];
+      return {
+        behind: [stroke("M32 10V4"), { kind: "circle", cx: 32, cy: at(4), r: 3.2, fill: c.glow }],
+        front: [],
+      };
     case "rabbit":
-      return [
-        stroke("M24 13L20 3", 2.6),
-        stroke("M40 13L44 3", 2.6),
-        { kind: "circle", cx: 20, cy: 3.5, r: 2.4, fill: c.glow },
-        { kind: "circle", cx: 44, cy: 3.5, r: 2.4, fill: c.glow },
-      ];
+      return {
+        behind: [
+          stroke("M25 11.5L21 3"),
+          stroke("M39 11.5L43 3"),
+          { kind: "circle", cx: 21, cy: at(3), r: 2.4, fill: c.glow },
+          { kind: "circle", cx: 43, cy: at(3), r: 2.4, fill: c.glow },
+        ],
+        front: [],
+      };
     case "handle":
-      return [stroke("M21 13q11-9 22 0", 3)];
+      return { behind: [stroke("M21 14q11-16 22 0", 3.2)], front: [] };
     case "sprout":
-      return [
-        stroke("M32 13V7", 2.4),
-        { kind: "path", d: "M32 8c0-5 3-7 8-7c0 4-3 7-8 7z", fill: SPROUT_LIGHT },
-        { kind: "path", d: "M32 9c0-4-3-6-7-6c0 3 3 6 7 6z", fill: SPROUT_DARK },
-      ];
-    case "bow":
-      return [
-        { kind: "path", d: "M44 9l-7 4 7 4zM50 9l7 4-7 4z", fill: "#ff7a9a" },
-        { kind: "circle", cx: 47, cy: 13, r: 2.6, fill: "#ff7a9a" },
-      ];
-    case "phones":
-      return [
-        { kind: "rect", x: 5, y: 30, w: 6, h: 14, r: 3, fill: c.shade },
-        { kind: "rect", x: 53, y: 30, w: 6, h: 14, r: 3, fill: c.shade },
-        stroke("M8 30q0-24 24-24t24 24", 2.4),
-      ];
+      return {
+        behind: [
+          stroke("M32 10V5", 2.4),
+          {
+            kind: "path",
+            d: `M32 ${at(6)}c0-5 3-7 8-7c0 4-3 7-8 7z`,
+            fill: SPROUT_LIGHT,
+          },
+          {
+            kind: "path",
+            d: `M32 ${at(7)}c0-4-3-6-7-6c0 3 3 6 7 6z`,
+            fill: SPROUT_DARK,
+          },
+        ],
+        front: [],
+      };
+    case "bow": {
+      const x = body.bowX;
+      const y = body.top + 4;
+      return {
+        behind: [],
+        front: [
+          { kind: "path", d: `M${x - 3} ${y - 4}l-6 4 6 4zM${x + 3} ${y - 4}l6 4-6 4z`, fill: BOW },
+          { kind: "circle", cx: x, cy: y, r: 2.5, fill: BOW },
+        ],
+      };
+    }
     case "crown":
-      return [{ kind: "path", d: "M21 14l2-9 5 5 4-7 4 7 5-5 2 9z", fill: AMBER }];
+      return {
+        behind: [
+          {
+            kind: "path",
+            d: `M22 ${at(13)}l1.6-8.5 4.8 4.5 3.6-6.5 3.6 6.5 4.8-4.5L42 ${at(13)}z`,
+            fill: AMBER,
+            stroke: AMBER_EDGE,
+            strokeWidth: 1,
+          },
+        ],
+        front: [],
+      };
+    case "phones": {
+      const left = 32 - body.halfWidth;
+      const right = 32 + body.halfWidth;
+      const cupTop = body.eyeY - 7.5;
+      // A cubic's apex sits 3/4 of the way to its control points; aim it just above the head.
+      const control = round2(cupTop + (body.top - 3 - cupTop) / 0.75);
+      return {
+        behind: [],
+        front: [
+          {
+            kind: "path",
+            d: `M${left} ${cupTop}C${left} ${control} ${right} ${control} ${right} ${cupTop}`,
+            stroke: c.deep,
+            strokeWidth: 2.6,
+            linecap: "round",
+          },
+          { kind: "rect", x: left - 3.5, y: cupTop, w: 7, h: 15, r: 3.5, fill: c.deep },
+          { kind: "rect", x: right - 3.5, y: cupTop, w: 7, h: 15, r: 3.5, fill: c.deep },
+        ],
+      };
+    }
   }
 }
 
-export interface VisorOptions {
-  /** Below 24px accessories turn to noise; lists pass false. */
-  readonly includeAccessory?: boolean;
+const EYE_W = 8.6;
+const EYE_H = 13.5;
+
+function eye(cx: number, cy: number, wide: boolean, detail: boolean): ReadonlyArray<AvatarShape> {
+  const w = round2(EYE_W + (wide ? 1 : 0) + (detail ? 0 : 1.6));
+  const h = EYE_H + (wide ? 2 : 0) + (detail ? 0 : 1.5);
+  const ink: AvatarPath = { kind: "path", d: pill(cx, cy, w, h), fill: INK };
+  if (!detail) return [ink];
+  return [
+    ink,
+    {
+      kind: "circle",
+      cx: round2(cx + 1.5),
+      cy: round2(cy - h / 2 + 3.4),
+      r: wide ? 2.1 : 1.7,
+      fill: "#ffffff",
+    },
+  ];
 }
 
-/** The avatar split so a renderer can animate the eyes alone (a one-shot blink). */
-export function visorParts(
-  avatar: ProjectAvatar,
-  status: BotAvatarStatus = "idle",
-  { includeAccessory = true }: VisorOptions = {},
-): { readonly body: ReadonlyArray<VisorShape>; readonly eyes: ReadonlyArray<VisorRect> } {
-  const c = visorColors(avatar);
+function lidArc(cx: number, cy: number, up: boolean, detail: boolean): AvatarPath {
   return {
-    body: [
-      ...(includeAccessory ? accessoryShapes(avatar.accessory, c) : []),
-      { kind: "rect", ...BODY, fill: c.body },
-      { kind: "rect", ...VIS, r: VIS.h / 2, fill: VISOR },
-      {
-        kind: "path",
-        d: `M${GLINT.x0} ${GLINT.y0}q4-2.5 9-2.5`,
-        stroke: "#ffffff",
-        strokeWidth: 1.6,
-        linecap: "round",
-        opacity: 0.35,
-      },
-    ],
-    eyes: eyeShapes(status, c.glow),
+    kind: "path",
+    d: `M${round2(cx - 4.8)} ${cy + (up ? 2 : -1)}q4.8 ${up ? -7 : 5} 9.6 0`,
+    stroke: INK,
+    strokeWidth: detail ? 3.4 : 4.4,
+    linecap: "round",
   };
 }
 
-export function visorShapes(
-  avatar: ProjectAvatar,
-  status: BotAvatarStatus = "idle",
-  options: VisorOptions = {},
-): ReadonlyArray<VisorShape> {
-  const { body, eyes } = visorParts(avatar, status, options);
-  return [...body, ...eyes];
+interface FaceParts {
+  readonly cheeks: number;
+  /** Eyes and brows: what follows the pointer and blinks. */
+  readonly gaze: ReadonlyArray<AvatarShape>;
+  readonly still: ReadonlyArray<AvatarShape>;
+  readonly overlay: ReadonlyArray<AvatarShape>;
 }
 
-/** Egg, then the visor peeking through a crack, then the bot wearing the shell top as a cap. */
+function faceParts(face: BotAvatarFace, body: Body, c: AvatarColors, detail: boolean): FaceParts {
+  const y = body.eyeY;
+  const left = 32 - body.eyeGap;
+  const right = 32 + body.eyeGap;
+  switch (face) {
+    case "idle":
+      return {
+        cheeks: 0.42,
+        gaze: [...eye(left, y, false, detail), ...eye(right, y, false, detail)],
+        still: [],
+        overlay: [],
+      };
+    case "happy":
+      return {
+        cheeks: 0.7,
+        gaze: [lidArc(left, y, true, detail), lidArc(right, y, true, detail)],
+        still: [],
+        overlay: [],
+      };
+    case "working":
+      // The bouncing dots ship as an APNG laid over the face; see workingDotsBox.
+      return { cheeks: 0.3, gaze: [], still: [], overlay: [] };
+    case "dozing":
+      return {
+        cheeks: 0.25,
+        gaze: [],
+        still: [lidArc(left, y, false, detail), lidArc(right, y, false, detail)],
+        overlay: detail
+          ? [
+              {
+                kind: "path",
+                d: `M46 ${Math.max(6, y - 21)}h7l-7 7h7`,
+                stroke: c.deep,
+                strokeWidth: 2.2,
+                linecap: "round",
+                opacity: 0.8,
+              },
+            ]
+          : [],
+      };
+    case "needs-you": {
+      const badgeY = Math.max(9, y - 18);
+      return {
+        cheeks: 0.5,
+        gaze: [
+          ...eye(left, y, true, detail),
+          ...eye(right, y, true, detail),
+          {
+            kind: "path",
+            d: `M${left - 4} ${y - 11.5}q4-2.6 8-.6M${right - 4} ${y - 12.1}q4-2 8 .6`,
+            stroke: INK,
+            strokeWidth: 2,
+            linecap: "round",
+          },
+        ],
+        still: [],
+        overlay: detail
+          ? [
+              { kind: "circle", cx: 13, cy: badgeY, r: 6.2, fill: AMBER },
+              {
+                kind: "path",
+                d: `M13 ${badgeY - 3.2}v3.6`,
+                stroke: INK,
+                strokeWidth: 2.2,
+                linecap: "round",
+              },
+              { kind: "circle", cx: 13, cy: badgeY + 3.4, r: 1.2, fill: INK },
+            ]
+          : [],
+      };
+    }
+  }
+}
+
+export interface AvatarParts {
+  readonly body: ReadonlyArray<AvatarShape>;
+  /** Drawn in their own group so a renderer can move them toward the pointer or blink them. */
+  readonly gaze: ReadonlyArray<AvatarShape>;
+  readonly overlay: ReadonlyArray<AvatarShape>;
+}
+
+/** The avatar split so a renderer can animate the eyes alone. `size` is in pixels. */
+export function avatarParts(
+  avatar: ProjectAvatar,
+  face: BotAvatarFace = "idle",
+  size = AVATAR_CANVAS,
+): AvatarParts {
+  const c = avatarColors(avatar);
+  const body = bodyOf(avatar);
+  const detail = size >= DETAIL_MIN_SIZE;
+  const accessory =
+    size >= AVATAR_ACCESSORY_MIN_SIZE
+      ? accessoryShapes(avatar.accessory, body, c)
+      : { behind: [], front: [] };
+  const parts = faceParts(face, body, c, detail);
+  const cheeks: ReadonlyArray<AvatarShape> = detail
+    ? [-1, 1].map((side) => ({
+        kind: "path",
+        d: ellipse(32 + side * (body.eyeGap + 8), body.eyeY + 10, 4.2, 2.5),
+        fill: c.blush,
+        opacity: parts.cheeks,
+      }))
+    : [];
+  return {
+    body: [
+      ...accessory.behind,
+      { kind: "path", d: body.d, fill: c.shade },
+      // The outline again, squashed up from its top, so a shade crescent shows below on any shape.
+      {
+        kind: "path",
+        d: body.d,
+        fill: c.body,
+        transform: `matrix(1 0 0 ${BELLY_SQUASH} 0 ${round2(body.top * (1 - BELLY_SQUASH))})`,
+      },
+      ...(detail
+        ? [
+            {
+              kind: "path",
+              d: body.shine,
+              stroke: c.light,
+              strokeWidth: 2.8,
+              linecap: "round",
+              opacity: 0.9,
+            } satisfies AvatarPath,
+          ]
+        : []),
+      ...accessory.front,
+      ...cheeks,
+      ...parts.still,
+    ],
+    gaze: parts.gaze,
+    overlay: parts.overlay,
+  };
+}
+
+export function avatarShapes(
+  avatar: ProjectAvatar,
+  face: BotAvatarFace = "idle",
+  size = AVATAR_CANVAS,
+): ReadonlyArray<AvatarShape> {
+  const { body, gaze, overlay } = avatarParts(avatar, face, size);
+  return [...body, ...gaze, ...overlay];
+}
+
+const EGG = "M32 6C45 6 54 24 54 38C54 51 44 59 32 59S10 51 10 38C10 24 19 6 32 6Z";
+const CRACK = "M12 30l5 4 4-5 5 4 6-5 6 5 5-4 4 5 5-4";
+
+/** Egg, then the bot peeking through a crack, then the bot wearing the shell top as a cap. */
 export function hatchShapes(
   avatar: ProjectAvatar,
   stage: BotHatchStage,
-): ReadonlyArray<VisorShape> {
-  const c = visorColors(avatar);
+  size = AVATAR_CANVAS,
+): ReadonlyArray<AvatarShape> {
+  const c = avatarColors(avatar);
   if (stage === "cap") {
     return [
-      ...visorShapes(avatar, "idle", { includeAccessory: false }),
+      ...avatarShapes({ ...avatar, accessory: "none" }, "idle", size),
       {
         kind: "path",
-        d: "M14 18C16 8 23 3 32 3S48 8 50 18l-5-3-4 4-5-4-4 4-4-4-5 4-4-4z",
+        d: "M13 17C15 7 22 2 32 2S49 7 51 17l-5-3-4 4-5-4-5 4-5-4-4 4-4-4z",
         fill: SHELL,
         stroke: SHELL_EDGE,
         strokeWidth: 2,
+        transform: `translate(0 ${bodyOf(avatar).top - 9}) rotate(-8 32 12)`,
       },
     ];
   }
-  const egg: VisorPath = {
+  const egg: AvatarPath = {
     kind: "path",
-    d: "M32 6C45 6 54 24 54 38C54 51 44 59 32 59S10 51 10 38C10 24 19 6 32 6Z",
+    d: EGG,
     fill: SHELL,
     stroke: SHELL_EDGE,
     strokeWidth: 2,
   };
-  const speck = (cx: number, cy: number, r: number): VisorCircle => ({
+  const speck = (cx: number, cy: number, r: number): AvatarCircle => ({
     kind: "circle",
     cx,
     cy,
     r,
     fill: c.body,
   });
-  if (stage === "egg") return [egg, speck(24, 24, 2.2), speck(40, 33, 2.8), speck(27, 46, 1.8)];
+  if (stage === "egg") return [egg, speck(24, 24, 2.4), speck(40, 33, 3), speck(27, 46, 2)];
+  const detail = size >= DETAIL_MIN_SIZE;
   return [
     egg,
-    { kind: "rect", x: 15, y: 27, w: 34, h: 18, r: 9, fill: VISOR },
-    ...eyeShapes("idle", c.glow).map((s) => ({ ...s, y: s.y - 1 })),
+    // Below the crack the shell has fallen away, showing the bot inside the egg's outline.
     {
       kind: "path",
-      d: "M13 27l5 4 4-5 5 4 5-5 5 5 5-4 4 5 5-4",
-      stroke: SHELL_EDGE,
-      strokeWidth: 2,
-      linecap: "round",
+      d: `${CRACK}L53.4 33C53.8 35 54 36.5 54 38C54 51 44 59 32 59S10 51 10 38C10 35.5 10.7 32.7 12 30Z`,
+      fill: c.body,
     },
+    { kind: "path", d: EGG, stroke: SHELL_EDGE, strokeWidth: 2 },
+    ...eye(23.5, 40, false, detail),
+    ...eye(40.5, 40, false, detail),
+    { kind: "path", d: CRACK, stroke: SHELL_EDGE, strokeWidth: 2, linecap: "round" },
   ];
 }
 
 /**
- * The working eyes glance left, centre, right. They ship as an APNG laid exactly over the
- * visor rect, so the only endless loop costs the main thread nothing; CSS keyframes and JS
- * timers measured far worse.
+ * The working face: three ink dots bouncing in turn. They ship as an APNG with a clear
+ * background laid over the face, so the only endless loop costs the main thread nothing;
+ * CSS keyframes and JS timers measured far worse.
  */
-export const WORKING_SCAN = {
-  rect: VIS,
-  background: VISOR,
-  offsets: [-3, 0, 3],
-  frameMs: 300,
+export const WORKING_DOTS = {
+  /** Relative to the eye line: the overlay spans x 17-47 and from 10 above the eyes to 5 below. */
+  width: 30,
+  height: 15,
+  above: 10,
+  left: 17,
+  gap: 9.5,
+  radius: 4,
+  bounce: 3.5,
+  frames: 12,
+  frameMs: 90,
   /** Raster pixels per canvas unit, so the overlay stays sharp up to 4× the 64-unit grid. */
   scale: 4,
 } as const;
 
-/** Signed distance to a rounded rect; coverage comes from it, so no canvas is needed. */
-function roundedRectDistance(
-  px: number,
-  py: number,
-  rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number },
-  r: number,
-): number {
-  const qx = Math.abs(px - (rect.x + rect.w / 2)) - (rect.w / 2 - r);
-  const qy = Math.abs(py - (rect.y + rect.h / 2)) - (rect.h / 2 - r);
-  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
-}
-
-function segmentDistance(
-  px: number,
-  py: number,
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-): number {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
-}
-
-const GLINT_POINTS = Array.from({ length: 13 }, (_, i) => {
-  const t = i / 12;
-  const u = 1 - t;
-  return [
-    u * u * GLINT.x0 + 2 * u * t * GLINT.cx + t * t * GLINT.x1,
-    u * u * GLINT.y0 + 2 * u * t * GLINT.cy + t * t * GLINT.y1,
-  ] as const;
-});
-
-function glintDistance(px: number, py: number): number {
-  let best = Infinity;
-  for (let i = 1; i < GLINT_POINTS.length; i++) {
-    const [ax, ay] = GLINT_POINTS[i - 1]!;
-    const [bx, by] = GLINT_POINTS[i]!;
-    best = Math.min(best, segmentDistance(px, py, ax, ay, bx, by));
-  }
-  return best - 1.6 / 2;
-}
-
 const coverage = (distance: number, scale: number) =>
   Math.max(0, Math.min(1, 0.5 - distance * scale));
-const mix = (from: number, to: number, amount: number) => from + (to - from) * amount;
 
-function scanFrame(glow: string, offsetX: number): Uint8Array {
-  const { rect, scale } = WORKING_SCAN;
-  const width = rect.w * scale;
-  const height = rect.h * scale;
-  const visor = fromHex(VISOR);
-  const lit = fromHex(glow);
-  const eyes = eyeShapes("working", glow, offsetX);
-  const pixels = new Uint8Array(width * height * 4);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const px = rect.x + (x + 0.5) / scale;
-      const py = rect.y + (y + 0.5) / scale;
-      const alpha = coverage(roundedRectDistance(px, py, rect, rect.h / 2), scale);
-      const eye = Math.max(
-        ...eyes.map((e) => coverage(roundedRectDistance(px, py, e, e.r), scale)),
-      );
-      const glint = coverage(glintDistance(px, py), scale) * 0.35;
-      const at = (y * width + x) * 4;
-      for (let channel = 0; channel < 3; channel++) {
-        const base = mix(visor[channel]!, lit[channel]!, eye);
-        pixels[at + channel] = Math.round(mix(base, 255, glint));
+/** Each dot rises and brightens over the first 60% of its cycle, a third of that behind the last. */
+function dotLift(t: number): number {
+  const phase = ((t % 1) + 1) % 1;
+  return phase < 0.6 ? Math.sin((Math.PI * phase) / 0.6) : 0;
+}
+
+function dotsFrame(t: number): Uint8Array {
+  const { width, height, scale, above, gap, radius, bounce } = WORKING_DOTS;
+  const w = width * scale;
+  const h = height * scale;
+  const ink = fromHex(INK);
+  const dots = [-1, 0, 1].map((slot, i) => {
+    const lift = dotLift(t - i * 0.15);
+    return { cx: width / 2 + slot * gap, cy: above - lift * bounce, alpha: 0.4 + 0.6 * lift };
+  });
+  const pixels = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const px = (x + 0.5) / scale;
+      const py = (y + 0.5) / scale;
+      let alpha = 0;
+      for (const dot of dots) {
+        const cover = coverage(Math.hypot(px - dot.cx, py - dot.cy) - radius, scale);
+        alpha = Math.max(alpha, cover * dot.alpha);
       }
+      const at = (y * w + x) * 4;
+      pixels[at] = ink[0];
+      pixels[at + 1] = ink[1];
+      pixels[at + 2] = ink[2];
       pixels[at + 3] = Math.round(alpha * 255);
     }
   }
@@ -557,37 +810,41 @@ function encodeApng(
   return new Uint8Array(bytes);
 }
 
-/** The visor-sized working loop: WORKING_SCAN.offsets frames of the working eyes. */
-export function workingScanApng(avatar: ProjectAvatar): Uint8Array {
-  const glow = GLOW[avatar.glow];
+/** The working loop: WORKING_DOTS.frames frames of the dots taking turns. */
+export function workingDotsApng(): Uint8Array {
+  const { width, height, scale, frames, frameMs } = WORKING_DOTS;
   return encodeApng(
-    WORKING_SCAN.rect.w * WORKING_SCAN.scale,
-    WORKING_SCAN.rect.h * WORKING_SCAN.scale,
-    WORKING_SCAN.offsets.map((offset) => scanFrame(glow, offset)),
-    WORKING_SCAN.frameMs,
+    width * scale,
+    height * scale,
+    Array.from({ length: frames }, (_, i) => dotsFrame(i / frames)),
+    frameMs,
   );
 }
 
-const scanUrls = new Map<string, string>();
+let dotsUrl: string | undefined;
 
-/** A `data:` URL per glow, memoized; the visor itself is the same on every bot. */
-export function workingScanDataUrl(avatar: ProjectAvatar): string {
-  let url = scanUrls.get(avatar.glow);
-  if (url === undefined) {
-    url = `data:image/png;base64,${Base64.encode(workingScanApng(avatar))}`;
-    scanUrls.set(avatar.glow, url);
-  }
-  return url;
+/** One `data:` URL for every bot: the dots are ink on clear, whatever the body colour. */
+export function workingDotsDataUrl(): string {
+  dotsUrl ??= `data:image/png;base64,${Base64.encode(workingDotsApng())}`;
+  return dotsUrl;
 }
 
-/** Where the scan overlay sits for an avatar drawn `size` pixels square. */
-export function workingScanBox(size: number): {
+/** Where the dots overlay sits for an avatar drawn `size` pixels square. */
+export function workingDotsBox(
+  avatar: ProjectAvatar,
+  size: number,
+): {
   readonly left: number;
   readonly top: number;
   readonly width: number;
   readonly height: number;
 } {
-  const unit = size / VISOR_CANVAS;
-  const { rect } = WORKING_SCAN;
-  return { left: rect.x * unit, top: rect.y * unit, width: rect.w * unit, height: rect.h * unit };
+  const unit = size / AVATAR_CANVAS;
+  const { left, above, width, height } = WORKING_DOTS;
+  return {
+    left: left * unit,
+    top: (bodyOf(avatar).eyeY - above) * unit,
+    width: width * unit,
+    height: height * unit,
+  };
 }

@@ -1,15 +1,16 @@
 import {
+  AVATAR_ACCESSORY_MIN_SIZE,
+  AVATAR_CANVAS,
+  type AvatarShape,
+  avatarShapeKey,
+  avatarShapes,
   hatchShapes,
-  VISOR_CANVAS,
-  type VisorShape,
-  visorShapeKey,
-  visorShapes,
-  workingScanBox,
-  workingScanDataUrl,
+  workingDotsBox,
+  workingDotsDataUrl,
 } from "@t3tools/client-runtime/bot-avatar";
 import type { BotStatus } from "@t3tools/client-runtime/state/bot-list";
 import type { ProjectAvatar } from "@t3tools/contracts";
-import { specFor } from "@t3tools/shared/botAvatar";
+import { lookFor } from "@t3tools/shared/botAvatar";
 import { Image } from "expo-image";
 import { useMemo } from "react";
 import { View } from "react-native";
@@ -17,14 +18,12 @@ import Svg, { Circle, Path, Rect } from "react-native-svg";
 
 import { cn } from "../../lib/cn";
 
-const SMALL = 24;
-
 const STATUS_DOT_CLASS: Partial<Record<BotStatus, string>> = {
   "needs-you": "bg-warning-foreground",
   working: "bg-adaptive-sky-600-400",
 };
 
-function Shape({ shape }: { readonly shape: VisorShape }) {
+function Shape({ shape }: { readonly shape: AvatarShape }) {
   switch (shape.kind) {
     case "rect":
       return (
@@ -50,12 +49,13 @@ function Shape({ shape }: { readonly shape: VisorShape }) {
           strokeLinecap={shape.linecap}
           strokeLinejoin="round"
           opacity={shape.opacity}
+          {...(shape.transform ? { transform: shape.transform } : {})}
         />
       );
   }
 }
 
-/** The bot's Visor; the eyes carry the status and the working loop is an APNG over the visor. */
+/** The bot's blob; the face carries the status and the working dots are an APNG over it. */
 export function BotAvatarSlot(props: {
   readonly avatar: ProjectAvatar | null;
   readonly name: string;
@@ -64,30 +64,28 @@ export function BotAvatarSlot(props: {
   readonly size: number;
 }) {
   const { avatar, name, status, size } = props;
-  const look = useMemo(() => avatar ?? specFor(name), [avatar, name]);
+  const look = useMemo(() => lookFor(avatar, name), [avatar, name]);
   const shapes = useMemo(
     () =>
-      status === "hatching"
-        ? hatchShapes(look, "egg")
-        : visorShapes(look, status, { includeAccessory: size >= SMALL }),
+      status === "hatching" ? hatchShapes(look, "egg", size) : avatarShapes(look, status, size),
     [look, status, size],
   );
-  const dotClass = size < SMALL ? STATUS_DOT_CLASS[status] : undefined;
+  const dotClass = size < AVATAR_ACCESSORY_MIN_SIZE ? STATUS_DOT_CLASS[status] : undefined;
   return (
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
       style={{ width: size, height: size }}
     >
-      <Svg width={size} height={size} viewBox={`0 0 ${VISOR_CANVAS} ${VISOR_CANVAS}`}>
+      <Svg width={size} height={size} viewBox={`0 0 ${AVATAR_CANVAS} ${AVATAR_CANVAS}`}>
         {shapes.map((shape) => (
-          <Shape key={visorShapeKey(shape)} shape={shape} />
+          <Shape key={avatarShapeKey(shape)} shape={shape} />
         ))}
       </Svg>
       {status === "working" ? (
         <Image
-          source={{ uri: workingScanDataUrl(look) }}
-          style={{ position: "absolute", ...workingScanBox(size) }}
+          source={{ uri: workingDotsDataUrl() }}
+          style={{ position: "absolute", ...workingDotsBox(look, size) }}
         />
       ) : null}
       {dotClass ? (
