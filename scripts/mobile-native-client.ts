@@ -404,7 +404,8 @@ export const prebuildAndroid = Effect.fn("nativeClient.prebuildAndroid")(functio
   );
 });
 
-const artifactNames = { ios: "T3CodeDev.app", android: "app-debug.apk" } as const;
+const iosProject = "BoopsDev";
+const artifactNames = { ios: `${iosProject}.app`, android: "app-debug.apk" } as const;
 // R2 requires equal-sized parts and Workers cap request bodies at 100 MB.
 const partSize = 64 * 1024 * 1024;
 const RemoteCredentials = Schema.fromJsonString(
@@ -716,9 +717,9 @@ const build = Effect.fn("nativeClient.build")(function* (
         [
           "xcodebuild",
           "-workspace",
-          path.join(mobile, "ios/T3CodeDev.xcworkspace"),
+          path.join(mobile, `ios/${iosProject}.xcworkspace`),
           "-scheme",
-          "T3CodeDev",
+          iosProject,
           "-configuration",
           "Debug",
           "-destination",
