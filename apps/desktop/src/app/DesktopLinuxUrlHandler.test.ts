@@ -34,7 +34,7 @@ const makeEnvironment = (path: Path.Path, overrides: Record<string, unknown> = {
     isPackaged: true,
     isDevelopment: false,
     displayName: "T3 Code (Alpha)",
-    linuxDesktopEntryName: "com.getboops.app.desktop",
+    linuxDesktopEntryName: "com.getboops.desktop.desktop",
     linuxApplicationsDir: "/home/alice/.local/share/applications",
     desktopLauncherPath: Option.none(),
     appImagePath: Option.some("/home/alice/Applications/T3-Code.AppImage"),
@@ -197,7 +197,7 @@ describe("DesktopLinuxUrlHandler", () => {
         assert.equal(recorded.files.length, 1);
         assert.equal(
           recorded.files[0]?.path,
-          "/home/alice/.local/share/applications/com.getboops.app.desktop",
+          "/home/alice/.local/share/applications/com.getboops.desktop.desktop",
         );
         assert.include(
           recorded.files[0]?.content,
@@ -211,7 +211,7 @@ describe("DesktopLinuxUrlHandler", () => {
           },
           {
             command: "xdg-mime",
-            args: ["default", "com.getboops.app.desktop", "x-scheme-handler/boops"],
+            args: ["default", "com.getboops.desktop.desktop", "x-scheme-handler/boops"],
           },
         ]);
       });
@@ -230,7 +230,7 @@ describe("DesktopLinuxUrlHandler", () => {
           displayName: "T3 Code (Alpha)",
           execTarget: process.execPath,
           scheme: "boops",
-          iconPath: "/home/alice/.local/share/icons/com.getboops.app.desktop.png",
+          iconPath: "/home/alice/.local/share/icons/com.getboops.desktop.desktop.png",
         }),
       );
     });
@@ -257,7 +257,7 @@ describe("DesktopLinuxUrlHandler", () => {
           displayName: "T3 Code (Alpha)",
           execTarget: "/home/alice/Applications/T3-Code.AppImage",
           scheme: "boops",
-          iconPath: "/home/alice/.local/share/icons/com.getboops.app.desktop.png",
+          iconPath: "/home/alice/.local/share/icons/com.getboops.desktop.desktop.png",
         }),
       });
 
@@ -270,7 +270,7 @@ describe("DesktopLinuxUrlHandler", () => {
         },
         {
           command: "xdg-mime",
-          args: ["default", "com.getboops.app.desktop", "x-scheme-handler/boops"],
+          args: ["default", "com.getboops.desktop.desktop", "x-scheme-handler/boops"],
         },
       ]);
     });
@@ -278,7 +278,7 @@ describe("DesktopLinuxUrlHandler", () => {
 
   it.effect("installs a persistent icon even when the desktop entry is already current", () => {
     const recorded = emptyRecording();
-    const iconPath = "/home/alice/.local/share/icons/com.getboops.app.desktop.png";
+    const iconPath = "/home/alice/.local/share/icons/com.getboops.desktop.desktop.png";
     return Effect.gen(function* () {
       yield* runRegister(recorded, {
         iconSource: "/tmp/.mount_T3/resources/icon.png",
@@ -326,14 +326,14 @@ describe("DesktopLinuxUrlHandler", () => {
       yield* runRegister(unpackaged, {
         environment: {
           isPackaged: false,
-          linuxDesktopEntryName: "com.getboops.app.dev.desktop",
+          linuxDesktopEntryName: "com.getboops.desktop.dev.desktop",
         },
       });
 
       assert.deepEqual(nonLinux.files, []);
       assert.equal(
         unpackaged.files[0]?.path,
-        "/home/alice/.local/share/applications/com.getboops.app.dev.desktop",
+        "/home/alice/.local/share/applications/com.getboops.desktop.dev.desktop",
       );
       assert.deepEqual(unpackaged.commands, []);
     });
@@ -353,7 +353,7 @@ describe("DesktopLinuxUrlHandler", () => {
           module: "FileSystem",
           method: "writeFileString",
           description: "read-only filesystem",
-          pathOrDescriptor: "/home/alice/.local/share/applications/com.getboops.app.desktop",
+          pathOrDescriptor: "/home/alice/.local/share/applications/com.getboops.desktop.desktop",
         }),
       });
 
@@ -569,9 +569,9 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
       yield* registerWithRealFileSystem(run);
       assert.deepEqual(
         [...(yield* fileSystem.readDirectory(fixture.appsDir))],
-        ["com.getboops.app.png"],
+        ["com.getboops.desktop.png"],
       );
-      const target = path.join(fixture.appsDir, "com.getboops.app.png");
+      const target = path.join(fixture.appsDir, "com.getboops.desktop.png");
       assert.deepEqual([...(yield* fileSystem.readFile(target))], [...icon]);
       yield* fileSystem.utimes(target, fixture.pastSeconds, fixture.pastSeconds);
 
@@ -589,7 +589,7 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
       const path = yield* Path.Path;
       const fixture = yield* themeIconFixture(new Uint8Array([1, 2, 3]));
       yield* fixture.seedCache;
-      const target = path.join(fixture.appsDir, "com.getboops.app.png");
+      const target = path.join(fixture.appsDir, "com.getboops.desktop.png");
       yield* fileSystem.writeFile(target, new Uint8Array([3, 2, 1]));
       yield* fileSystem.utimes(target, fixture.pastSeconds, fixture.pastSeconds);
       const run: ThemeIconRun = {
@@ -625,7 +625,9 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
 
       yield* registerWithRealFileSystem(run);
 
-      assert.isTrue(yield* fileSystem.exists(path.join(fixture.appsDir, "com.getboops.app.png")));
+      assert.isTrue(
+        yield* fileSystem.exists(path.join(fixture.appsDir, "com.getboops.desktop.png")),
+      );
       assert.equal(iconCacheRuns(run), 1);
     }).pipe(Effect.scoped),
   );

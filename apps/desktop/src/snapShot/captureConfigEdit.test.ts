@@ -7,7 +7,7 @@ import {
 } from "./captureConfigEdit.ts";
 import { readKdlNodes } from "./captureConfigKdl.ts";
 
-const app = "com.getboops.app";
+const app = "com.getboops.desktop";
 const binding = captureConfigBinding("niri", app, "Ctrl+Shift+2");
 
 describe("Niri capture config edits", () => {
@@ -104,7 +104,7 @@ describe("Hyprland capture config edits", () => {
   });
   it.each([
     "return {}",
-    '--[[\nhl.bind("CTRL + SHIFT + 2", hl.dsp.global("com.getboops.app:capture-window"))\n]]',
+    '--[[\nhl.bind("CTRL + SHIFT + 2", hl.dsp.global("com.getboops.desktop:capture-window"))\n]]',
   ])("does not guess how to edit complex Lua", (source) => {
     expect(() => editCaptureConfig(source, "hyprland-lua", app, "install")).toThrow("manual edit");
   });

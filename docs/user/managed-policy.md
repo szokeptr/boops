@@ -48,7 +48,7 @@ Use one of these per machine:
 
 | OS      | Native policy                                                                                        | Policy file                                       |
 | ------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| macOS   | Configuration profile for `com.getboops.app`                                                         | `/Library/Application Support/T3Code/policy.json` |
+| macOS   | Configuration profile for `com.getboops.desktop`                                                     | `/Library/Application Support/T3Code/policy.json` |
 | Windows | Group Policy template, or a `Policy` JSON value (both under `HKLM\SOFTWARE\Policies\T3Tools\T3Code`) | `C:\Program Files\T3Code\policy.json`             |
 | Linux   |                                                                                                      | `/etc/t3code/policy.json`                         |
 
@@ -59,10 +59,10 @@ refuses to start until you remove one.
 administrators.
 
 **macOS configuration profile.** Add a custom settings payload for the preference domain
-`com.getboops.app`. The payload's keys are the policy's top-level keys (`schemaVersion`,
+`com.getboops.desktop`. The payload's keys are the policy's top-level keys (`schemaVersion`,
 `organization`, `supportUrl`, `settings`, `limits`); JSON objects become dictionaries and lists
 become arrays. To make the payload from a policy file you checked, run
-`plutil -convert xml1 -o com.getboops.app.plist policy.json` and upload the result, or run
+`plutil -convert xml1 -o com.getboops.desktop.plist policy.json` and upload the result, or run
 `boops policy templates <directory> --policy policy.json` to write a complete
 `macos/t3code.mobileconfig`. Install it as
 a device profile, since Boops ignores user profiles, and deploy only one profile for this domain.
