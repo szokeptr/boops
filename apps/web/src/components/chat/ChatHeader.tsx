@@ -43,6 +43,7 @@ import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
 import { BotAvatar } from "../bots/BotAvatar";
+import { BotConversationTabs } from "../bots/BotConversationTabs";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -283,6 +284,68 @@ export const ChatHeader = memo(function ChatHeader({
       setRenaming(null);
     }
   };
+  const title =
+    renamingTitle !== null ? (
+      <input
+        autoFocus
+        dir="auto"
+        aria-label="Thread title"
+        className="min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 focus:ring-ring"
+        defaultValue={renamingTitle}
+        onBlur={(event) => {
+          if (renameCommittedRef.current) return;
+          if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.closest("button")) {
+            setRenaming(null);
+            return;
+          }
+          commitRename(event.currentTarget.value);
+        }}
+        onFocus={(event) => event.currentTarget.select()}
+        onKeyDown={handleRenameKeyDown}
+      />
+    ) : isServerThread ? (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              ref={titleButtonRef}
+              type="button"
+              aria-label={`Thread actions for ${activeThreadTitle}`}
+              aria-haspopup="menu"
+              onClick={openMenuFromTitle}
+              onDoubleClick={canOperateThread ? handleTitleDoubleClick : undefined}
+              onBlur={cancelPendingTitleMenu}
+              className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            />
+          }
+        >
+          <h2 className="min-w-0" dir={textDirection(activeThreadTitle)}>
+            <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+          </h2>
+          <ChevronDownIcon
+            aria-hidden
+            data-thread-title-chevron
+            className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100"
+          />
+        </TooltipTrigger>
+        <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+      </Tooltip>
+    ) : (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <h2
+              aria-label={activeThreadTitle}
+              className="min-w-0 flex-1"
+              dir={textDirection(activeThreadTitle)}
+            />
+          }
+        >
+          <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+        </TooltipTrigger>
+        <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+      </Tooltip>
+    );
   return (
     <div
       ref={breadcrumbContainerRef}
@@ -367,69 +430,16 @@ export const ChatHeader = memo(function ChatHeader({
               className="me-2 shrink-0"
             />
           ) : null}
-          {renamingTitle !== null ? (
-            <input
-              autoFocus
-              dir="auto"
-              aria-label="Thread title"
-              className="min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 focus:ring-ring"
-              defaultValue={renamingTitle}
-              onBlur={(event) => {
-                if (renameCommittedRef.current) return;
-                if (
-                  event.relatedTarget instanceof HTMLElement &&
-                  event.relatedTarget.closest("button")
-                ) {
-                  setRenaming(null);
-                  return;
-                }
-                commitRename(event.currentTarget.value);
-              }}
-              onFocus={(event) => event.currentTarget.select()}
-              onKeyDown={handleRenameKeyDown}
+          {isBotConversation && activeProject ? (
+            <BotConversationTabs
+              project={activeProject}
+              activeThreadId={activeThreadId}
+              drafting={!isServerThread}
+              activeTab={title}
+              onNewConversation={onNewThreadInProject}
             />
-          ) : isServerThread ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    ref={titleButtonRef}
-                    type="button"
-                    aria-label={`Thread actions for ${activeThreadTitle}`}
-                    aria-haspopup="menu"
-                    onClick={openMenuFromTitle}
-                    onDoubleClick={canOperateThread ? handleTitleDoubleClick : undefined}
-                    onBlur={cancelPendingTitleMenu}
-                    className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                  />
-                }
-              >
-                <h2 className="min-w-0" dir={textDirection(activeThreadTitle)}>
-                  <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
-                </h2>
-                <ChevronDownIcon
-                  aria-hidden
-                  data-thread-title-chevron
-                  className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100"
-                />
-              </TooltipTrigger>
-              <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
-            </Tooltip>
           ) : (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <h2
-                    aria-label={activeThreadTitle}
-                    className="min-w-0 flex-1"
-                    dir={textDirection(activeThreadTitle)}
-                  />
-                }
-              >
-                <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
-              </TooltipTrigger>
-              <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
-            </Tooltip>
+            title
           )}
           {renamingTitle === null && activeThreadLinkOrigin ? (
             <Tooltip>

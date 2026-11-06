@@ -94,7 +94,7 @@ export function BotActivityView(props: {
           <EmptyHeader>
             <EmptyTitle>No activity yet</EmptyTitle>
             <EmptyDescription>
-              Routine runs and other work this bot does outside its conversation show up here.
+              Helpers, its Heartbeat and other work this bot does on its own show up here.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

@@ -39,6 +39,7 @@ import { useStableCallback } from "../hooks/useStableCallback";
 import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { isBotConversationThread } from "@t3tools/client-runtime/state/bot-list";
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { useUsageLimitsPanel } from "./chat/useUsageLimitsPanel";
@@ -1161,11 +1162,18 @@ export default function ChatView(props: ChatViewProps) {
     threadProvider,
     providers: providerStatuses,
   });
-  // A bot's conversation switches provider through a fresh session instead of a handoff.
+  // A bot's main conversation switches provider through a fresh session instead of a handoff.
+  const botMainThreadId = activeProject?.mainThreadId ?? null;
+  const isBotMainConversation = activeThread !== undefined && botMainThreadId === activeThread.id;
+  // Chats the user starts beside it read the same way; its helpers and Heartbeat show their work.
   const isBotConversation =
-    activeThread !== undefined && activeProject?.mainThreadId === activeThread.id;
+    isBotMainConversation ||
+    (botMainThreadId !== null &&
+      (serverThread === null
+        ? isLocalDraftThread
+        : isBotConversationThread(serverThread, botMainThreadId)));
   const modelPickerLockedProvider =
-    supportsProviderSwitchingViaHandoff || isBotConversation ? null : lockedProvider;
+    supportsProviderSwitchingViaHandoff || isBotMainConversation ? null : lockedProvider;
   const supportsPullRequests = serverConfig !== null;
   const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
   const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
@@ -2649,7 +2657,7 @@ export default function ChatView(props: ChatViewProps) {
     setPendingServerThreadEnvModeEntry,
     setPendingServerThreadStartFromOriginByThreadId,
     scheduleComposerFocus,
-    isBotConversation,
+    isBotMainConversation,
   });
   const { onResume, isResuming } = useComposerResume({
     environmentId,
@@ -3116,7 +3124,9 @@ export default function ChatView(props: ChatViewProps) {
               activeThreadEnvironmentId={activeThread.environmentId}
               activeThreadId={activeThread.id}
               isServerThread={isServerThread}
-              activeThreadTitle={activeThread.title}
+              activeThreadTitle={
+                isBotConversation && !isServerThread ? "New conversation" : activeThread.title
+              }
               activeThreadLinkOrigin={activeThreadShell?.linkOrigin?.label ?? null}
               activeProject={activeProject ?? null}
               parentThreadLink={headerParentThreadLink}

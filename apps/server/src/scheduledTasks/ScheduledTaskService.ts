@@ -1,4 +1,5 @@
 import {
+  botHeartbeatThreadId,
   CommandId,
   MessageId,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
@@ -90,7 +91,7 @@ export const heartbeatTaskId = (projectId: ProjectId) =>
   ScheduledTaskId.make(`heartbeat:${projectId}`);
 
 /** One background thread per bot, so its heartbeat runs never show in the main conversation. */
-export const heartbeatThreadId = (projectId: ProjectId) => ThreadId.make(`heartbeat:${projectId}`);
+export const heartbeatThreadId = botHeartbeatThreadId;
 const NO_TARGET_THREAD =
   "This routine has no target thread. Edit it to post into a bot's conversation.";
 const WEBHOOK_DELIVERY_RETENTION = 50;

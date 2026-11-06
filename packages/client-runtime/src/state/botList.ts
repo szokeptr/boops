@@ -1,5 +1,7 @@
 import {
+  botHeartbeatThreadId,
   botMainThreadId,
+  isListedThreadLineage,
   type BotAutonomy,
   type EnvironmentId,
   type ProjectAvatar,
@@ -37,6 +39,11 @@ export interface BotThreadRow {
   readonly lastActivityAt: string;
 }
 
+/** One tab of a bot's conversations; the main one leads. */
+export interface BotConversationTab extends BotThreadRow {
+  readonly main: boolean;
+}
+
 export interface BotRow {
   /** `environmentId:projectId`, unique across linked environments. */
   readonly key: string;
@@ -52,7 +59,7 @@ export interface BotRow {
   readonly status: BotStatus;
   readonly unread: boolean;
   readonly lastActivityAt: string;
-  /** Live threads besides the main one, which the bot's activity view lists. */
+  /** Background threads (helpers, Heartbeat), which the bot's activity view lists. */
   readonly activityThreadCount: number;
   /** Name of the bot that created this one, for the "made by" badge. */
   readonly madeBy: string | null;
@@ -106,6 +113,20 @@ function botThreads(
       thread.environmentId === project.environmentId &&
       thread.projectId === project.id &&
       isListedThread(thread),
+  );
+}
+
+/**
+ * A thread the user talks to the bot in: its main one, or one started beside it. Helpers, side
+ * chats and the Heartbeat thread are the bot's background work, which Activity lists.
+ */
+export function isBotConversationThread(
+  thread: Pick<EnvironmentThreadShell, "id" | "projectId" | "lineage">,
+  mainThreadId: ThreadId | null,
+): boolean {
+  return (
+    thread.id === mainThreadId ||
+    (isListedThreadLineage(thread.lineage) && thread.id !== botHeartbeatThreadId(thread.projectId))
   );
 }
 
@@ -248,6 +269,7 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
             ? "dozing"
             : "idle";
     const message = main?.source.latestVisibleMessage ?? null;
+    const conversations = threads.filter((thread) => isBotConversationThread(thread, mainThreadId));
     rows.push({
       key,
       environmentId: project.environmentId,
@@ -259,9 +281,9 @@ export function deriveBotList(input: BotListInput): ReadonlyArray<BotRow> {
       lastMessagePreview: message === null ? null : botMessagePreview(message.text),
       lastMessageFromUser: message?.role === "user",
       status,
-      unread: main !== null && isThreadUnread(main, input.localLastVisitedAt),
+      unread: conversations.some((thread) => isThreadUnread(thread, input.localLastVisitedAt)),
       lastActivityAt,
-      activityThreadCount: threads.filter((thread) => thread.id !== mainThreadId).length,
+      activityThreadCount: threads.length - conversations.length,
       madeBy:
         project.parentBotProjectId == null
           ? null
@@ -317,7 +339,21 @@ export function liveBotDescendants(
   return found;
 }
 
-/** A bot's threads other than its main one, most recently active first. */
+function botThreadRow(
+  thread: EnvironmentThreadShell,
+  localLastVisitedAt: Readonly<Record<string, string>> | undefined,
+): BotThreadRow {
+  return {
+    environmentId: thread.environmentId,
+    threadId: thread.id,
+    title: thread.title,
+    status: botStatusOfThread(thread),
+    unread: isThreadUnread(thread, localLastVisitedAt),
+    lastActivityAt: threadActivityAt(thread),
+  };
+}
+
+/** A bot's background threads, most recently active first. */
 export function deriveBotActivity(input: {
   readonly project: Pick<EnvironmentProject, "environmentId" | "id" | "mainThreadId">;
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
@@ -326,16 +362,34 @@ export function deriveBotActivity(input: {
   const threads = botThreads(input.project, input.threads);
   const mainThreadId = botMainThreadId(input.project, threads);
   return threads
-    .filter((thread) => thread.id !== mainThreadId)
-    .map((thread): BotThreadRow => ({
-      environmentId: thread.environmentId,
-      threadId: thread.id,
-      title: thread.title,
-      status: botStatusOfThread(thread),
-      unread: isThreadUnread(thread, input.localLastVisitedAt),
-      lastActivityAt: threadActivityAt(thread),
-    }))
+    .filter((thread) => !isBotConversationThread(thread, mainThreadId))
+    .map((thread) => botThreadRow(thread, input.localLastVisitedAt))
     .sort((a, b) => compareByActivity(a, b, a.threadId, b.threadId));
+}
+
+/**
+ * A bot's conversations as tabs: the main one, then the ones the user started, oldest first so
+ * tabs stay put as they get busy. Empty until the bot has a thread.
+ */
+export function deriveBotConversations(input: {
+  readonly project: Pick<EnvironmentProject, "environmentId" | "id" | "mainThreadId">;
+  readonly threads: ReadonlyArray<EnvironmentThreadShell>;
+  readonly localLastVisitedAt?: Readonly<Record<string, string>>;
+}): ReadonlyArray<BotConversationTab> {
+  const threads = botThreads(input.project, input.threads);
+  const mainThreadId = botMainThreadId(input.project, threads);
+  return threads
+    .filter((thread) => isBotConversationThread(thread, mainThreadId))
+    .sort(
+      (a, b) =>
+        Number(b.id === mainThreadId) - Number(a.id === mainThreadId) ||
+        (toSortableTimestamp(a.createdAt) ?? 0) - (toSortableTimestamp(b.createdAt) ?? 0) ||
+        a.id.localeCompare(b.id),
+    )
+    .map((thread) => ({
+      ...botThreadRow(thread, input.localLastVisitedAt),
+      main: thread.id === mainThreadId,
+    }));
 }
 
 /** The bot's main thread id, read from the shells this client holds. */

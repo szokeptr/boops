@@ -1,4 +1,5 @@
 import {
+  botHeartbeatThreadId,
   EnvironmentId,
   MessageId,
   ProjectId,
@@ -14,6 +15,7 @@ import {
   botMessagePreview,
   botMonogram,
   deriveBotActivity,
+  deriveBotConversations,
   deriveBotList,
   liveBotDescendants,
   resolveBotMainThreadId,
@@ -247,7 +249,7 @@ describe("deriveBotList", () => {
         message("  hello\n\n  there ", "2026-06-09T00:00:00.000Z", "user"),
       ),
       // A newer background run does not move the bot; only the conversation does.
-      thread(laptop, "quiet", "quiet-routine", {
+      thread(laptop, "quiet", botHeartbeatThreadId(ProjectId.make("quiet")), {
         createdAt: at("2026-06-04T00:00:00.000Z"),
         ...message("routine", "2026-06-10T00:00:00.000Z"),
       }),
@@ -349,35 +351,80 @@ describe("deriveBotList", () => {
   });
 });
 
-describe("deriveBotActivity", () => {
-  it("lists the bot's other live threads, most recent first", () => {
-    const bot = project(laptop, "bot");
-    const threads = [
-      thread(laptop, "bot", "main", message("hi", "2026-06-20T00:00:00.000Z")),
-      thread(laptop, "bot", "older-run", {
-        createdAt: at("2026-06-03T00:00:00.000Z"),
-        ...message("done", "2026-06-04T00:00:00.000Z"),
-      }),
-      thread(laptop, "bot", "newer-run", {
-        createdAt: at("2026-06-05T00:00:00.000Z"),
-        latestRunId: RunId.make("run-2"),
-        activeRunId: RunId.make("run-2"),
-        status: "running",
-        ...message("working on it", "2026-06-06T00:00:00.000Z"),
-      }),
-      thread(laptop, "bot", "archived-run", {
-        createdAt: at("2026-06-05T00:00:00.000Z"),
-        archivedAt: at("2026-06-07T00:00:00.000Z"),
-      }),
-      thread(laptop, "other-bot", "foreign"),
-    ];
+describe("deriveBotActivity and deriveBotConversations", () => {
+  const bot = project(laptop, "bot");
+  const helper = (id: string) => ({
+    lineage: {
+      rootThreadId: ThreadId.make("main"),
+      parentThreadId: ThreadId.make("main"),
+      relationshipToParent: "subagent" as const,
+    },
+    title: id,
+  });
+  const threads = [
+    thread(laptop, "bot", "main", message("hi", "2026-06-20T00:00:00.000Z")),
+    thread(laptop, "bot", botHeartbeatThreadId(ProjectId.make("bot")), {
+      createdAt: at("2026-06-03T00:00:00.000Z"),
+      ...message("nothing due", "2026-06-04T00:00:00.000Z"),
+    }),
+    thread(laptop, "bot", "helper", {
+      ...helper("helper"),
+      createdAt: at("2026-06-05T00:00:00.000Z"),
+      latestRunId: RunId.make("run-2"),
+      activeRunId: RunId.make("run-2"),
+      status: "running",
+      ...message("working on it", "2026-06-06T00:00:00.000Z"),
+    }),
+    thread(laptop, "bot", "newer-chat", {
+      createdAt: at("2026-06-09T00:00:00.000Z"),
+      ...message("sure", "2026-06-09T00:00:00.000Z"),
+    }),
+    thread(laptop, "bot", "older-chat", {
+      createdAt: at("2026-06-08T00:00:00.000Z"),
+      ...message("later reply", "2026-06-21T00:00:00.000Z"),
+    }),
+    thread(laptop, "bot", "archived-chat", {
+      createdAt: at("2026-06-05T00:00:00.000Z"),
+      archivedAt: at("2026-06-07T00:00:00.000Z"),
+    }),
+    thread(laptop, "other-bot", "foreign"),
+  ];
 
+  it("Activity lists the bot's background threads, most recent first", () => {
     expect(
       deriveBotActivity({ project: bot, threads }).map((row) => [row.threadId, row.status]),
     ).toEqual([
-      ["newer-run", "working"],
-      ["older-run", "idle"],
+      ["helper", "working"],
+      [`heartbeat:bot`, "idle"],
     ]);
+  });
+
+  it("tabs lead with the main conversation, then the user's by when they started", () => {
+    expect(
+      deriveBotConversations({ project: bot, threads }).map((tab) => [tab.threadId, tab.main]),
+    ).toEqual([
+      ["main", true],
+      ["older-chat", false],
+      ["newer-chat", false],
+    ]);
+  });
+
+  it("a bot reads unread from any conversation, and counts only background work", () => {
+    const [row] = deriveBotList({
+      projects: [bot],
+      threads: threads.map((candidate) =>
+        candidate.id === "older-chat"
+          ? thread(laptop, "bot", "older-chat", {
+              latestRunId: RunId.make("run-1"),
+              status: "completed",
+              latestRunCompletedAt: at("2026-06-21T00:00:00.000Z"),
+              lastVisitedAt: at("2026-06-20T00:00:00.000Z"),
+            })
+          : candidate,
+      ),
+      machineLabels,
+    });
+    expect(row).toMatchObject({ unread: true, activityThreadCount: 2 });
   });
 });
 
