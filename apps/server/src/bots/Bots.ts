@@ -199,13 +199,14 @@ const MAX_SLUG_ATTEMPTS = 100;
 const BOT_HOME_BASES = ["boops", "pocks"] as const;
 
 // The injected bot instructions drive the interview; this only gives the bot its first turn.
-export const HATCH_KICKOFF_TEXT = "You were just created. Start hatching.";
+export const hatchKickoffText = (name: string) =>
+  `You were just created and named ${name}. Start hatching.`;
 
-export const childHatchKickoffText = (parentName: string) =>
-  `You were just created by ${parentName}, another bot. Start hatching.`;
+export const childHatchKickoffText = (parentName: string, name: string) =>
+  `You were just created by ${parentName}, another bot, and named ${name}. Start hatching.`;
 
-export const childBriefKickoffText = (parentName: string, brief: string) =>
-  `You were just created by ${parentName}, another bot, from this brief instead of a hatching interview. Write PERSONA.md and your first memory notes from it, add a routine if it calls for one, then start. Tell ${parentName} what matters with report_to_parent.\n\nBrief:\n${brief}`;
+export const childBriefKickoffText = (parentName: string, name: string, brief: string) =>
+  `You were just created by ${parentName}, another bot, and named ${name}, from this brief instead of a hatching interview. Write PERSONA.md and your first memory notes from it, add a routine if it calls for one, then start. Tell ${parentName} what matters with report_to_parent.\n\nBrief:\n${brief}`;
 
 // Agents read who sent a family message from this line; people see the sender on the message row.
 const READ_TEXT_MAX_CHARS = 4_000;
@@ -370,7 +371,7 @@ const make = Effect.gen(function* () {
   });
 
   const create: Bots["Service"]["create"] = ({ hatch, ...input }) =>
-    createBot(input, { kickoff: (hatch ?? true) ? { text: HATCH_KICKOFF_TEXT } : null });
+    createBot(input, { kickoff: (hatch ?? true) ? { text: hatchKickoffText(input.name) } : null });
 
   const familyError = (reason: BotFamilyError["reason"], detail: string) =>
     new BotFamilyError({ reason, detail });
@@ -480,10 +481,10 @@ const make = Effect.gen(function* () {
         kickoff:
           input.mode === "brief" && input.brief !== undefined
             ? {
-                text: childBriefKickoffText(parent.title, input.brief),
+                text: childBriefKickoffText(parent.title, input.name, input.brief),
                 senderThreadId: parentThreadId,
               }
-            : { text: childHatchKickoffText(parent.title) },
+            : { text: childHatchKickoffText(parent.title, input.name) },
       },
     );
   });
