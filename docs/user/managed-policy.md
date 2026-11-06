@@ -128,7 +128,7 @@ cannot enforce, so upgrade Boops before you deploy a policy that uses them.
 
 Each key under `settings` is a setting's path in the server's `settings.json`, such as
 `storageCleanup.logsAfterDays`. To find a path, change the setting in Boops and look in
-`settings.json` under `~/.t3/userdata`.
+`settings.json` under `~/.boops/userdata`.
 
 - `"locked": false` sets a default. It applies wherever the user has not chosen a value of their
   own, and users can change it.
