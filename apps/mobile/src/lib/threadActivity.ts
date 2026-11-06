@@ -32,6 +32,7 @@ import {
   type WorkLogToolLifecycleStatus,
 } from "@t3tools/client-runtime/work-log/presentation";
 import {
+  resolveBotMessageToolCall,
   resolveT3McpToolDefinition,
   resolveT3McpToolPresentation,
   type T3McpToolLogo,
@@ -245,8 +246,26 @@ export interface ThreadFeedBotExchange {
   readonly type: "bot-exchange";
   readonly id: string;
   readonly createdAt: string;
-  readonly peers: ReadonlyArray<{ readonly name: string; readonly projectId: ProjectId | null }>;
-  readonly messages: ReadonlyArray<ThreadFeedMessage>;
+  /** A null name is a bot the client names from its project. */
+  readonly peers: ReadonlyArray<{
+    readonly name: string | null;
+    readonly projectId: ProjectId | null;
+  }>;
+  readonly entries: ReadonlyArray<ThreadFeedBotExchangeEntry>;
+}
+
+export type ThreadFeedBotExchangeEntry =
+  | { readonly kind: "message"; readonly message: ThreadFeedMessage }
+  | ThreadFeedSentBotMessage;
+
+/** This bot's message to the peer, sent through a tool call the DM otherwise hides. */
+interface ThreadFeedSentBotMessage {
+  readonly kind: "sent";
+  readonly id: string;
+  readonly createdAt: string;
+  readonly to: ProjectId | null;
+  readonly text: string;
+  readonly status: "sending" | "sent" | "failed";
 }
 
 export interface ThreadFeedLatestRun {
@@ -1656,6 +1675,7 @@ const DIRECT_MESSAGE_ITEM_TYPES: ReadonlySet<string> = new Set([
 export function deriveDirectMessageFeed(
   feed: ReadonlyArray<ThreadFeedEntry>,
   typingSince: string | null,
+  parentProjectId: ProjectId | null = null,
 ): ThreadFeedEntry[] {
   const kept = feed.filter((entry) => {
     switch (entry.type) {
@@ -1674,73 +1694,151 @@ export function deriveDirectMessageFeed(
         return false;
     }
   });
-  const folded = foldBotExchanges(kept);
+  const folded = foldBotExchanges(kept, sentBotMessages(feed, parentProjectId));
   const last = folded.at(-1);
   const replying = last?.type === "message" && last.message.streaming;
   return typingSince === null || replying ? folded : [...folded, thinkingRow(typingSince, null)];
 }
 
-const botExchangeRows = new WeakMap<ThreadFeedEntry, ThreadFeedBotExchange>();
+const sentBotMessageCache = new WeakMap<ThreadFeedActivity, ThreadFeedSentBotMessage>();
+
+function sentBotMessages(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+  parentProjectId: ProjectId | null,
+): ThreadFeedSentBotMessage[] {
+  return feed.flatMap((entry) =>
+    entry.type !== "activity-group"
+      ? []
+      : entry.activities.flatMap((activity): ThreadFeedSentBotMessage[] => {
+          const item = activity.projectedItem.item;
+          if (item.type !== "dynamic_tool") return [];
+          const call = resolveBotMessageToolCall(item.toolName, item.input);
+          if (call === null) return [];
+          const to = (call.to ?? parentProjectId) as ProjectId | null;
+          const cached = sentBotMessageCache.get(activity);
+          if (cached?.to === to) return [cached];
+          const sent: ThreadFeedSentBotMessage = {
+            kind: "sent",
+            id: activity.id,
+            createdAt: activity.createdAt,
+            to,
+            text: call.text,
+            status:
+              item.status === "completed"
+                ? "sent"
+                : item.status === "failed" ||
+                    item.status === "cancelled" ||
+                    item.status === "interrupted"
+                  ? "failed"
+                  : "sending",
+          };
+          sentBotMessageCache.set(activity, sent);
+          return [sent];
+        }),
+  );
+}
+
+interface OpenBotExchange {
+  /** Stable source object the exchange starts at; keys the row cache. */
+  readonly first: ThreadFeedEntry | ThreadFeedSentBotMessage;
+  readonly peers: Array<ThreadFeedBotExchange["peers"][number]>;
+  readonly entries: ThreadFeedBotExchangeEntry[];
+}
+
+const botExchangeRows = new WeakMap<object, ThreadFeedBotExchange>();
+
+function botExchangeRow({ first, peers, entries }: OpenBotExchange): ThreadFeedBotExchange {
+  const previous = botExchangeRows.get(first);
+  // Reusing the row keeps the list from re-rendering an exchange that did not change.
+  const row =
+    previous !== undefined &&
+    previous.peers.length === peers.length &&
+    previous.peers.every((peer, index) => peer.projectId === peers[index]?.projectId) &&
+    previous.entries.length === entries.length &&
+    previous.entries.every((entry, index) => {
+      const other = entries[index];
+      return entry.kind === "message"
+        ? other?.kind === "message" && other.message === entry.message
+        : other === entry;
+    })
+      ? previous
+      : {
+          type: "bot-exchange" as const,
+          id: `bot-exchange:${first.id}`,
+          createdAt: first.createdAt,
+          peers,
+          entries,
+        };
+  botExchangeRows.set(first, row);
+  return row;
+}
 
 /**
- * A message from the bot's parent or child bot, and the bot's replies until another user-role
- * message arrives, fold into one exchange at the first message. Other rows keep their places.
+ * Talk with the bot's parent or child bot folds into one exchange where it starts: a message from
+ * that bot, and this bot's messages to it. The bot's replies fold in only in a turn the other bot
+ * started; elsewhere they stay visible and end the exchange, as does any other user message.
  */
-function foldBotExchanges(entries: ReadonlyArray<ThreadFeedEntry>): ThreadFeedEntry[] {
-  const result: ThreadFeedEntry[] = [];
-  let open: {
-    readonly index: number;
-    readonly first: ThreadFeedEntry;
-    readonly peers: Array<ThreadFeedBotExchange["peers"][number]>;
-    readonly messages: ThreadFeedMessage[];
-  } | null = null;
-  const close = () => {
-    if (open === null) return;
-    const previous = botExchangeRows.get(open.first);
-    const { peers, messages } = open;
-    // Reusing the row keeps the list from re-rendering an exchange that did not change.
-    const row =
-      previous !== undefined &&
-      previous.peers.length === peers.length &&
-      previous.messages.length === messages.length &&
-      previous.messages.every((message, index) => message === messages[index])
-        ? previous
-        : {
-            type: "bot-exchange" as const,
-            id: `bot-exchange:${open.first.id}`,
-            createdAt: open.first.createdAt,
-            peers,
-            messages,
-          };
-    botExchangeRows.set(open.first, row);
-    result[open.index] = row;
-    open = null;
+function foldBotExchanges(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+  sent: ReadonlyArray<ThreadFeedSentBotMessage>,
+): ThreadFeedEntry[] {
+  const units: Array<ThreadFeedEntry | ThreadFeedSentBotMessage> = [...feed];
+  for (const message of sent) {
+    const at = units.findIndex((unit) => unit.createdAt > message.createdAt);
+    units.splice(at < 0 ? units.length : at, 0, message);
+  }
+  const result: Array<ThreadFeedEntry | OpenBotExchange> = [];
+  let open: OpenBotExchange | null = null;
+  let botTurn = false;
+  const add = (
+    first: OpenBotExchange["first"],
+    entry: ThreadFeedBotExchangeEntry,
+    peer: OpenBotExchange["peers"][number] | null,
+  ) => {
+    if (open === null) {
+      open = { first, peers: [], entries: [] };
+      result.push(open);
+    }
+    if (
+      peer !== null &&
+      !open.peers.some((existing) =>
+        peer.projectId !== null
+          ? existing.projectId === peer.projectId
+          : existing.name === peer.name,
+      )
+    ) {
+      open.peers.push(peer);
+    }
+    open.entries.push(entry);
   };
-  for (const entry of entries) {
-    if (entry.type !== "message") {
-      result.push(entry);
-    } else if (entry.message.role === "assistant") {
-      if (open === null) result.push(entry);
-      else open.messages.push(entry.message);
+  for (const unit of units) {
+    if ("kind" in unit) {
+      add(unit, unit, { name: null, projectId: unit.to });
+    } else if (unit.type !== "message") {
+      result.push(unit);
+    } else if (unit.message.role === "assistant") {
+      if (botTurn && open !== null) {
+        add(unit, { kind: "message", message: unit.message }, null);
+      } else {
+        open = null;
+        result.push(unit);
+      }
     } else {
-      const bot = resolveUserMessagePresentation(entry.message).bot;
+      const bot = resolveUserMessagePresentation(unit.message).bot;
+      botTurn = bot !== undefined && !bot.background;
       if (bot === undefined || bot.background) {
-        close();
-        result.push(entry);
-        continue;
+        open = null;
+        result.push(unit);
+      } else {
+        add(
+          unit,
+          { kind: "message", message: unit.message },
+          { name: bot.name, projectId: bot.projectId },
+        );
       }
-      if (open === null) {
-        open = { index: result.length, first: entry, peers: [], messages: [] };
-        result.push(entry);
-      }
-      if (!open.peers.some((peer) => peer.name === bot.name)) {
-        open.peers.push({ name: bot.name, projectId: bot.projectId });
-      }
-      open.messages.push(entry.message);
     }
   }
-  close();
-  return result;
+  return result.map((row) => ("first" in row ? botExchangeRow(row) : row));
 }
 
 const continuedWorkLogRows = new WeakMap<ThreadFeedEntry, ThreadFeedEntry>();

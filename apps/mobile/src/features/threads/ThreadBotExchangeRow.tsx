@@ -1,38 +1,58 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
-import type { EnvironmentId, ProjectAvatar, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectAvatar } from "@t3tools/contracts";
 import * as Haptics from "expo-haptics";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { type ColorValue, Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
-import type { ThreadFeedBotExchange } from "../../lib/threadActivity";
+import type { ThreadFeedBotExchange, ThreadFeedBotExchangeEntry } from "../../lib/threadActivity";
 import { useProject } from "../../state/entities";
 import { BotAvatarSlot } from "../bots/BotAvatarSlot";
 import { ThreadDisclosureChevron } from "./thread-work-log";
 
-function joinNames(names: ReadonlyArray<string>): string {
-  return names.length <= 1
-    ? (names[0] ?? "")
-    : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+type Peer = ThreadFeedBotExchange["peers"][number];
+
+function usePeerProject(environmentId: EnvironmentId, peer: Peer) {
+  return useProject(
+    peer.projectId === null ? null : scopeProjectRef(environmentId, peer.projectId),
+  );
 }
 
-function PeerAvatar(props: {
-  readonly environmentId: EnvironmentId;
-  readonly name: string;
-  readonly projectId: ProjectId | null;
-}) {
-  const project = useProject(
-    props.projectId === null ? null : scopeProjectRef(props.environmentId, props.projectId),
-  );
+function PeerAvatar(props: { readonly environmentId: EnvironmentId; readonly peer: Peer }) {
+  const project = usePeerProject(props.environmentId, props.peer);
   return (
     <BotAvatarSlot
       avatar={project?.avatar ?? null}
-      name={project?.title ?? props.name}
+      name={project?.title ?? props.peer.name ?? "Bot"}
       status="idle"
       size={16}
     />
   );
+}
+
+function PeerName(props: { readonly environmentId: EnvironmentId; readonly peer: Peer }) {
+  const project = usePeerProject(props.environmentId, props.peer);
+  return <>{project?.title ?? props.peer.name ?? "a bot"}</>;
+}
+
+function peerKey(peer: Peer, index: number): string {
+  return peer.projectId ?? peer.name ?? String(index);
+}
+
+/** What the pill says: the send in flight until the other bot answers, then the talk. */
+function exchangeVerb(entries: ReadonlyArray<ThreadFeedBotExchangeEntry>): string {
+  if (entries.some((entry) => entry.kind === "message" && entry.message.role === "user")) {
+    return "Talked with";
+  }
+  const last = entries.findLast((entry) => entry.kind === "sent");
+  return last?.kind !== "sent"
+    ? "Talked with"
+    : last.status === "sending"
+      ? "Messaging"
+      : last.status === "failed"
+        ? "Couldn't message"
+        : "Messaged";
 }
 
 /** Talk between this bot and its parent or child bot, folded to a pill that opens a mini thread. */
@@ -46,14 +66,13 @@ export function ThreadBotExchangeRow(props: {
   readonly renderMarkdown: (text: string) => ReactNode;
 }) {
   const { entry, expanded } = props;
-  const names = joinNames(entry.peers.map((peer) => peer.name));
-  const count = entry.messages.length;
+  const verb = exchangeVerb(entry.entries);
+  const count = entry.entries.length;
   return (
     <View className="mb-5">
       <View className="items-center">
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Talked with ${names}, ${count} ${count === 1 ? "message" : "messages"}`}
           accessibilityState={{ expanded }}
           hitSlop={4}
           className="min-h-9 max-w-full flex-row items-center gap-2 rounded-full border border-border px-3 py-1.5"
@@ -64,19 +83,26 @@ export function ThreadBotExchangeRow(props: {
         >
           <View className="flex-row">
             {entry.peers.slice(0, 3).map((peer, index) => (
-              <View key={peer.name} style={index > 0 ? { marginLeft: -4 } : undefined}>
-                <PeerAvatar
-                  environmentId={props.environmentId}
-                  name={peer.name}
-                  projectId={peer.projectId}
-                />
+              <View key={peerKey(peer, index)} style={index > 0 ? { marginLeft: -4 } : undefined}>
+                <PeerAvatar environmentId={props.environmentId} peer={peer} />
               </View>
             ))}
           </View>
           <Text numberOfLines={1} className="min-w-0 shrink text-xs text-foreground-muted">
-            Talked with <Text className="font-t3-medium text-xs text-foreground">{names}</Text>
+            {verb}{" "}
+            <Text className="font-t3-medium text-xs text-foreground">
+              {entry.peers.map((peer, index) => (
+                <Fragment key={peerKey(peer, index)}>
+                  {index === 0 ? null : index === entry.peers.length - 1 ? " and " : ", "}
+                  <PeerName environmentId={props.environmentId} peer={peer} />
+                </Fragment>
+              ))}
+            </Text>
+            {verb === "Messaging" ? "…" : null}
           </Text>
-          <Text className="text-xs tabular-nums text-foreground-muted">· {count}</Text>
+          {count > 1 ? (
+            <Text className="text-xs tabular-nums text-foreground-muted">· {count}</Text>
+          ) : null}
           <ThreadDisclosureChevron
             expanded={expanded}
             collapsedDirection="down"
@@ -87,13 +113,21 @@ export function ThreadBotExchangeRow(props: {
       </View>
       {expanded ? (
         <View className="mt-2 gap-3 rounded-2xl border border-border p-3">
-          {entry.messages.map((message) => {
-            const { bot, text } = resolveUserMessagePresentation(message);
-            const peer = message.role === "user" && bot !== undefined ? bot : null;
+          {entry.entries.map((item) => {
+            const presentation =
+              item.kind === "message" ? resolveUserMessagePresentation(item.message) : null;
+            const bot =
+              item.kind === "message" && item.message.role === "user"
+                ? presentation?.bot
+                : undefined;
+            const text = item.kind === "sent" ? item.text : (presentation?.text ?? "");
             return (
-              <View key={message.id} className="min-w-0 gap-1">
+              <View
+                key={item.kind === "message" ? item.message.id : item.id}
+                className="min-w-0 gap-1"
+              >
                 <View className="flex-row items-center gap-1.5">
-                  {peer === null ? (
+                  {bot === undefined ? (
                     <BotAvatarSlot
                       avatar={props.bot.avatar}
                       name={props.bot.name}
@@ -101,15 +135,16 @@ export function ThreadBotExchangeRow(props: {
                       size={16}
                     />
                   ) : (
-                    <PeerAvatar
-                      environmentId={props.environmentId}
-                      name={peer.name}
-                      projectId={peer.projectId}
-                    />
+                    <PeerAvatar environmentId={props.environmentId} peer={bot} />
                   )}
                   <Text numberOfLines={1} className="shrink font-t3-medium text-xs text-foreground">
-                    {peer?.name ?? props.bot.name}
+                    {bot?.name ?? props.bot.name}
                   </Text>
+                  {item.kind === "sent" && item.status !== "sent" ? (
+                    <Text className="text-xs text-foreground-muted">
+                      {item.status === "sending" ? "Sending…" : "Not delivered"}
+                    </Text>
+                  ) : null}
                 </View>
                 <View className="min-w-0 pl-[22px]">{props.renderMarkdown(text)}</View>
               </View>
