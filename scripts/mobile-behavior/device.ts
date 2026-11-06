@@ -29,7 +29,7 @@ export class DeviceError extends Schema.TaggedError<DeviceError>()("DeviceError"
   message: Schema.String,
 }) {}
 
-export const APP_ID = "com.getboops.app.dev";
+export const APP_ID = "com.getboops.ios.dev";
 export const SCHEME = "boops-dev";
 
 export interface ProbeState {

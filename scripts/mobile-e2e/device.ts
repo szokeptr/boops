@@ -7,7 +7,10 @@ import * as NodeProcess from "node:process";
 import type { Snapshot } from "./checks.ts";
 import type { Pose } from "./poses.ts";
 
-export const BUNDLE_ID = "com.getboops.app.dev";
+export const BUNDLE_IDS = {
+  ios: "com.getboops.ios.dev",
+  android: "com.getboops.app.dev",
+} as const satisfies Record<Pose["platform"], string>;
 
 export interface RunResult {
   readonly code: number;
@@ -171,7 +174,7 @@ export class Device {
     await this.agent(
       [
         "open",
-        BUNDLE_ID,
+        BUNDLE_IDS[this.pose.platform],
         `boops-dev://expo-development-client/?url=${url}&disableOnboarding=1&disableFab=1&disableAutoLaunch=1`,
         // A real keyboard, so the layout under it is what people see.
         ...(this.pose.platform === "android" ? ["--no-test-ime"] : []),
@@ -198,7 +201,7 @@ export class Device {
   }
 
   async openUrl(url: string) {
-    await this.agent(["open", BUNDLE_ID, url]);
+    await this.agent(["open", BUNDLE_IDS[this.pose.platform], url]);
     await this.acceptOpenPrompt();
   }
 
