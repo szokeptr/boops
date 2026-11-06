@@ -1,50 +1,128 @@
 import { useIsFocused } from "@react-navigation/native";
-import { useContext, useEffect, useState } from "react";
-import { View } from "react-native";
+import { type ReactNode, useEffect, useState } from "react";
+import { Animated as NativeAnimated, Easing, View, useAnimatedValue } from "react-native";
 
-import { AppText as Text } from "../../components/ui/AppText";
 import { usePaneRole } from "../../components/ui/Pane";
 import { useAppActive, useReduceMotionEnabled } from "../../lib/appState";
-import { ThreadMediaVisibleContext } from "./ThreadMarkdownVideo";
+import { ShimmeringWorkContent } from "./thread-work-log";
 
-const TYPING_LABELS = ["Mulling it over", "On it", "Thinking", "Working on it"] as const;
+const TYPING_LABELS = [
+  "On it",
+  "Thinking",
+  "Mulling it over",
+  "Working on it",
+  "Piecing it together",
+] as const;
+const TYPING_LABEL_HOLD_MS = 3200;
 const TYPING_DOTS = [0, 1, 2] as const;
-const TYPING_STEP_MS = 400;
+const TYPING_CYCLE_MS = 1500;
+const TYPING_STAGGER_MS = 160;
+// Share of the cycle each dot spends rising and settling; the rest is a pause.
+const TYPING_RISE_SHARE = 0.44;
 
-/** A bot's working row reads like a friend typing; the label holds still for the turn. */
+function TypingDot(props: { readonly index: number; readonly progress: NativeAnimated.Value }) {
+  const start = (props.index * TYPING_STAGGER_MS) / TYPING_CYCLE_MS;
+  const peak = start + TYPING_RISE_SHARE / 2;
+  const end = start + TYPING_RISE_SHARE;
+  const inputRange = start > 0 ? [0, start, peak, end, 1] : [start, peak, end, 1];
+  const bump = props.progress.interpolate({
+    inputRange,
+    outputRange: start > 0 ? [0, 0, 1, 0, 0] : [0, 1, 0, 0],
+    easing: Easing.inOut(Easing.sin),
+    extrapolate: "clamp",
+  });
+  return (
+    <NativeAnimated.View
+      style={{
+        opacity: bump.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }),
+        transform: [
+          { translateY: bump.interpolate({ inputRange: [0, 1], outputRange: [0, -3] }) },
+          { scale: bump.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) },
+        ],
+      }}
+    >
+      <View className="size-1.75 rounded-full bg-foreground-muted" />
+    </NativeAnimated.View>
+  );
+}
+
+function FadeIn(props: { readonly animate: boolean; readonly children: ReactNode }) {
+  const opacity = useAnimatedValue(props.animate ? 0 : 1);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- one native-driver fade when a new label mounts
+  useEffect(() => {
+    const fade = NativeAnimated.timing(opacity, {
+      toValue: 1,
+      duration: 240,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    });
+    fade.start();
+    return () => fade.stop();
+  }, [opacity]);
+  return <NativeAnimated.View style={{ opacity }}>{props.children}</NativeAnimated.View>;
+}
+
+/** A bot's working row reads like a friend typing, trying a new phrase every few seconds. */
 export function ThreadTypingRow(props: { readonly startedAt: string; readonly minHeight: number }) {
   const seed = [...props.startedAt].reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  const label = TYPING_LABELS[seed % TYPING_LABELS.length]!;
-  const onScreen = useContext(ThreadMediaVisibleContext);
   const focused = useIsFocused();
   const inSidebar = usePaneRole() === "sidebar";
   const appActive = useAppActive();
   const reduceMotion = useReduceMotionEnabled();
-  const stepping = onScreen && (focused || inSidebar) && appActive && !reduceMotion;
-  const [lit, setLit] = useState(0);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- steps the lit dot on a timer, only while the row is on screen
+  // Not gated on list viewability: a freshly appended row often never gets a
+  // viewability pass, and an off-screen native-driver loop costs no commits.
+  const visible = (focused || inSidebar) && appActive;
+  const waving = visible && !reduceMotion;
+  const [step, setStep] = useState(0);
+  const label = TYPING_LABELS[(seed + step) % TYPING_LABELS.length]!;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rotates the label on a timer, only while the screen is showing
   useEffect(() => {
-    if (!stepping) return;
-    const timer = setInterval(() => setLit((current) => (current + 1) % 3), TYPING_STEP_MS);
+    if (!visible) return;
+    const timer = setInterval(() => setStep((current) => current + 1), TYPING_LABEL_HOLD_MS);
     return () => clearInterval(timer);
-  }, [stepping]);
+  }, [visible]);
+
+  // Native driver, not Reanimated: looping Reanimated commits can starve React's.
+  // See docs/internals/performance-regressions.md.
+  const progress = useAnimatedValue(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- runs the native-driver wave only while the screen is showing
+  useEffect(() => {
+    progress.setValue(0);
+    if (!waving) return;
+    const loop = NativeAnimated.loop(
+      NativeAnimated.timing(progress, {
+        toValue: 1,
+        duration: TYPING_CYCLE_MS,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [waving, progress]);
+
   return (
     <View
       accessible
-      accessibilityLabel={label}
+      accessibilityLabel="Working"
       className="flex-row items-center gap-2.5 px-1"
       style={{ minHeight: props.minHeight }}
     >
-      <View className="flex-row items-center gap-1">
+      <View className="flex-row items-center gap-1.25">
         {TYPING_DOTS.map((dot) => (
-          <View
-            key={dot}
-            className="size-2 rounded-full bg-foreground"
-            style={{ opacity: dot === lit ? 1 : 0.3 }}
-          />
+          <TypingDot key={dot} index={dot} progress={progress} />
         ))}
       </View>
-      <Text className="text-sm text-foreground-muted">{label}</Text>
+      <FadeIn key={label} animate={step > 0 && !reduceMotion}>
+        <ShimmeringWorkContent
+          className="flex-none"
+          compact
+          icon="brain"
+          iconSubtleColor="transparent"
+          label={label}
+          showIcon={false}
+        />
+      </FadeIn>
     </View>
   );
 }

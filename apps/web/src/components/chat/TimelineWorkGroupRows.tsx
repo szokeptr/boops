@@ -7,7 +7,7 @@ import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/s
 import { observeResize } from "~/lib/observeResize";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
-import { memo, use, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { memo, use, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
@@ -275,23 +275,47 @@ function ExpandedWorkGroupEntries({
 
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
-const TYPING_LABELS = ["Mulling it over", "On it", "Thinking", "Working on it"] as const;
+const TYPING_LABELS = [
+  "On it",
+  "Thinking",
+  "Mulling it over",
+  "Working on it",
+  "Piecing it together",
+] as const;
+const TYPING_LABEL_HOLD_MS = 3200;
 
-/** A bot's working row reads like a friend typing; the label holds still for the turn. */
+/** A bot's working row reads like a friend typing, trying a new phrase every few seconds. */
 function TypingTimelineRow({ createdAt }: { createdAt: string | null }) {
   const seed = [...(createdAt ?? "")].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const [step, setStep] = useState(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rotates the label on a timer while the row is mounted
+  useEffect(() => {
+    const timer = window.setInterval(() => setStep((current) => current + 1), TYPING_LABEL_HOLD_MS);
+    return () => window.clearInterval(timer);
+  }, []);
+  const label = TYPING_LABELS[(seed + step) % TYPING_LABELS.length];
   return (
     <div className="flex h-8 items-center gap-2.5 px-1 text-sm text-muted-foreground">
-      <span ref={observeVisibleAnimation} aria-hidden className="flex items-center gap-1">
-        {[0, 400, 800].map((delay) => (
+      <span ref={observeVisibleAnimation} aria-hidden className="flex items-center gap-1.25">
+        {[0, 160, 320].map((delay) => (
           <span
             key={delay}
-            className="typing-dot size-2 rounded-full bg-foreground"
+            className="typing-dot size-1.75 rounded-full bg-current"
             style={{ animationDelay: `${delay}ms` }}
           />
         ))}
       </span>
-      {TYPING_LABELS[seed % TYPING_LABELS.length]}
+      <span
+        key={label}
+        ref={observeVisibleAnimation}
+        className={cn(
+          "relative shrink-0 overflow-hidden whitespace-nowrap",
+          step > 0 && "typing-label-in",
+        )}
+      >
+        {label}
+        <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay>
+      </span>
     </div>
   );
 }
