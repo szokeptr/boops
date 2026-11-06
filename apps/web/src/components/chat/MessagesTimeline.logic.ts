@@ -55,6 +55,7 @@ import {
   type OrchestrationV2IdleCompaction,
   type WorktreeSetupSnapshot,
   type OrchestrationV2ProjectedTurnItem,
+  type ProjectId,
   type RunAttemptId,
   type RuntimeRequestId,
   RunId,
@@ -639,6 +640,14 @@ type MessagesTimelineRowContent =
       itemId: TurnItemId;
       revision: string;
       mcpApp: McpAppReference;
+    }
+  | {
+      /** A bot's DM folds a talk with its parent or child bot into one pill. */
+      kind: "bot-exchange";
+      id: string;
+      createdAt: string;
+      peers: ReadonlyArray<{ readonly name: string; readonly projectId: ProjectId | null }>;
+      messages: ReadonlyArray<ChatMessage>;
     };
 
 export interface StableMessagesTimelineRowsState {
@@ -2167,6 +2176,49 @@ export function deriveMessagesTimelineRows(input: {
   });
 }
 
+/**
+ * A message from the bot's parent or child bot, and the bot's replies until the user writes
+ * again, fold into one exchange row at the first message. Other rows keep their places.
+ */
+function foldBotExchanges(rows: ReadonlyArray<MessagesTimelineRow>): MessagesTimelineRow[] {
+  type Exchange = Extract<MessagesTimelineRow, { kind: "bot-exchange" }>;
+  const result: MessagesTimelineRow[] = [];
+  let openIndex: number | null = null;
+  for (const row of rows) {
+    const open = openIndex === null ? null : (result[openIndex] as Exchange);
+    if (row.kind !== "message") {
+      result.push(row);
+    } else if (row.message.role === "assistant") {
+      if (open === null || openIndex === null) result.push(row);
+      else result[openIndex] = { ...open, messages: [...open.messages, row.message] };
+    } else {
+      const bot = resolveUserMessagePresentation(row.message).bot;
+      if (bot === undefined || bot.background) {
+        openIndex = null;
+        result.push(row);
+      } else if (open === null || openIndex === null) {
+        openIndex = result.length;
+        result.push({
+          kind: "bot-exchange",
+          id: `bot-exchange:${row.id}`,
+          createdAt: row.createdAt,
+          peers: [{ name: bot.name, projectId: bot.projectId }],
+          messages: [row.message],
+        });
+      } else {
+        result[openIndex] = {
+          ...open,
+          peers: open.peers.some((peer) => peer.name === bot.name)
+            ? open.peers
+            : [...open.peers, { name: bot.name, projectId: bot.projectId }],
+          messages: [...open.messages, row.message],
+        };
+      }
+    }
+  }
+  return result;
+}
+
 const DIRECT_MESSAGE_EVENT_TYPES: ReadonlySet<string> = new Set([
   "secret_request",
   "connection_request",
@@ -2208,14 +2260,15 @@ function directMessageRows(
         : resolveUserMessagePresentation(row.message).attribution === null
           ? "user"
           : null;
-  const result = kept.map((row, index): MessagesTimelineRow => {
+  const folded = foldBotExchanges(kept);
+  const result = folded.map((row, index): MessagesTimelineRow => {
     if (row.kind !== "message") return row;
     const own = side(row);
     return {
       ...row,
       showAssistantMeta: false,
-      groupedWithPrevious: own !== null && side(kept[index - 1]) === own,
-      groupedWithNext: own !== null && side(kept[index + 1]) === own,
+      groupedWithPrevious: own !== null && side(folded[index - 1]) === own,
+      groupedWithNext: own !== null && side(folded[index + 1]) === own,
       continuesSteer: false,
     };
   });
@@ -2469,6 +2522,15 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     }
     case "worktree-setup":
       return a.snapshot === (b as typeof a).snapshot;
+
+    case "bot-exchange": {
+      const be = b as typeof a;
+      return (
+        a.peers.length === be.peers.length &&
+        a.messages.length === be.messages.length &&
+        a.messages.every((message, index) => message === be.messages[index])
+      );
+    }
 
     case "assistant-meta": {
       const bm = b as typeof a;
