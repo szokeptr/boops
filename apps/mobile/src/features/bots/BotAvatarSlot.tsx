@@ -1,65 +1,98 @@
 import {
-  hatchGrid,
-  screenieGrid,
-  screeniePalette,
-  spriteRects,
+  hatchShapes,
+  VISOR_CANVAS,
+  type VisorShape,
+  visorShapeKey,
+  visorShapes,
+  workingScanBox,
+  workingScanDataUrl,
 } from "@t3tools/client-runtime/bot-avatar";
 import type { BotStatus } from "@t3tools/client-runtime/state/bot-list";
 import type { ProjectAvatar } from "@t3tools/contracts";
 import { specFor } from "@t3tools/shared/botAvatar";
+import { Image } from "expo-image";
 import { useMemo } from "react";
 import { View } from "react-native";
-import Svg, { Rect } from "react-native-svg";
+import Svg, { Circle, Path, Rect } from "react-native-svg";
 
 import { cn } from "../../lib/cn";
 
-/** Pixel art stays even only at whole multiples of the 16-cell sprite. */
-export type BotAvatarSize = 16 | 32 | 48 | 64;
+const SMALL = 24;
 
 const STATUS_DOT_CLASS: Partial<Record<BotStatus, string>> = {
   "needs-you": "bg-warning-foreground",
   working: "bg-adaptive-sky-600-400",
 };
 
-/**
- * The bot's Screenie, drawn still. Web loops the working dashes as an APNG; that cost is
- * unmeasured in React Native, so mobile shows the working face's static dashes instead.
- */
+function Shape({ shape }: { readonly shape: VisorShape }) {
+  switch (shape.kind) {
+    case "rect":
+      return (
+        <Rect
+          x={shape.x}
+          y={shape.y}
+          width={shape.w}
+          height={shape.h}
+          rx={shape.r}
+          fill={shape.fill}
+          opacity={shape.opacity}
+        />
+      );
+    case "circle":
+      return <Circle cx={shape.cx} cy={shape.cy} r={shape.r} fill={shape.fill} />;
+    case "path":
+      return (
+        <Path
+          d={shape.d}
+          fill={shape.fill ?? "none"}
+          stroke={shape.stroke}
+          strokeWidth={shape.strokeWidth}
+          strokeLinecap={shape.linecap}
+          strokeLinejoin="round"
+          opacity={shape.opacity}
+        />
+      );
+  }
+}
+
+/** The bot's Visor; the eyes carry the status and the working loop is an APNG over the visor. */
 export function BotAvatarSlot(props: {
   readonly avatar: ProjectAvatar | null;
   readonly name: string;
   readonly status: BotStatus;
-  readonly size: BotAvatarSize;
+  /** Points square. Below 24 the accessory drops and a dot carries the status. */
+  readonly size: number;
 }) {
   const { avatar, name, status, size } = props;
-  const rects = useMemo(() => {
-    const look = avatar ?? specFor(name);
-    const grid = status === "hatching" ? hatchGrid(look, "egg") : screenieGrid(look, status);
-    return spriteRects(grid, screeniePalette(look));
-  }, [avatar, name, status]);
-  // From 32pt up the row's status label carries the state; smaller slots have no room for one.
-  const dotClass = size < 32 ? STATUS_DOT_CLASS[status] : undefined;
+  const look = useMemo(() => avatar ?? specFor(name), [avatar, name]);
+  const shapes = useMemo(
+    () =>
+      status === "hatching"
+        ? hatchShapes(look, "egg")
+        : visorShapes(look, status, { includeAccessory: size >= SMALL }),
+    [look, status, size],
+  );
+  const dotClass = size < SMALL ? STATUS_DOT_CLASS[status] : undefined;
   return (
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
       style={{ width: size, height: size }}
     >
-      <Svg width={size} height={size} viewBox="0 0 16 16">
-        {rects.map((rect) => (
-          <Rect
-            key={`${rect.x}:${rect.y}`}
-            x={rect.x}
-            y={rect.y}
-            width={rect.width}
-            height={1}
-            fill={rect.fill}
-          />
+      <Svg width={size} height={size} viewBox={`0 0 ${VISOR_CANVAS} ${VISOR_CANVAS}`}>
+        {shapes.map((shape) => (
+          <Shape key={visorShapeKey(shape)} shape={shape} />
         ))}
       </Svg>
+      {status === "working" ? (
+        <Image
+          source={{ uri: workingScanDataUrl(look) }}
+          style={{ position: "absolute", ...workingScanBox(size) }}
+        />
+      ) : null}
       {dotClass ? (
         <View
-          className={cn("absolute", dotClass)}
+          className={cn("absolute rounded-full", dotClass)}
           style={{ right: -2, bottom: -2, width: 6, height: 6 }}
         />
       ) : null}

@@ -1,34 +1,51 @@
-import { BOT_AVATAR_ACCESSORIES, type ProjectAvatar } from "@t3tools/contracts";
+import type { ProjectAvatar } from "@t3tools/contracts";
 import * as Base64 from "effect/encoding/Base64";
 
-/** Screenie: a 16×16 TV-headed robot. Rows of 8 cells mirror into 16. */
-export const SPRITE_SIZE = 16;
+/** Visor: a rounded bot with a dark visor, drawn as primitives on a 64×64 canvas. */
+export const VISOR_CANVAS = 64;
 
 export type BotAvatarStatus = "idle" | "working" | "needs-you" | "dozing";
 export type BotHatchStage = "egg" | "crack" | "cap";
 
-type PaletteKey =
-  | "o"
-  | "b"
-  | "s"
-  | "h"
-  | "k"
-  | "w"
-  | "d"
-  | "g"
-  | "n"
-  | "a"
-  | "A"
-  | "W"
-  | "Y"
-  | "G"
-  | "L"
-  | "R"
-  | "E"
-  | "e"
-  | "f";
-export type SpriteGrid = ReadonlyArray<ReadonlyArray<PaletteKey | null>>;
-export type SpritePalette = Readonly<Record<PaletteKey, string>>;
+export interface VisorRect {
+  readonly kind: "rect";
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  readonly r: number;
+  readonly fill: string;
+  readonly opacity?: number;
+}
+
+export interface VisorCircle {
+  readonly kind: "circle";
+  readonly cx: number;
+  readonly cy: number;
+  readonly r: number;
+  readonly fill: string;
+}
+
+export interface VisorPath {
+  readonly kind: "path";
+  readonly d: string;
+  readonly fill?: string;
+  readonly stroke?: string;
+  readonly strokeWidth?: number;
+  readonly linecap?: "round";
+  readonly opacity?: number;
+}
+
+/** Back to front; renderers map each 1:1 and give strokes round joins. */
+export type VisorShape = VisorRect | VisorCircle | VisorPath;
+
+/** A React key from geometry; no two shapes in one avatar share it. */
+export function visorShapeKey(shape: VisorShape): string {
+  if (shape.kind === "rect") return `r${shape.x},${shape.y}`;
+  if (shape.kind === "circle") return `c${shape.cx},${shape.cy}`;
+  return `p${shape.d}`;
+}
+
 type Rgb = readonly [number, number, number];
 
 const HUE_DEGREES: Readonly<Record<ProjectAvatar["hue"], number>> = {
@@ -46,11 +63,15 @@ const HUE_DEGREES: Readonly<Record<ProjectAvatar["hue"], number>> = {
   rose: 344,
 };
 
-const GLOW_RGB: Readonly<Record<ProjectAvatar["glow"], Rgb>> = {
-  mint: [0x86, 0xff, 0xcf],
-  cyan: [0x8f, 0xe9, 0xff],
-  white: [0xf2, 0xef, 0xff],
+const GLOW: Readonly<Record<ProjectAvatar["glow"], string>> = {
+  mint: "#86ffcf",
+  cyan: "#8fe9ff",
+  white: "#f2efff",
 };
+const VISOR = "#1d1a2a";
+const AMBER = "#ffc23d";
+const SHELL = "#fbf3e2";
+const SHELL_EDGE = "#c9b48f";
 
 function hslToRgb(hue: number, saturation: number, lightness: number): Rgb {
   const h = (((hue % 360) + 360) % 360) / 360;
@@ -80,244 +101,302 @@ const fromHex = (value: string): Rgb => [
   Number.parseInt(value.slice(3, 5), 16),
   Number.parseInt(value.slice(5, 7), 16),
 ];
+// Hex rather than CSS hsl(): react-native-svg and older RN colour parsers lack the space syntax.
+const hsl = (h: number, s: number, l: number) => hex(hslToRgb(h, s, l));
+const SPROUT_LIGHT = hsl(110, 45, 55);
+const SPROUT_DARK = hsl(110, 45, 48);
 
-function paletteRgb(avatar: ProjectAvatar): Readonly<Record<PaletteKey, Rgb>> {
+export interface VisorColors {
+  readonly body: string;
+  readonly shade: string;
+  readonly light: string;
+  readonly glow: string;
+}
+
+export function visorColors(avatar: ProjectAvatar): VisorColors {
   const h = HUE_DEGREES[avatar.hue];
-  const warm = h > 34 && h < 100;
   return {
-    o: hslToRgb(h, 45, warm ? 27 : 24),
-    b: hslToRgb(h, warm ? 88 : 76, warm ? 66 : 71),
-    s: hslToRgb(h - 4, 58, warm ? 53 : 59),
-    h: hslToRgb(h + 4, 100, 89),
-    k: hslToRgb(h, 40, 13),
-    w: [255, 255, 255],
-    d: hslToRgb(h, 30, 13),
-    g: GLOW_RGB[avatar.glow],
-    n: hslToRgb(h, 25, 42),
-    a: hslToRgb(h + 150, 80, 64),
-    A: hslToRgb(h + 150, 45, 26),
-    W: [255, 255, 255],
-    Y: fromHex("#ffc23d"),
-    G: fromHex("#7fd35e"),
-    L: fromHex("#2e6a2a"),
-    R: fromHex("#ff6b8b"),
-    E: fromHex("#7a5b3e"),
-    e: fromHex("#fbf3e2"),
-    f: fromHex("#ead7b5"),
+    body: hsl(h, 62, 66),
+    shade: hsl(h, 40, 46),
+    light: hsl(h, 70, 82),
+    glow: GLOW[avatar.glow],
   };
 }
 
-export function screeniePalette(avatar: ProjectAvatar): SpritePalette {
-  const rgb = paletteRgb(avatar);
-  return Object.fromEntries(Object.entries(rgb).map(([key, value]) => [key, hex(value)])) as Record<
-    PaletteKey,
-    string
-  >;
-}
-
-/** Your bubbles in a bot's DM wear its body colour, inked like its outline so text reads in both themes. */
+/** Your bubbles in a bot's DM wear its body colour, inked like its visor so text reads in both themes. */
 export function botBubbleColors(avatar: ProjectAvatar): {
   readonly background: string;
   readonly foreground: string;
 } {
-  const palette = screeniePalette(avatar);
-  return { background: palette.b, foreground: palette.k };
+  return { background: visorColors(avatar).body, foreground: VISOR };
 }
 
-type MutableGrid = Array<Array<PaletteKey | null>>;
-type Layer = { readonly y: number; readonly rows: ReadonlyArray<string> };
+const BODY = { x: 10, y: 12, w: 44, h: 44, r: 16 } as const;
+const VIS = { x: 13, y: 26, w: 38, h: 22 } as const;
+const EYE_CY = VIS.y + VIS.h / 2;
+const EYE_L = 25;
+const EYE_R = 39;
+const GLINT = { x0: 18, y0: VIS.y + 4, cx: 22, cy: VIS.y + 1.5, x1: 27, y1: VIS.y + 1.5 } as const;
 
-const emptyGrid = (width = SPRITE_SIZE, height = SPRITE_SIZE): MutableGrid =>
-  Array.from({ length: height }, () => Array<PaletteKey | null>(width).fill(null));
-
-function put(
-  grid: MutableGrid,
-  rows: ReadonlyArray<string>,
-  y0 = 0,
-  onlyOver?: ReadonlyArray<PaletteKey>,
-): void {
-  const width = grid[0]!.length;
-  rows.forEach((source, i) => {
-    const y = y0 + i;
-    if (y < 0 || y >= grid.length) return;
-    const row = source.length === width / 2 ? source + [...source].reverse().join("") : source;
-    [...row].forEach((cell, x) => {
-      if (cell === "." || x >= width) return;
-      if (onlyOver && !onlyOver.includes(grid[y]![x]!)) return;
-      grid[y]![x] = cell as PaletteKey;
-    });
-  });
-}
-
-// prettier-ignore
-const BODY = ["........", "........", "........", "........", "..oooooo", ".ohbbbbb", ".obbdddd", ".obddddd",
-  "aobddddd", "aobddddd", "aobddddd", ".obbdddd", ".obbbbbb", ".osbbbbb", "..osssss", "...ooooo"];
-
-// prettier-ignore
-const FACE: Readonly<Record<BotAvatarStatus | "happy", Layer>> = {
-  idle: { y: 7, rows: [".....gg..gg.....", ".....gg..gg.....", "................", "......g..g......", ".......gg......."] },
-  working: { y: 7, rows: ["................", "....ggg..ggg....", "................", "....gg.gg.gg....", "................"] },
-  "needs-you": { y: 7, rows: [".....YY..YY.....", ".....YY..YY.....", "................", ".......YY.......", ".......YY......."] },
-  dozing: { y: 9, rows: ["....nnn..nnn....", "................", "................"] },
-  happy: { y: 7, rows: [".....g....g.....", "....g.g..g.g....", "................", "......g..g......", ".......gg......."] },
-};
-
-// prettier-ignore
-const ACCESSORY: Readonly<Record<ProjectAvatar["accessory"], Layer | null>> = {
-  none: null,
-  rabbit: { y: 0, rows: ["..aa....", "...o....", "....o...", ".....o.."] },
-  antenna: { y: 0, rows: [".......oo.......", "......oaao......", ".......oo.......", ".......oo......."] },
-  handle: { y: 1, rows: ["....oooo", "....o...", "....o..."] },
-  sprout: { y: 0, rows: ["..........GG....", "......GG.GGL....", "......LGGL......", "........L......."] },
-  bow: { y: 2, rows: ["........oo..oo..", ".......oRRooRRo.", ".......oRRRRRRo.", "........oo..oo.."] },
-  phones: { y: 3, rows: ["....AAAA", "..AA....", ".A......", ".A......", "AAA.....", "Aaa.....", "Aaa.....", "Aaa.....", "AAA....."] },
-  crown: { y: 0, rows: ["....o..o", "...oYooY", "...oYYYY", "...ooooo"] },
-};
-
-// prettier-ignore
-const EGGSHELL_CAP = ["......EEEE......", ".....EeeeeE.....", "....EeeeeeeE....", "...EeeeeeefeE...", "...EeEE..EEeE...", "...E..E..E..E..."];
-
-function body(avatar: ProjectAvatar, face: Layer, cap: boolean): MutableGrid {
-  const grid = emptyGrid();
-  put(grid, BODY);
-  if (cap) put(grid, EGGSHELL_CAP, 1);
-  else {
-    const accessory = ACCESSORY[avatar.accessory];
-    if (accessory) put(grid, accessory.rows, accessory.y);
-  }
-  put(grid, face.rows, face.y);
-  put(grid, ["....W...........", "...W............"], 6, ["d"]);
-  return grid;
-}
-
-export function screenieGrid(avatar: ProjectAvatar, status: BotAvatarStatus): SpriteGrid {
-  return body(avatar, FACE[status], false);
-}
-
-/** Only the cells that close the idle eyes, laid over the idle sprite for a one-shot blink. */
-export function blinkLids(avatar: ProjectAvatar): SpriteGrid {
-  const open = screenieGrid(avatar, "idle");
-  const lids = emptyGrid();
-  open[7]!.forEach((cell, x) => {
-    if (cell === "g" || cell === "k" || cell === "w") lids[7]![x] = "d";
-  });
-  return lids;
-}
-
-const EGG_SPECKS = [
-  [5, 7],
-  [9, 4],
-  [11, 8],
-  [4, 11],
-  [8, 12],
-  [10, 13],
-  [7, 9],
-] as const;
-
-function eggGrid(avatar: ProjectAvatar, cracked: boolean): MutableGrid {
-  const grid = emptyGrid();
-  const inside = (x: number, y: number) => {
-    if (x < 0 || y < 0 || x > 15 || y > 15) return false;
-    const rx = y < 9 ? 4.4 + (y / 9) * 2.1 : 6.5;
-    return ((x + 0.5 - 8) / rx) ** 2 + ((y + 0.5 - 8.9) / 7.1) ** 2 <= 1;
+function pill(
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+  fill: string,
+  opacity?: number,
+): VisorRect {
+  return {
+    kind: "rect",
+    x: cx - w / 2,
+    y: cy - h / 2,
+    w,
+    h,
+    r: Math.min(w, h) / 2,
+    fill,
+    ...(opacity === undefined ? {} : { opacity }),
   };
-  for (let y = 0; y < SPRITE_SIZE; y++) {
-    for (let x = 0; x < SPRITE_SIZE; x++) {
-      if (!inside(x, y)) continue;
-      const edge = !inside(x - 1, y) || !inside(x + 1, y) || !inside(x, y - 1) || !inside(x, y + 1);
-      grid[y]![x] = edge ? "E" : x >= 10 && y >= 9 ? "f" : "e";
-    }
+}
+
+/** The eyes carry the status: amber needs you, pills work, dim lines doze. */
+function eyeShapes(status: BotAvatarStatus, glow: string, offsetX = 0): ReadonlyArray<VisorRect> {
+  const L = EYE_L + offsetX;
+  const R = EYE_R + offsetX;
+  switch (status) {
+    case "working":
+      return [pill(L - 1, EYE_CY, 9, 4, glow), pill(R - 1, EYE_CY, 9, 4, glow)];
+    case "needs-you":
+      return [pill(L, EYE_CY, 6.5, 12, AMBER), pill(R, EYE_CY, 6.5, 12, AMBER)];
+    case "dozing":
+      return [pill(L, EYE_CY, 8, 2, glow, 0.45), pill(R, EYE_CY, 8, 2, glow, 0.45)];
+    case "idle":
+      return [pill(L, EYE_CY, 6, 10, glow), pill(R, EYE_CY, 6, 10, glow)];
   }
-  put(grid, [".....h..........", "....h..........."], 4, ["e"]);
-  grid[4]![5] = "W";
-  grid[5]![4] = "W";
-  // The stored look has no speck seed; the accessory picks which specks show the body colour.
-  const parity = BOT_AVATAR_ACCESSORIES.indexOf(avatar.accessory) % 2;
-  EGG_SPECKS.forEach(([x, y], i) => {
-    const cell = grid[y]![x];
-    if ((parity + i) % 2 === 0 && cell && cell !== "E") grid[y]![x] = "b";
+}
+
+function accessoryShapes(
+  accessory: ProjectAvatar["accessory"],
+  c: VisorColors,
+): ReadonlyArray<VisorShape> {
+  const stroke = (d: string, strokeWidth = 2.8): VisorPath => ({
+    kind: "path",
+    d,
+    stroke: c.shade,
+    strokeWidth,
+    linecap: "round",
   });
-  if (cracked) {
-    put(
-      grid,
-      [
-        "................",
-        ".....kkkkkk.....",
-        "..E.kwkkkwk.E...",
-        "...EkkkkkkkE....",
-        ".......E........",
-      ],
-      6,
-    );
+  switch (accessory) {
+    case "none":
+      return [];
+    case "antenna":
+      return [stroke("M32 12V5", 2.6), { kind: "circle", cx: 32, cy: 5, r: 3.2, fill: c.glow }];
+    case "rabbit":
+      return [
+        stroke("M24 13L20 3", 2.6),
+        stroke("M40 13L44 3", 2.6),
+        { kind: "circle", cx: 20, cy: 3.5, r: 2.4, fill: c.glow },
+        { kind: "circle", cx: 44, cy: 3.5, r: 2.4, fill: c.glow },
+      ];
+    case "handle":
+      return [stroke("M21 13q11-9 22 0", 3)];
+    case "sprout":
+      return [
+        stroke("M32 13V7", 2.4),
+        { kind: "path", d: "M32 8c0-5 3-7 8-7c0 4-3 7-8 7z", fill: SPROUT_LIGHT },
+        { kind: "path", d: "M32 9c0-4-3-6-7-6c0 3 3 6 7 6z", fill: SPROUT_DARK },
+      ];
+    case "bow":
+      return [
+        { kind: "path", d: "M44 9l-7 4 7 4zM50 9l7 4-7 4z", fill: "#ff7a9a" },
+        { kind: "circle", cx: 47, cy: 13, r: 2.6, fill: "#ff7a9a" },
+      ];
+    case "phones":
+      return [
+        { kind: "rect", x: 5, y: 30, w: 6, h: 14, r: 3, fill: c.shade },
+        { kind: "rect", x: 53, y: 30, w: 6, h: 14, r: 3, fill: c.shade },
+        stroke("M8 30q0-24 24-24t24 24", 2.4),
+      ];
+    case "crown":
+      return [{ kind: "path", d: "M21 14l2-9 5 5 4-7 4 7 5-5 2 9z", fill: AMBER }];
   }
-  return grid;
 }
 
-/** Egg, then a crack with eyes peeking out, then the bot wearing its eggshell as a cap. */
-export function hatchGrid(avatar: ProjectAvatar, stage: BotHatchStage): SpriteGrid {
-  return stage === "cap" ? body(avatar, FACE.happy, true) : eggGrid(avatar, stage === "crack");
+export interface VisorOptions {
+  /** Below 24px accessories turn to noise; lists pass false. */
+  readonly includeAccessory?: boolean;
 }
 
-export type BotAvatarBubble = "needs-you" | "dozing";
-
-/** 9×7 speech bubbles drawn at 1 or 2 px per cell beside the sprite. */
-export const BUBBLE_WIDTH = 9;
-export const BUBBLE_HEIGHT = 7;
-// prettier-ignore
-const BUBBLES: Readonly<Record<BotAvatarBubble, ReadonlyArray<string>>> = {
-  "needs-you": [".ooooooo.", "oYYYkYYYo", "oYYYkYYYo", "oYYYkYYYo", "oYYYYYYYo", ".oYokooo.", ".oo......"],
-  dozing: [".....kkkk", ".......k.", "......k..", ".....kkkk", "kk.......", ".k.......", ".kk......"],
-};
-
-export function bubbleGrid(bubble: BotAvatarBubble): SpriteGrid {
-  const grid = emptyGrid(BUBBLE_WIDTH, BUBBLE_HEIGHT);
-  put(grid, BUBBLES[bubble]);
-  return grid;
+/** The avatar split so a renderer can animate the eyes alone (a one-shot blink). */
+export function visorParts(
+  avatar: ProjectAvatar,
+  status: BotAvatarStatus = "idle",
+  { includeAccessory = true }: VisorOptions = {},
+): { readonly body: ReadonlyArray<VisorShape>; readonly eyes: ReadonlyArray<VisorRect> } {
+  const c = visorColors(avatar);
+  return {
+    body: [
+      ...(includeAccessory ? accessoryShapes(avatar.accessory, c) : []),
+      { kind: "rect", ...BODY, fill: c.body },
+      { kind: "rect", ...VIS, r: VIS.h / 2, fill: VISOR },
+      {
+        kind: "path",
+        d: `M${GLINT.x0} ${GLINT.y0}q4-2.5 9-2.5`,
+        stroke: "#ffffff",
+        strokeWidth: 1.6,
+        linecap: "round",
+        opacity: 0.35,
+      },
+    ],
+    eyes: eyeShapes(status, c.glow),
+  };
 }
 
-export interface SpriteRect {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly fill: string;
+export function visorShapes(
+  avatar: ProjectAvatar,
+  status: BotAvatarStatus = "idle",
+  options: VisorOptions = {},
+): ReadonlyArray<VisorShape> {
+  const { body, eyes } = visorParts(avatar, status, options);
+  return [...body, ...eyes];
 }
 
-/** Run-length rows of same-coloured cells, so a renderer draws few rects per sprite. */
-export function spriteRects(
-  grid: SpriteGrid,
-  palette: Partial<Readonly<Record<PaletteKey, string>>>,
-): ReadonlyArray<SpriteRect> {
-  const rects: SpriteRect[] = [];
-  grid.forEach((row, y) => {
-    let x = 0;
-    while (x < row.length) {
-      const cell = row[x];
-      const fill = cell ? palette[cell] : undefined;
-      if (!cell || fill === undefined) {
-        x++;
-        continue;
-      }
-      let end = x + 1;
-      while (end < row.length && row[end] === cell) end++;
-      rects.push({ x, y, width: end - x, fill });
-      x = end;
-    }
+/** Egg, then the visor peeking through a crack, then the bot wearing the shell top as a cap. */
+export function hatchShapes(
+  avatar: ProjectAvatar,
+  stage: BotHatchStage,
+): ReadonlyArray<VisorShape> {
+  const c = visorColors(avatar);
+  if (stage === "cap") {
+    return [
+      ...visorShapes(avatar, "idle", { includeAccessory: false }),
+      {
+        kind: "path",
+        d: "M14 18C16 8 23 3 32 3S48 8 50 18l-5-3-4 4-5-4-4 4-4-4-5 4-4-4z",
+        fill: SHELL,
+        stroke: SHELL_EDGE,
+        strokeWidth: 2,
+      },
+    ];
+  }
+  const egg: VisorPath = {
+    kind: "path",
+    d: "M32 6C45 6 54 24 54 38C54 51 44 59 32 59S10 51 10 38C10 24 19 6 32 6Z",
+    fill: SHELL,
+    stroke: SHELL_EDGE,
+    strokeWidth: 2,
+  };
+  const speck = (cx: number, cy: number, r: number): VisorCircle => ({
+    kind: "circle",
+    cx,
+    cy,
+    r,
+    fill: c.body,
   });
-  return rects;
+  if (stage === "egg") return [egg, speck(24, 24, 2.2), speck(40, 33, 2.8), speck(27, 46, 1.8)];
+  return [
+    egg,
+    { kind: "rect", x: 15, y: 27, w: 34, h: 18, r: 9, fill: VISOR },
+    ...eyeShapes("idle", c.glow).map((s) => ({ ...s, y: s.y - 1 })),
+    {
+      kind: "path",
+      d: "M13 27l5 4 4-5 5 4 5-5 5 5 5-4 4 5 5-4",
+      stroke: SHELL_EDGE,
+      strokeWidth: 2,
+      linecap: "round",
+    },
+  ];
 }
 
 /**
- * Where the working dashes sit, in sprite cells. They are an animated PNG so the only
- * endless loop costs the main thread nothing; CSS steps() or a JS timer measured far worse.
+ * The working eyes glance left, centre, right. They ship as an APNG laid exactly over the
+ * visor rect, so the only endless loop costs the main thread nothing; CSS keyframes and JS
+ * timers measured far worse.
  */
-export const WORKING_DASHES = {
-  col: 4,
-  row: 10,
-  width: 8,
-  height: 1,
-  frameCount: 3,
-  frameDelayMs: 300,
+export const WORKING_SCAN = {
+  rect: VIS,
+  background: VISOR,
+  offsets: [-3, 0, 3],
+  frameMs: 300,
+  /** Raster pixels per canvas unit, so the overlay stays sharp up to 4× the 64-unit grid. */
+  scale: 4,
 } as const;
+
+/** Signed distance to a rounded rect; coverage comes from it, so no canvas is needed. */
+function roundedRectDistance(
+  px: number,
+  py: number,
+  rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number },
+  r: number,
+): number {
+  const qx = Math.abs(px - (rect.x + rect.w / 2)) - (rect.w / 2 - r);
+  const qy = Math.abs(py - (rect.y + rect.h / 2)) - (rect.h / 2 - r);
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
+}
+
+function segmentDistance(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+const GLINT_POINTS = Array.from({ length: 13 }, (_, i) => {
+  const t = i / 12;
+  const u = 1 - t;
+  return [
+    u * u * GLINT.x0 + 2 * u * t * GLINT.cx + t * t * GLINT.x1,
+    u * u * GLINT.y0 + 2 * u * t * GLINT.cy + t * t * GLINT.y1,
+  ] as const;
+});
+
+function glintDistance(px: number, py: number): number {
+  let best = Infinity;
+  for (let i = 1; i < GLINT_POINTS.length; i++) {
+    const [ax, ay] = GLINT_POINTS[i - 1]!;
+    const [bx, by] = GLINT_POINTS[i]!;
+    best = Math.min(best, segmentDistance(px, py, ax, ay, bx, by));
+  }
+  return best - 1.6 / 2;
+}
+
+const coverage = (distance: number, scale: number) =>
+  Math.max(0, Math.min(1, 0.5 - distance * scale));
+const mix = (from: number, to: number, amount: number) => from + (to - from) * amount;
+
+function scanFrame(glow: string, offsetX: number): Uint8Array {
+  const { rect, scale } = WORKING_SCAN;
+  const width = rect.w * scale;
+  const height = rect.h * scale;
+  const visor = fromHex(VISOR);
+  const lit = fromHex(glow);
+  const eyes = eyeShapes("working", glow, offsetX);
+  const pixels = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const px = rect.x + (x + 0.5) / scale;
+      const py = rect.y + (y + 0.5) / scale;
+      const alpha = coverage(roundedRectDistance(px, py, rect, rect.h / 2), scale);
+      const eye = Math.max(
+        ...eyes.map((e) => coverage(roundedRectDistance(px, py, e, e.r), scale)),
+      );
+      const glint = coverage(glintDistance(px, py), scale) * 0.35;
+      const at = (y * width + x) * 4;
+      for (let channel = 0; channel < 3; channel++) {
+        const base = mix(visor[channel]!, lit[channel]!, eye);
+        pixels[at + channel] = Math.round(mix(base, 255, glint));
+      }
+      pixels[at + 3] = Math.round(alpha * 255);
+    }
+  }
+  return pixels;
+}
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -329,43 +408,119 @@ const CRC_TABLE = (() => {
   return table;
 })();
 
-function crc32(bytes: ReadonlyArray<number>): number {
+function crc32(bytes: ArrayLike<number>): number {
   let c = 0xffffffff;
-  for (const byte of bytes) c = CRC_TABLE[(c ^ byte) & 255]! ^ (c >>> 8);
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]!) & 255]! ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
 
 const u32 = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
 const u16 = (n: number) => [(n >>> 8) & 255, n & 255];
 
-function chunk(type: string, data: ReadonlyArray<number>): number[] {
-  const typed = [...type].map((c) => c.charCodeAt(0)).concat(data);
+function chunk(type: string, data: ArrayLike<number>): number[] {
+  const typed = [...type].map((c) => c.charCodeAt(0)).concat(Array.from(data));
   return [...u32(data.length), ...typed, ...u32(crc32(typed))];
 }
 
-// One stored (uncompressed) deflate block; frames here are a few dozen bytes.
-function zlibStored(raw: ReadonlyArray<number>): number[] {
+const LENGTH_BASE = [
+  3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131,
+  163, 195, 227, 258,
+];
+const LENGTH_EXTRA = [
+  0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0,
+];
+const DISTANCE_BASE = [
+  1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049,
+  3073, 4097, 6145, 8193, 12289, 16385, 24577,
+];
+const DISTANCE_EXTRA = [
+  0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13,
+];
+
+const bucket = (bases: ReadonlyArray<number>, value: number) => {
+  let i = bases.length - 1;
+  while (bases[i]! > value) i--;
+  return i;
+};
+
+/**
+ * Fixed-Huffman deflate that only looks back one pixel or one scanline. Flat-colour frames
+ * shrink ~50×, which a stored block (and a 64 KiB cap) would not.
+ */
+function deflate(raw: Uint8Array, lookbacks: ReadonlyArray<number>): number[] {
+  const out: number[] = [];
+  let acc = 0;
+  let bits = 0;
+  const write = (value: number, count: number) => {
+    acc |= value << bits;
+    bits += count;
+    while (bits >= 8) {
+      out.push(acc & 255);
+      acc >>>= 8;
+      bits -= 8;
+    }
+  };
+  const code = (value: number, count: number) => {
+    let reversed = 0;
+    for (let i = 0; i < count; i++) reversed = (reversed << 1) | ((value >>> i) & 1);
+    write(reversed, count);
+  };
+  const literal = (v: number) => {
+    if (v < 144) code(0x30 + v, 8);
+    else if (v < 256) code(0x190 + v - 144, 9);
+    else if (v < 280) code(v - 256, 7);
+    else code(0xc0 + v - 280, 8);
+  };
+  write(1, 1);
+  write(1, 2);
+  let i = 0;
+  while (i < raw.length) {
+    let bestLength = 0;
+    let bestDistance = 0;
+    for (const distance of lookbacks) {
+      if (distance > i) continue;
+      let length = 0;
+      while (
+        length < 258 &&
+        i + length < raw.length &&
+        raw[i + length] === raw[i + length - distance]
+      ) {
+        length++;
+      }
+      if (length > bestLength) {
+        bestLength = length;
+        bestDistance = distance;
+      }
+    }
+    if (bestLength < 3) {
+      literal(raw[i]!);
+      i++;
+      continue;
+    }
+    const l = bucket(LENGTH_BASE, bestLength);
+    literal(257 + l);
+    write(bestLength - LENGTH_BASE[l]!, LENGTH_EXTRA[l]!);
+    const d = bucket(DISTANCE_BASE, bestDistance);
+    code(d, 5);
+    write(bestDistance - DISTANCE_BASE[d]!, DISTANCE_EXTRA[d]!);
+    i += bestLength;
+  }
+  literal(256);
+  if (bits > 0) out.push(acc & 255);
+  return out;
+}
+
+function zlib(raw: Uint8Array, lookbacks: ReadonlyArray<number>): number[] {
   let a = 1;
   let b = 0;
   for (const byte of raw) {
     a = (a + byte) % 65521;
     b = (b + a) % 65521;
   }
-  const length = raw.length;
-  return [
-    0x78,
-    0x01,
-    0x01,
-    length & 255,
-    (length >>> 8) & 255,
-    ~length & 255,
-    (~length >>> 8) & 255,
-    ...raw,
-    ...u32(((b << 16) | a) >>> 0),
-  ];
+  return [0x78, 0x01, ...deflate(raw, lookbacks), ...u32(((b << 16) | a) >>> 0)];
 }
 
-/** A looping RGBA APNG. Frames are `width * height * 4` bytes each; stored deflate caps them at 64 KiB. */
+/** A looping RGBA APNG. Frames are `width * height * 4` bytes each. */
 function encodeApng(
   width: number,
   height: number,
@@ -375,6 +530,7 @@ function encodeApng(
   const bytes = [137, 80, 78, 71, 13, 10, 26, 10];
   bytes.push(...chunk("IHDR", [...u32(width), ...u32(height), 8, 6, 0, 0, 0]));
   bytes.push(...chunk("acTL", [...u32(frames.length), ...u32(0)]));
+  const stride = width * 4 + 1;
   let sequence = 0;
   frames.forEach((frame, i) => {
     bytes.push(
@@ -390,45 +546,48 @@ function encodeApng(
         0,
       ]),
     );
-    const scanlines: number[] = [];
+    const scanlines = new Uint8Array(stride * height);
     for (let y = 0; y < height; y++) {
-      scanlines.push(0, ...frame.subarray(y * width * 4, (y + 1) * width * 4));
+      scanlines.set(frame.subarray(y * width * 4, (y + 1) * width * 4), y * stride + 1);
     }
-    const data = zlibStored(scanlines);
+    const data = zlib(scanlines, [4, stride]);
     bytes.push(...(i === 0 ? chunk("IDAT", data) : chunk("fdAT", [...u32(sequence++), ...data])));
   });
   bytes.push(...chunk("IEND", []));
   return new Uint8Array(bytes);
 }
 
-/** 8×1 strip over the screen: dashes at 0–1, 3–4, 6–7; frame k lights k + 1 of them. */
-export function workingDashesApng(avatar: ProjectAvatar): Uint8Array {
-  const palette = paletteRgb(avatar);
-  const frames = Array.from({ length: WORKING_DASHES.frameCount }, (_, frame) =>
-    Uint8Array.from(
-      Array.from({ length: WORKING_DASHES.width }, (_, x) => {
-        const lit = x % 3 !== 2 && Math.floor(x / 3) <= frame;
-        return [...(lit ? palette.g : palette.d), 255];
-      }).flat(),
-    ),
-  );
+/** The visor-sized working loop: WORKING_SCAN.offsets frames of the working eyes. */
+export function workingScanApng(avatar: ProjectAvatar): Uint8Array {
+  const glow = GLOW[avatar.glow];
   return encodeApng(
-    WORKING_DASHES.width,
-    WORKING_DASHES.height,
-    frames,
-    WORKING_DASHES.frameDelayMs,
+    WORKING_SCAN.rect.w * WORKING_SCAN.scale,
+    WORKING_SCAN.rect.h * WORKING_SCAN.scale,
+    WORKING_SCAN.offsets.map((offset) => scanFrame(glow, offset)),
+    WORKING_SCAN.frameMs,
   );
 }
 
-const dashUrls = new Map<string, string>();
+const scanUrls = new Map<string, string>();
 
-/** A `data:` URL per look, memoized; a few hundred bytes each. */
-export function workingDashesDataUrl(avatar: ProjectAvatar): string {
-  const key = `${avatar.hue}/${avatar.glow}`;
-  let url = dashUrls.get(key);
+/** A `data:` URL per glow, memoized; the visor itself is the same on every bot. */
+export function workingScanDataUrl(avatar: ProjectAvatar): string {
+  let url = scanUrls.get(avatar.glow);
   if (url === undefined) {
-    url = `data:image/png;base64,${Base64.encode(workingDashesApng(avatar))}`;
-    dashUrls.set(key, url);
+    url = `data:image/png;base64,${Base64.encode(workingScanApng(avatar))}`;
+    scanUrls.set(avatar.glow, url);
   }
   return url;
+}
+
+/** Where the scan overlay sits for an avatar drawn `size` pixels square. */
+export function workingScanBox(size: number): {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+} {
+  const unit = size / VISOR_CANVAS;
+  const { rect } = WORKING_SCAN;
+  return { left: rect.x * unit, top: rect.y * unit, width: rect.w * unit, height: rect.h * unit };
 }

@@ -6,7 +6,7 @@ The three Icon Composer projects are the source of truth for full application ic
 - `nightly/app-icon.icon`
 - `prod/app-icon.icon`
 
-Each project has one layer, `Assets/mascot.svg`: the Boops pixel mascot in its pocket, generated on a 24×24 grid. The project fill is the background colour (prod Ink #25223A, dev Paper #FBF8F1, nightly Phosphor #86FFCF).
+Each project has one layer, `Assets/mascot.svg`: the Boops visor (a dark capsule with two glowing eyes) on a 64×64 grid. The project fill is the background colour (prod Night #1D1A2A, dev Paper #FBF8F3, nightly Phosphor #86FFCF).
 
 Run `vp run icons:export` from the repository root to regenerate the tracked iOS, Linux, Windows, and web assets. The development web exports are also copied to `apps/web/public` for the browser favicon and splash screen. Run `vp run icons:check` to verify that the generated assets and public copies match their sources without changing files.
 
