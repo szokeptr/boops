@@ -224,9 +224,14 @@ const make = Effect.gen(function* () {
         environmentId: input.environmentId,
         environmentPublicKey: input.environmentPublicKey,
       });
+      // A deletion carries no audience; each user's re-read aggregate is already audience-filtered.
+      const audience =
+        input.state === null
+          ? deliveryUsers
+          : deliveryUsers.filter((user) => user.memberId === input.state?.memberId);
       const now = yield* DateTime.now;
       const deliveriesByUser = yield* Effect.forEach(
-        deliveryUsers,
+        audience,
         (deliveryUser) =>
           publishForDeliveryUser({
             deliveryUser,

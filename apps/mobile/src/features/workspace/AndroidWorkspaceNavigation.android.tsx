@@ -63,7 +63,7 @@ function nativeColor(value: string) {
 }
 
 export function AndroidWorkspaceNavigation(props: {
-  readonly onNewThread: () => void;
+  readonly onNewThread: (() => void) | undefined;
   readonly rail?: boolean;
   readonly floating?: boolean;
   readonly fillWidth?: boolean;
@@ -124,7 +124,7 @@ export function AndroidWorkspaceNavigation(props: {
         selectedTab={selectedTab}
         dark={themeAppearance === "dark"}
         textScale={scale}
-        newEnabled={connectionState.hasConnections}
+        newEnabled={connectionState.hasConnections && props.onNewThread !== undefined}
         safeAreaTop={toolbar.paddingTop}
         safeAreaBottom={insets.bottom}
         headerHeight={toolbar.height}
@@ -154,7 +154,7 @@ export function AndroidWorkspaceNavigation(props: {
         }}
         onNewThread={() => {
           Keyboard.dismiss();
-          props.onNewThread();
+          props.onNewThread?.();
         }}
         onOverlayChange={(event) => props.onOverlayChange?.(event.nativeEvent.overlay)}
         style={
@@ -174,7 +174,7 @@ export function AndroidWorkspaceNavigation(props: {
 
 export function FloatingWorkspaceTabs(props: {
   readonly fillWidth?: boolean;
-  readonly onNewThread: () => void;
+  readonly onNewThread: (() => void) | undefined;
   readonly paneWidth?: number;
   readonly onSelect?: () => void;
 }) {

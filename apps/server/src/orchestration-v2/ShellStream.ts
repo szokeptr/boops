@@ -300,12 +300,19 @@ export const loadSubscriberShellSnapshot = Effect.fn("ShellStream.loadSubscriber
     readonly listProjects: Effect.Effect<ReadonlyArray<OrchestrationProjectShell>, E4>;
     readonly latestSequence: Effect.Effect<number, E5>;
     readonly options: ShellSubscriberOptions;
+    /** Threads a trimmed snapshot may read and count; the caller still filters what it sends. */
+    readonly readable?: ((threadId: ThreadId) => boolean) | undefined;
   }) {
     const trims = input.options.omitIdleSubagents || input.options.omitOlderSettled;
+    const readable = input.readable;
     const read = yield* input.sql
       .withTransaction(
         Effect.gen(function* () {
-          const index = trims ? yield* input.listShellIndex : null;
+          const listed = trims ? yield* input.listShellIndex : null;
+          const index =
+            listed === null || readable === undefined
+              ? listed
+              : listed.filter((entry) => readable(entry.id));
           return {
             index,
             decodeThreads: yield* input.readThreads(

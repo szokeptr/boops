@@ -263,6 +263,8 @@ function makeHarness(options: HarnessOptions = {}) {
               canCreateBotsWithoutAsking: false,
               personaReady: false,
               connectionIds: [],
+              memberIds: [],
+              memberConnectionIds: [],
               createdAt: project.createdAt,
               updatedAt: project.updatedAt,
               deletedAt: project.deletedAt,

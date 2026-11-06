@@ -198,6 +198,64 @@ describe("AgentActivityPublisher", () => {
     );
   });
 
+  it.effect("delivers a member's thread only to that member and the rest only to owners", () => {
+    const reached: Array<string> = [];
+    return Effect.gen(function* () {
+      const publisher = yield* AgentActivityPublisher.AgentActivityPublisher;
+      const publish = (memberId?: string) =>
+        publisher.publish({
+          environmentId: state.environmentId,
+          environmentPublicKey: "key",
+          threadId: state.threadId,
+          state: memberId === undefined ? state : { ...state, memberId },
+        });
+      yield* publish("member-anna");
+      expect(reached).toEqual(["anna"]);
+      reached.length = 0;
+      yield* publish();
+      expect(reached).toEqual(["owner"]);
+    }).pipe(
+      Effect.provide(
+        layerPublisher.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(AgentActivityRows.AgentActivityRows, makeAgentActivityRows()),
+              Layer.succeed(
+                EnvironmentLinks.EnvironmentLinks,
+                makeEnvironmentLinks({
+                  listDeliveryUsersForEnvironment: () =>
+                    Effect.succeed(
+                      [
+                        ["owner", undefined],
+                        ["anna", "member-anna"],
+                        ["bob", "member-bob"],
+                      ].map(([userId, memberId]) => ({
+                        userId: userId as string,
+                        notificationsEnabled: true,
+                        liveActivitiesEnabled: true,
+                        ...(memberId === undefined ? {} : { memberId }),
+                      })),
+                    ),
+                }),
+              ),
+              Layer.succeed(
+                LiveActivities.LiveActivities,
+                makeLiveActivities({
+                  listTargets: ({ userId }) =>
+                    Effect.sync(() => {
+                      reached.push(userId);
+                      return [];
+                    }),
+                }),
+              ),
+              Layer.succeed(ApnsDeliveries.ApnsDeliveries, makeApnsDeliveries()),
+            ),
+          ),
+        ),
+      ),
+    );
+  });
+
   it.effect("replays the latest aggregate when a Live Activity token registers", () => {
     const registeredTarget: LiveActivities.TargetRow = {
       ...target("device-1"),

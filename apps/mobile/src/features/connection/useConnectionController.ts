@@ -47,6 +47,12 @@ export function useConnectionController() {
     relayEnvironmentDiscovery.refresh,
     "relay environment refresh",
   );
+  const acceptInviteMutation = useAtomCommand(relayEnvironmentDiscovery.acceptInvite, {
+    reportFailure: false,
+  });
+  const declineInvite = useAtomCommand(relayEnvironmentDiscovery.declineInvite, {
+    reportFailure: false,
+  });
 
   const registeredIds = useMemo(
     () => relayManagedEnvironmentIds(connectedEnvironments),
@@ -82,6 +88,12 @@ export function useConnectionController() {
         }),
       }),
     );
+  /** Accepting links this account as a member; connecting follows at once, like any link. */
+  const acceptInvite = async (inviteId: string) => {
+    const result = await acceptInviteMutation(inviteId);
+    if (result._tag === "Success") await connectRelayEnvironment(result.value);
+    return result;
+  };
   const removeEnvironment = (environmentId: EnvironmentId) =>
     removeEnvironmentMutation(environmentId);
   const retryEnvironment = (environmentId: EnvironmentId) =>
@@ -102,6 +114,7 @@ export function useConnectionController() {
     connectedEnvironments,
     relayEnvironments,
     availableRelayEnvironments,
+    invites: discovery.invites,
     relayDiscovery: {
       isRefreshing: discovery.refreshing,
       isOffline: discovery.offline,
@@ -115,5 +128,7 @@ export function useConnectionController() {
     setEnvironmentEnabled,
     updateEnvironment,
     refreshRelayEnvironments,
+    acceptInvite,
+    declineInvite,
   };
 }

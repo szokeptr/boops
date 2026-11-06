@@ -30,6 +30,7 @@ import {
   isHelperTask,
   withBotMessageHeader,
   withHelperTaskHeader,
+  withMemberMessageHeader,
 } from "../bots/botMessageHeader.ts";
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -876,7 +877,9 @@ export const layer: Layer.Layer<
           ? `${routineHeader(message.routine)}\n\n${composedText}`
           : helperTask
             ? withHelperTaskHeader(composedText)
-            : composedText;
+            : message.senderThreadId === undefined
+              ? withMemberMessageHeader(composedText, projection.thread.linkOrigin)
+              : composedText;
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
       const noteContinuation = isRestartNoteContinuation(
         run,

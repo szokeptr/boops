@@ -21,6 +21,7 @@ import {
 import { useEnvironmentServerConfig, waitForProject } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentsWithScope } from "../../state/session";
+import { useMemberEnvironments } from "../../state/members";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
   AddProjectShell,
@@ -51,7 +52,14 @@ export function CreateBotScreen() {
     (option) => option.connectionState === "connected",
   );
   const permitted = useEnvironmentsWithScope(allEnvironments, AuthOrchestrationOperateScope);
-  const environments = allEnvironments.filter((option) => permitted.has(option.environmentId));
+  // Someone else's environment shares bots with this device; it cannot host a new one.
+  const memberEnvironmentIds = new Set(
+    useMemberEnvironments().map((option) => option.environmentId),
+  );
+  const environments = allEnvironments.filter(
+    (option) =>
+      permitted.has(option.environmentId) && !memberEnvironmentIds.has(option.environmentId),
+  );
   const [pickedEnvironmentId, setPickedEnvironmentId] = useState<EnvironmentId | null>(null);
   const environment =
     environments.find((option) => option.environmentId === pickedEnvironmentId) ??

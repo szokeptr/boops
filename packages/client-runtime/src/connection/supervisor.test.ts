@@ -1270,6 +1270,8 @@ describe("EnvironmentSupervisor", () => {
         createEnvironmentLinkChallenge: unused,
         linkEnvironment: unused,
         unlinkEnvironment: unused,
+        acceptEnvironmentInvite: unused,
+        declineEnvironmentInvite: unused,
         getT3ChatLink: unused,
         createT3ChatLinkRequest: unused,
         unlinkT3Chat: unused,

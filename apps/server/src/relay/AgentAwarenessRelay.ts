@@ -308,15 +308,18 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
       reason: "project-not-found",
     };
   }
+  const state = sanitizeRelayAgentActivityState(
+    projectThreadAwarenessV2({
+      environmentId: input.environmentId,
+      project: input.project.value,
+      thread: input.thread.value,
+    }),
+  );
+  // The relay tells only that member's devices about a member's thread, and only owners otherwise.
+  const memberId = input.thread.value.linkOrigin?.memberId;
   return {
     projectId: input.thread.value.projectId,
-    state: sanitizeRelayAgentActivityState(
-      projectThreadAwarenessV2({
-        environmentId: input.environmentId,
-        project: input.project.value,
-        thread: input.thread.value,
-      }),
-    ),
+    state: state === null || memberId === undefined ? state : { ...state, memberId },
     reason: "snapshot",
   };
 }

@@ -57,6 +57,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import { connectionsForConversation } from "./ConnectorServers.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { CONNECTOR_CATALOG, catalogEntry } from "./connectorCatalog.ts";
 import * as ConnectorMcp from "./connectorMcp.ts";
@@ -832,11 +833,15 @@ const make = Effect.gen(function* () {
           return;
         }
         const suffix = yield* random.uuidV4();
+        // Turning one off for the bot takes it from members too, so turning it on again doesn't.
+        const memberIds = project.value.memberConnectionIds ?? [];
+        const memberNext = memberIds.filter((id) => next.includes(id));
         yield* projects
           .update({
             commandId: CommandId.make(`connectors:bot:${projectId}:${suffix}`),
             projectId,
             connectionIds: next,
+            ...(memberNext.length === memberIds.length ? {} : { memberConnectionIds: memberNext }),
           })
           .pipe(Effect.mapError((cause) => new ConnectorError({ reason: "storage", cause })));
       }),
@@ -885,6 +890,23 @@ const make = Effect.gen(function* () {
     threadManagement
       .getThreadRecords(threadId, [], { messageRoles: [] })
       .pipe(Effect.map((records) => records.thread.projectId));
+
+  // Connections are the owner's accounts: a member's conversation reaches only those the owner
+  // shared with members for this bot.
+  const botConnectionsForThread = (threadId: ThreadId) =>
+    threadManagement.getThreadRecords(threadId, [], { messageRoles: [] }).pipe(
+      Effect.flatMap(({ thread }) =>
+        projects.getById(thread.projectId).pipe(
+          Effect.map((project) => ({
+            projectId: thread.projectId,
+            connectionIds: connectionsForConversation(
+              Option.getOrUndefined(project),
+              thread.linkOrigin?.memberId !== undefined,
+            ),
+          })),
+        ),
+      ),
+    );
 
   const readCard = (threadId: ThreadId, turnItemId: TurnItemId) =>
     threadManagement
@@ -1017,17 +1039,10 @@ const make = Effect.gen(function* () {
   ) {
     const threadScope = yield* McpInvocationContext.requireThreadScope(scope, operation);
     const threadId = threadScope.thread.threadId;
-    const projectId = yield* projectOfThread(threadId).pipe(
+    const bot = yield* botConnectionsForThread(threadId).pipe(
       Effect.mapError(() => mcpFailure("thread_not_found", "This thread no longer exists.")),
     );
-    const project = yield* projects
-      .getById(projectId)
-      .pipe(Effect.mapError((error) => mcpFailure("orchestration_error", error.message)));
-    return {
-      threadScope,
-      threadId,
-      enabled: new Set<string>(Option.getOrUndefined(project)?.connectionIds ?? []),
-    };
+    return { threadScope, threadId, enabled: new Set<string>(bot.connectionIds) };
   });
 
   const listForCaller: Connectors["Service"]["listForCaller"] = Effect.fn(
@@ -1135,16 +1150,10 @@ const make = Effect.gen(function* () {
       `.pipe(Effect.mapError(storage));
       const row = rows[0];
       if (row === undefined) return yield* new ConnectorError({ reason: "unknown_connection" });
-      const projectId = yield* projectOfThread(input.threadId).pipe(
+      const bot = yield* botConnectionsForThread(input.threadId).pipe(
         Effect.mapError((cause) => new ConnectorError({ reason: "not_connected", cause })),
       );
-      const project = yield* projects
-        .getById(projectId)
-        .pipe(Effect.mapError((cause) => new ConnectorError({ reason: "storage", cause })));
-      const enabled =
-        Option.getOrUndefined(project)?.connectionIds?.includes(
-          row.connection_id as ConnectorConnectionId,
-        ) === true;
+      const enabled = bot.connectionIds.includes(row.connection_id as ConnectorConnectionId);
       if (!enabled || row.status === "needs_auth") {
         return yield* new ConnectorError({ reason: "not_connected" });
       }

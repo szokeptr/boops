@@ -79,6 +79,8 @@ import {
   UserPlusIcon,
 } from "lucide-react";
 import { openDeleteBotDialog, useBotArchive, useCanManageBot } from "./bots/BotLifecycle";
+import { openShareBotDialog } from "./members/ShareBotDialog";
+import { useCanManageMembers, useIsMemberOnly } from "../state/members";
 import { openThreadFind } from "./chat/threadFindStore";
 import {
   useDeferredValue,
@@ -524,6 +526,8 @@ function OpenCommandPaletteDialog(props: {
     handleNewThread,
   });
   const canManageContextualBot = useCanManageBot(contextualProjectRef?.environmentId ?? null);
+  const canShareContextualBot = useCanManageMembers(contextualProjectRef?.environmentId ?? null);
+  const memberOnly = useIsMemberOnly();
   const { archiveBot, unarchiveBot } = useBotArchive();
   const projectPickerEntries = buildSidebarProjectPickerEntries({
     groups: pickableProjectGroups(projectGroups),
@@ -1200,8 +1204,9 @@ function OpenCommandPaletteDialog(props: {
     if (firstOption) startNewProject(firstOption.environmentId, null);
   };
 
-  const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [
-    {
+  const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+  if (!memberOnly) {
+    actionItems.push({
       kind: "action",
       value: "action:new-bot",
       searchTerms: ["new bot", "create bot", "add bot", "hatch", "assistant"],
@@ -1209,8 +1214,8 @@ function OpenCommandPaletteDialog(props: {
       icon: <BotIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "bot.new",
       run: async () => openCreateBotDialog(),
-    },
-  ];
+    });
+  }
 
   if (projects.length > 0) {
     const activeProjectTitle =
@@ -1607,6 +1612,18 @@ function OpenCommandPaletteDialog(props: {
       description: currentProjectGroup.displayName,
       icon: <Trash2Icon className={ITEM_ICON_CLASS} />,
       run: async () => openDeleteBotDialog(bot),
+    });
+  }
+  if (currentProjectGroup && contextualProjectRef && canShareContextualBot) {
+    const bot = { ...contextualProjectRef, name: currentProjectGroup.displayName };
+    actionItems.push({
+      kind: "action",
+      value: "action:bot-share",
+      searchTerms: ["share", "invite", "people", "members", "partner", "bot"],
+      title: "Share bot…",
+      description: currentProjectGroup.displayName,
+      icon: <UserPlusIcon className={ITEM_ICON_CLASS} />,
+      run: async () => openShareBotDialog(bot),
     });
   }
   const contextualProjectGroup = currentProjectGroup ?? projectGroups[0] ?? null;

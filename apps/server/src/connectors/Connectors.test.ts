@@ -3,6 +3,7 @@ import * as NodeCrypto from "node:crypto";
 import * as PlatformNodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  EnvironmentMemberId,
   CommandId,
   ConnectorConnectionId,
   EventId,
@@ -287,7 +288,13 @@ const makeHarness = Effect.gen(function* () {
         getById: (projectId) => Effect.sync(() => Option.fromNullishOr(bots.get(projectId))),
         update: (input) =>
           Effect.sync(() => {
-            const next = { ...bots.get(input.projectId)!, connectionIds: input.connectionIds };
+            const next = {
+              ...bots.get(input.projectId)!,
+              connectionIds: input.connectionIds,
+              ...(input.memberConnectionIds === undefined
+                ? {}
+                : { memberConnectionIds: input.memberConnectionIds }),
+            };
             bots.set(input.projectId, next);
             return next;
           }),
@@ -584,6 +591,39 @@ it.effect("refreshes a token near expiry, and a failed refresh means needs_auth"
         enabled: true,
       });
       expect((yield* upstream).headers).toEqual({ authorization: "Bearer at-1" });
+      // A member's conversation in the same bot never reaches the owner's accounts.
+      const memberThreadId = ThreadId.make("thread:bot:member");
+      yield* harness.orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "server",
+        commandId: CommandId.make("command:create:bot:member"),
+        threadId: memberThreadId,
+        projectId: botId,
+        title: "Bot",
+        modelSelection,
+        runtimeMode: "auto-accept-edits",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        linkOrigin: {
+          sessionId: "member:anna",
+          label: "Anna",
+          access: "auto-accept-edits",
+          memberId: EnvironmentMemberId.make("anna"),
+        },
+      });
+      const memberUpstream = harness.connectors.upstream({
+        threadId: memberThreadId,
+        serverName: connection.serverName,
+      });
+      expect((yield* memberUpstream.pipe(Effect.flip)).reason).toBe("not_connected");
+      // Shared with members for this bot, it reaches her conversation too.
+      harness.bots.set(botId, {
+        ...harness.bots.get(botId)!,
+        memberConnectionIds: [connection.id],
+      });
+      expect((yield* memberUpstream).headers).toEqual({ authorization: "Bearer at-1" });
       expect(harness.world.refreshes).toBe(0);
       yield* TestClock.adjust(Duration.seconds(3570));
       expect((yield* upstream).headers).toEqual({ authorization: "Bearer at-2" });
@@ -701,6 +741,10 @@ it.effect("removing a connection turns it off for every bot and forgets its cred
           enabled: true,
         });
       }
+      harness.bots.set(botId, {
+        ...harness.bots.get(botId)!,
+        memberConnectionIds: [connection.id],
+      });
       const disconnected = yield* harness.connectors.disconnect(connection.id);
       expect(disconnected).toMatchObject({ status: "needs_auth", statusDetail: "Disconnected" });
       expect(harness.secrets.has(`connector-${connection.id}`)).toBe(false);
@@ -708,6 +752,8 @@ it.effect("removing a connection turns it off for every bot and forgets its cred
       expect(harness.bots.get(otherBotId)?.connectionIds).toEqual([connection.id]);
       yield* harness.connectors.remove(connection.id);
       expect(harness.bots.get(botId)?.connectionIds).toEqual([]);
+      // Members lose it with the bot, so turning it on again doesn't hand it back to them.
+      expect(harness.bots.get(botId)?.memberConnectionIds).toEqual([]);
       expect(harness.bots.get(otherBotId)?.connectionIds).toEqual([]);
       expect((yield* harness.connectors.list).connections).toEqual([]);
       expect(

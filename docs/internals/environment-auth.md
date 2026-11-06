@@ -105,6 +105,14 @@ transaction](../../apps/server/src/persistence/AuthSessions.ts); a failed
 replacement must leave the old credential usable. Pairing and browser sessions
 do not follow this replacement rule.
 
+### Members are other people
+
+A session whose subject is `member:<id>` belongs to someone the owner invited,
+not to the owner. Only a Boops Connect mint issues one, with
+`orchestration:read` and `orchestration:operate`, and a member policy narrows
+what those reach to the bots shared with them and their own threads, reads
+included. See [Members](./members.md).
+
 ### Reusable dev credential
 
 Web development environments can accept one `T3CODE_DEV_AUTH_TOKEN` across
@@ -126,7 +134,8 @@ after 30 days.
 
 ## The environment is the filesystem boundary
 
-Projects are organizational boundaries, not filesystem sandboxes.
+Projects are organizational boundaries, not filesystem sandboxes, except for
+[members](./members.md), who reach only shared bots and hold no filesystem scope.
 `filesystem:read` permits reading files the server account can read, including
 absolute paths outside a project. This lets clients display artifacts that an
 agent writes in a temporary directory. Relative paths and writes still follow

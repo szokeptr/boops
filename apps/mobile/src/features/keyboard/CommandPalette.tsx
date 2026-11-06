@@ -72,6 +72,7 @@ import { threadJumpIndex } from "./threadKeyboardShortcuts";
 import { openSettings } from "../settings/settings-navigation";
 import { useSelectWorkspaceTab } from "../workspace/useSelectWorkspaceTab";
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useMemberOnly } from "../../state/members";
 
 const PALETTE_COMMANDS: ReadonlyArray<HardwareKeyboardCommand> = [
   "commandPalette",
@@ -213,6 +214,9 @@ function PaletteRow(props: {
 }
 
 /** Mounted only while open, so the app root does not subscribe to the full thread catalog. */
+
+const MEMBER_PALETTE_ACTIONS = new Set(["newThread", "settings", "appearance"]);
+
 export function CommandPalette(props: {
   readonly pathname: string;
   readonly onClose: () => void;
@@ -286,6 +290,7 @@ export function CommandPalette(props: {
       .filter((match) => match.source === "user" || match.source === "assistant")
       .map((match) => [scopedThreadKey(match.environmentId, match.threadId), match]),
   );
+  const memberOnly = useMemberOnly();
   const items = useMemo(() => {
     const actions: CommandPaletteItem[] = [
       {
@@ -329,6 +334,13 @@ export function CommandPalette(props: {
         title: "Scheduled tasks",
         searchTerms: ["schedule", "automations", "recurring"],
         run: () => openSettings(navigation, "SettingsScheduledTasks"),
+      },
+      {
+        key: "members",
+        kind: "action",
+        title: "Members",
+        searchTerms: ["share", "invite", "people", "family", "partner"],
+        run: () => openSettings(navigation, "SettingsMembers"),
       },
       {
         key: "connectors",
@@ -463,8 +475,16 @@ export function CommandPalette(props: {
         (right.threadSearch ? threadRecentUse(right.threadSearch) : 0) -
         (left.threadSearch ? threadRecentUse(left.threadSearch) : 0),
     );
-    return [...actions, ...projectItems, ...threadItems];
+    return [
+      // A member's device chats with shared bots; the owner's tools are not theirs to open.
+      ...(memberOnly
+        ? actions.filter((action) => MEMBER_PALETTE_ACTIONS.has(action.key))
+        : actions),
+      ...projectItems,
+      ...threadItems,
+    ];
   }, [
+    memberOnly,
     selectTab,
     activeThread,
     activeThreadRef,

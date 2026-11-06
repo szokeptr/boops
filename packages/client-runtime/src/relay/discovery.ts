@@ -1,5 +1,6 @@
 import type {
   RelayClientEnvironmentRecord,
+  RelayEnvironmentInvite,
   RelayEnvironmentStatusResponse,
 } from "@t3tools/contracts/relay";
 import { decodeRelayJwt } from "@t3tools/shared/relayJwt";
@@ -36,6 +37,8 @@ export interface RelayEnvironmentDiscoveryState {
   readonly environments: ReadonlyMap<string, RelayDiscoveredEnvironment>;
   // Only a loaded account list distinguishes a missing registration from an unknown one.
   readonly listed: boolean;
+  /** Invites to other people's environments waiting for this account to answer. */
+  readonly invites: ReadonlyArray<RelayEnvironmentInvite>;
   readonly refreshing: boolean;
   readonly offline: boolean;
   readonly error: Option.Option<ConnectionAttemptError>;
@@ -46,12 +49,18 @@ export class RelayEnvironmentDiscovery extends Context.Service<
   {
     readonly state: SubscriptionRef.SubscriptionRef<RelayEnvironmentDiscoveryState>;
     readonly refresh: Effect.Effect<void>;
+    /** Returns the new member link; register it like any discovered environment to connect. */
+    readonly acceptInvite: (
+      inviteId: string,
+    ) => Effect.Effect<RelayClientEnvironmentRecord, ConnectionAttemptError>;
+    readonly declineInvite: (inviteId: string) => Effect.Effect<void, ConnectionAttemptError>;
   }
 >()("@t3tools/client-runtime/relay/discovery/RelayEnvironmentDiscovery") {}
 
 export const EMPTY_RELAY_ENVIRONMENT_DISCOVERY_STATE: RelayEnvironmentDiscoveryState = {
   environments: new Map(),
   listed: false,
+  invites: [],
   refreshing: false,
   offline: false,
   error: Option.none(),
@@ -227,13 +236,15 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
 
       let generation = yield* Ref.get(accountGeneration);
       yield* Ref.set(refreshGeneration, generation);
-      yield* SubscriptionRef.set(state, {
+      yield* SubscriptionRef.update(state, (current) => ({
         environments: new Map(),
         listed: false,
+        // Kept until the listing replaces them, so an invite card does not blink on refresh.
+        invites: current.invites,
         refreshing: true,
         offline: false,
         error: Option.none(),
-      });
+      }));
 
       // Sign-out triggers credentials-changed refreshes and must settle to an empty list.
       // Only session-level missing credentials are benign; relay-side auth failures must surface.
@@ -267,7 +278,7 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
       }
       yield* Ref.set(activeAccountId, accountId);
 
-      const environments = yield* relay
+      const { environments, invites } = yield* relay
         .listEnvironments({ clerkToken })
         .pipe(Effect.mapError(mapManagedRelayError));
       if ((yield* Ref.get(accountGeneration)) !== generation) {
@@ -286,6 +297,7 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
         ...current,
         environments: next,
         listed: true,
+        invites,
       }));
 
       yield* Effect.forEach(
@@ -350,7 +362,37 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
     Effect.forkScoped,
   );
 
-  return RelayEnvironmentDiscovery.of({ state, refresh });
+  const scope = yield* Effect.scope;
+  const forgetInvite = (inviteId: string) =>
+    SubscriptionRef.update(state, (current) => ({
+      ...current,
+      invites: current.invites.filter((invite) => invite.inviteId !== inviteId),
+    }));
+
+  const acceptInvite = Effect.fn("RelayEnvironmentDiscovery.acceptInvite")(function* (
+    inviteId: string,
+  ) {
+    const clerkToken = yield* session.clerkToken;
+    const environment = yield* relay
+      .acceptEnvironmentInvite({ clerkToken, inviteId })
+      .pipe(Effect.mapError(mapManagedRelayError));
+    yield* forgetInvite(inviteId);
+    // The caller connects right away; the listing catches up in the background.
+    yield* refresh.pipe(Effect.forkIn(scope));
+    return environment;
+  });
+
+  const declineInvite = Effect.fn("RelayEnvironmentDiscovery.declineInvite")(function* (
+    inviteId: string,
+  ) {
+    const clerkToken = yield* session.clerkToken;
+    yield* relay
+      .declineEnvironmentInvite({ clerkToken, inviteId })
+      .pipe(Effect.mapError(mapManagedRelayError));
+    yield* forgetInvite(inviteId);
+  });
+
+  return RelayEnvironmentDiscovery.of({ state, refresh, acceptInvite, declineInvite });
 });
 
 export const layer = Layer.effect(RelayEnvironmentDiscovery, make());

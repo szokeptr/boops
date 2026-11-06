@@ -4,6 +4,20 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as Connectors from "./connectors/Connectors.ts";
+import * as Members from "./members/Members.ts";
+import {
+  authorizeMemberCommand,
+  authorizeMemberLaunch,
+  type MemberContext,
+  makeShellAudience,
+  memberDenied,
+  readMemberThreads,
+  redactServerConfigEventForMember,
+  redactServerConfigForMember,
+  redactServerLifecycleEventForMember,
+  requireOwnOrNewThread,
+  requireOwnThread,
+} from "./members/memberFence.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 
 import * as DateTime from "effect/DateTime";
@@ -41,6 +55,9 @@ import {
   type EditorId,
   type FileManagerRevealKind,
   type OrchestrationV2Command,
+  type EnvironmentMemberId,
+  memberIdFromSessionSubject,
+  memberSessionSubject,
   type GitActionProgressEvent,
   type GitManagerServiceError,
   type MessageId,
@@ -1073,21 +1090,46 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
 );
 
 export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subscribeShell")(
-  function* (input: {
-    readonly afterSequence?: number;
-    readonly requestCompletionMarker?: boolean;
-    readonly omitIdleSubagents?: boolean;
-    readonly omitOlderSettled?: boolean;
-  }) {
+  function* (
+    input: {
+      readonly afterSequence?: number;
+      readonly requestCompletionMarker?: boolean;
+      readonly omitIdleSubagents?: boolean;
+      readonly omitOlderSettled?: boolean;
+    },
+    /** The member subscribing; undefined for the owner. */
+    viewer?: EnvironmentMemberId,
+  ) {
     const sql = yield* SqlClient.SqlClient;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
     const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
     const projects = yield* ProjectStore.ProjectStoreV2;
     const projectService = yield* ProjectService.ProjectService;
     const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
+    const audience = makeShellAudience(
+      viewer,
+      yield* readMemberThreads(sql).pipe(
+        Effect.mapError(
+          (cause) =>
+            new OrchestrationV2GetShellSnapshotError({
+              message: "Failed to prepare the application shell stream",
+              cause,
+            }),
+        ),
+      ),
+    );
     let subagentThreadIds = new Set<string>();
-    const filterSubagentTranscript = (stored: ApplicationStoredEvent) =>
-      shouldPublishShellApplicationEvent(stored, subagentThreadIds);
+    // Events for threads the viewer cannot see are dropped before their shells are read.
+    const filterSubagentTranscript = (stored: ApplicationStoredEvent) => {
+      if (!("aggregateKind" in stored)) {
+        const { event } = stored;
+        if (event.type === "thread.created") {
+          audience.learn(event.threadId, event.payload.linkOrigin?.memberId);
+        }
+        if (!audience.mayRead(event.threadId)) return false;
+      }
+      return shouldPublishShellApplicationEvent(stored, subagentThreadIds);
+    };
 
     const enrichmentChanges = yield* projectEnrichment.subscribeChanges;
     const loadProjectMetadataSnapshot = Effect.fn("ws.orchestrationV2.loadProjectMetadataSnapshot")(
@@ -1120,6 +1162,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
           omitIdleSubagents: input.omitIdleSubagents === true,
           omitOlderSettled: input.omitOlderSettled === true,
         },
+        readable: audience.mayRead,
       });
       subagentThreadIds = forSubscriber.subagentThreadIds;
       const enriched = yield* enrichProjectShells(forSubscriber.snapshot.projects);
@@ -1294,7 +1337,11 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         });
       });
       const highWater = yield* applicationEvents.latestApplicationSequence;
-      if (!(yield* canReplayPersistedRange(input.afterSequence, highWater, SHELL_RESUME_MAX_GAP))) {
+      // A member's shell is small, and a snapshot tells her view which bots are shared.
+      if (
+        viewer !== undefined ||
+        !(yield* canReplayPersistedRange(input.afterSequence, highWater, SHELL_RESUME_MAX_GAP))
+      ) {
         return yield* fromSnapshot;
       }
 
@@ -1333,6 +1380,8 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     );
 
     return stream.pipe(
+      Stream.map(audience.viewItem),
+      Stream.flattenIterable,
       dedupeShellEnrichment,
       Stream.mapError(
         (cause) =>
@@ -1469,6 +1518,60 @@ export const layerWsRpc = (
       const peerLinks = yield* PeerLinks.PeerLinks;
       const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
       const connectors = yield* Connectors.Connectors;
+      const members = yield* Members.Members;
+      const currentMemberId = memberIdFromSessionSubject(currentSession.subject);
+      // A lookup that fails refuses the member rather than letting the call through.
+      const failClosed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        effect.pipe(
+          Effect.tapError((cause) => Effect.logWarning("Member access check failed.", { cause })),
+          Effect.mapError(() => memberDenied()),
+        );
+      const memberContext: MemberContext<EnvironmentAuthorizationError> | undefined =
+        currentMemberId === undefined
+          ? undefined
+          : {
+              memberId: currentMemberId,
+              threadShell: (threadId) => failClosed(threadManagement.getThreadShell(threadId)),
+              project: (projectId) =>
+                failClosed(projectService.getShell(projectId)).pipe(
+                  Effect.map(Option.getOrUndefined),
+                ),
+              origin: failClosed(members.get(currentMemberId)).pipe(
+                Effect.map(
+                  Option.match({
+                    onNone: () => undefined,
+                    onSome: (member) => ({
+                      sessionId: memberSessionSubject(member.id),
+                      label: member.label,
+                      access: member.access,
+                      memberId: member.id,
+                    }),
+                  }),
+                ),
+              ),
+            };
+      const authorizeCommand = (command: OrchestrationV2Command) =>
+        memberContext === undefined
+          ? Effect.succeed(command)
+          : authorizeMemberCommand(memberContext, command);
+      /** Thread-level reads and writes: a member's own threads only. */
+      const requireViewerThread = (threadId: ThreadId) =>
+        memberContext === undefined
+          ? Effect.void
+          : requireOwnThread(memberContext, threadId).pipe(Effect.asVoid);
+      /** What this session may list: the owner never sees members' threads, a member only hers. */
+      const loadViewerAudience = Effect.gen(function* () {
+        const audience = makeShellAudience(
+          currentMemberId,
+          yield* failClosed(readMemberThreads(sql)),
+        );
+        if (currentMemberId !== undefined) {
+          for (const project of yield* failClosed(projectStore.listShells())) {
+            audience.viewProject(project);
+          }
+        }
+        return audience;
+      });
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -2018,18 +2121,19 @@ export const layerWsRpc = (
               ? { "orchestration_v2.source_thread_id": command.sourceThreadId }
               : {}),
           }).pipe(
-            Effect.andThen(
+            Effect.as(
+              ThreadManagementService.withCreationProvenance(command, {
+                createdBy: "user",
+                creationSource: "creationSource" in command ? command.creationSource : "web",
+              }),
+            ),
+            Effect.flatMap(authorizeCommand),
+            Effect.flatMap((authorized) =>
               startup
                 .enqueueCommand(
-                  (command.type === "prepared-run.retry"
-                    ? threadLaunch.retryPreparation(command)
-                    : ThreadMessageIntake.dispatchCommand(
-                        ThreadManagementService.withCreationProvenance(command, {
-                          createdBy: "user",
-                          creationSource:
-                            "creationSource" in command ? command.creationSource : "web",
-                        }),
-                      )
+                  (authorized.type === "prepared-run.retry"
+                    ? threadLaunch.retryPreparation(authorized)
+                    : ThreadMessageIntake.dispatchCommand(authorized)
                   ).pipe(Effect.provide(intakeContext)),
                 )
                 .pipe(
@@ -2058,82 +2162,145 @@ export const layerWsRpc = (
         [ORCHESTRATION_V2_WS_METHODS.getNativeChildWork]: (input) =>
           nativeChildWork.getNativeChildWork(input),
         [ORCHESTRATION_V2_WS_METHODS.getTurnItem]: (input) =>
-          threadManagement.getTurnItem(input).pipe(
-            Effect.mapError(
-              (cause) =>
-                new OrchestrationV2GetThreadProjectionError({
-                  threadId: input.threadId,
-                  message: "Failed to load turn item",
-                  cause,
-                }),
+          requireViewerThread(input.threadId).pipe(
+            Effect.andThen(
+              threadManagement.getTurnItem(input).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationV2GetThreadProjectionError({
+                      threadId: input.threadId,
+                      message: "Failed to load turn item",
+                      cause,
+                    }),
+                ),
+              ),
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.getTurnDiff]: (input) =>
-          checkpointDiffQuery.getTurnDiff(input).pipe(
-            Effect.mapError(
-              (cause) =>
-                new OrchestrationGetTurnDiffError({
-                  message: "Failed to load turn diff",
-                  cause,
-                }),
+          requireViewerThread(input.threadId).pipe(
+            Effect.andThen(
+              checkpointDiffQuery.getTurnDiff(input).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationGetTurnDiffError({
+                      message: "Failed to load turn diff",
+                      cause,
+                    }),
+                ),
+              ),
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.getFullThreadDiff]: (input) =>
-          checkpointDiffQuery.getFullThreadDiff(input).pipe(
-            Effect.mapError(
-              (cause) =>
-                new OrchestrationGetFullThreadDiffError({
-                  message: "Failed to load full thread diff",
-                  cause,
-                }),
+          requireViewerThread(input.threadId).pipe(
+            Effect.andThen(
+              checkpointDiffQuery.getFullThreadDiff(input).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationGetFullThreadDiffError({
+                      message: "Failed to load full thread diff",
+                      cause,
+                    }),
+                ),
+              ),
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.searchThread]: (input) =>
-          threadManagement
-            .searchThread(input)
-            .pipe(Effect.mapError((cause) => new OrchestrationV2SearchThreadError({ cause }))),
+          requireViewerThread(input.threadId).pipe(
+            Effect.andThen(
+              threadManagement
+                .searchThread(input)
+                .pipe(Effect.mapError((cause) => new OrchestrationV2SearchThreadError({ cause }))),
+            ),
+          ),
         [ORCHESTRATION_V2_WS_METHODS.searchThreadStream]: (input) =>
-          threadManagement
-            .searchThreadStream(input)
-            .pipe(Stream.mapError((cause) => new OrchestrationV2SearchThreadError({ cause }))),
-        [ORCHESTRATION_V2_WS_METHODS.searchThreads]: (input) =>
-          ThreadSearch.searchThreadsWithOlderSettledRows({
-            request: input,
-            search: threadSearch.search,
-            searchOlderSettled: threadSearch.searchOlderSettled,
-            sql,
-            readThreads: (threadIds) =>
-              threadManagement.readShellSnapshot({ location: "active", threadIds }),
-            latestSequence: applicationEvents.latestApplicationSequence,
-          }).pipe(
-            Effect.mapError(
-              (cause) =>
-                new OrchestrationSearchThreadsError({
-                  message: "Failed to search threads",
-                  cause,
-                }),
+          Stream.unwrap(
+            requireViewerThread(input.threadId).pipe(
+              Effect.as(
+                threadManagement
+                  .searchThreadStream(input)
+                  .pipe(
+                    Stream.mapError((cause) => new OrchestrationV2SearchThreadError({ cause })),
+                  ),
+              ),
             ),
           ),
-        [ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot]: (_input) =>
-          getOrchestrationV2ArchivedShellSnapshot,
-        [ORCHESTRATION_V2_WS_METHODS.getThreadFamily]: (input) =>
-          readOmittableShellRows({ familyOf: input.threadId }, "Failed to load the thread family"),
-        [ORCHESTRATION_V2_WS_METHODS.getOlderSettledThreads]: (input) =>
-          loadOlderSettledThreadsPage({
-            sql,
-            listThreads: threadManagement.listOlderSettledThreads(input),
-            readThreads: (threadIds) =>
-              threadManagement.readShellSnapshot({ location: "active", threadIds }),
-            latestSequence: applicationEvents.latestApplicationSequence,
-          }).pipe(
-            Effect.mapError(
-              (cause) =>
-                new OrchestrationV2GetShellSnapshotError({
-                  message: "Failed to load older settled threads",
-                  cause,
-                }),
-            ),
-          ),
+        [ORCHESTRATION_V2_WS_METHODS.searchThreads]:
+          /* Request instrumentation already owns the span; keep this handler in that context. */
+          Effect.fnUntraced(function* (input) {
+            const audience = yield* loadViewerAudience;
+            const result = yield* ThreadSearch.searchThreadsWithOlderSettledRows({
+              request: input,
+              search: threadSearch.search,
+              searchOlderSettled: threadSearch.searchOlderSettled,
+              sql,
+              readThreads: (threadIds) =>
+                threadManagement.readShellSnapshot({ location: "active", threadIds }),
+              latestSequence: applicationEvents.latestApplicationSequence,
+            }).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationSearchThreadsError({
+                    message: "Failed to search threads",
+                    cause,
+                  }),
+              ),
+            );
+            return {
+              ...result,
+              matches: result.matches.filter(
+                (match) => audience.mayRead(match.threadId) && audience.isShared(match.projectId),
+              ),
+              ...(result.threads === undefined
+                ? {}
+                : { threads: result.threads.filter(audience.isVisible) }),
+            };
+          }),
+        [ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot]:
+          /* Request instrumentation already owns the span; keep this handler in that context. */
+          Effect.fnUntraced(function* (_input) {
+            const audience = yield* loadViewerAudience;
+            const snapshot = yield* getOrchestrationV2ArchivedShellSnapshot;
+            const projects = snapshot.projects.flatMap(
+              (project) => audience.viewProject(project) ?? [],
+            );
+            return { ...snapshot, projects, threads: snapshot.threads.filter(audience.isVisible) };
+          }),
+        [ORCHESTRATION_V2_WS_METHODS.getThreadFamily]:
+          /* Request instrumentation already owns the span; keep this handler in that context. */
+          Effect.fnUntraced(function* (input) {
+            const audience = yield* loadViewerAudience;
+            const family = yield* readOmittableShellRows(
+              { familyOf: input.threadId },
+              "Failed to load the thread family",
+            );
+            return { ...family, threads: family.threads.filter(audience.isVisible) };
+          }),
+        [ORCHESTRATION_V2_WS_METHODS.getOlderSettledThreads]:
+          /* Request instrumentation already owns the span; keep this handler in that context. */
+          Effect.fnUntraced(function* (input) {
+            const audience = yield* loadViewerAudience;
+            const page = yield* loadOlderSettledThreadsPage({
+              sql,
+              listThreads: threadManagement.listOlderSettledThreads(input),
+              readThreads: (threadIds) =>
+                threadManagement.readShellSnapshot({ location: "active", threadIds }),
+              latestSequence: applicationEvents.latestApplicationSequence,
+            }).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationV2GetShellSnapshotError({
+                    message: "Failed to load older settled threads",
+                    cause,
+                  }),
+              ),
+            );
+            return {
+              ...page,
+              threads: page.threads.filter(audience.isVisible),
+              // Counts cover every thread, so a member would learn how many the owner has.
+              counts: currentMemberId === undefined ? page.counts : [],
+            };
+          }),
         [ORCHESTRATION_V2_WS_METHODS.getWorktreeThreadIds]: (input) =>
           readOmittableShellRows(
             { worktreePath: input.worktreePath },
@@ -2141,6 +2308,7 @@ export const layerWsRpc = (
           ).pipe(Effect.map(({ threads }) => ({ threadIds: threads.map((thread) => thread.id) }))),
         [ORCHESTRATION_V2_WS_METHODS.getThreadProjection]: (input) =>
           Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+            Effect.andThen(requireViewerThread(input.threadId)),
             Effect.andThen(
               // Bound compatibility snapshots so pre-pagination clients cannot materialize unlimited transcripts.
               threadManagement
@@ -2172,6 +2340,11 @@ export const layerWsRpc = (
             "orchestration_v2.project_id": input.projectId,
           }).pipe(
             Effect.andThen(
+              memberContext === undefined
+                ? Effect.succeed(undefined)
+                : authorizeMemberLaunch(memberContext, input),
+            ),
+            Effect.flatMap((member) =>
               startup
                 .enqueueCommand(
                   ThreadMessageIntake.launchThread({
@@ -2186,9 +2359,10 @@ export const layerWsRpc = (
                       ? {}
                       : { generateTitle: input.generateTitle }),
                     modelSelection: input.modelSelection,
-                    runtimeMode: input.runtimeMode,
+                    runtimeMode: member?.runtimeMode ?? input.runtimeMode,
                     interactionMode: input.interactionMode,
                     workspaceStrategy: input.workspaceStrategy,
+                    ...(member === undefined ? {} : { linkOrigin: member.linkOrigin }),
                     ...(input.initialMessage === undefined
                       ? {}
                       : {
@@ -2264,16 +2438,18 @@ export const layerWsRpc = (
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: (input) =>
-          Stream.unwrap(subscribeOrchestrationV2Shell(input)),
+          Stream.unwrap(subscribeOrchestrationV2Shell(input, currentMemberId)),
         [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: (input) =>
           Stream.unwrap(
             Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+              Effect.andThen(requireViewerThread(input.threadId)),
               Effect.andThen(subscribeOrchestrationV2Thread(input)),
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.subscribeCommandOutput]: (input) =>
           Stream.unwrap(
             Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+              Effect.andThen(requireViewerThread(input.threadId)),
               Effect.as(commandOutputHub.subscribe(input)),
             ),
           ),
@@ -2318,7 +2494,11 @@ export const layerWsRpc = (
             usageLimitsCommand: false,
             workspaceSnapshotsOnDemand: false,
             deferNetworkDiscovery: false,
-          }),
+          }).pipe(
+            Effect.map((config) =>
+              currentMemberId === undefined ? config : redactServerConfigForMember(config),
+            ),
+          ),
         [WS_METHODS.serverSearchAcpRegistry]: (input) =>
           acpRegistryCatalog
             .search(input)
@@ -2644,6 +2824,14 @@ export const layerWsRpc = (
         [WS_METHODS.connectorsTest]: ({ connectionId }) =>
           connectors.test(connectionId).pipe(Effect.map((toolCount) => ({ toolCount }))),
         [WS_METHODS.connectorsSetBotConnection]: (input) => connectors.setBotConnection(input),
+        [WS_METHODS.membersSubscribe]: () => members.subscribe,
+        [WS_METHODS.membersInvite]: (input) => members.invite(input),
+        [WS_METHODS.membersUpdate]: (input) => members.update(input),
+        [WS_METHODS.membersRemove]: ({ memberId }) => members.remove(memberId),
+        [WS_METHODS.membersSetBotAccess]: (input) => members.setBotAccess(input),
+        [WS_METHODS.membersSetBotConnectionAccess]: (input) =>
+          members.setBotConnectionAccess(input),
+        [WS_METHODS.membersLeave]: () => members.leave(currentSession.subject),
         [WS_METHODS.connectorsAnswerRequest]: (input) =>
           Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
             Effect.andThen(connectors.answerRequest(input)),
@@ -3027,6 +3215,9 @@ export const layerWsRpc = (
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(function* (input) {
             const path = yield* Path.Path;
+            if (input.resource._tag === "tool-output-image") {
+              yield* requireViewerThread(input.resource.threadId);
+            }
             if (
               input.resource._tag === "attachment" ||
               input.resource._tag === "native-app-icon" ||
@@ -3105,7 +3296,13 @@ export const layerWsRpc = (
             });
           }),
         [WS_METHODS.assetsPersistChatAttachments]: (input) =>
-          persistChatAttachments(input).pipe(Effect.map((attachments) => ({ attachments }))),
+          (memberContext === undefined
+            ? Effect.void
+            : requireOwnOrNewThread(memberContext, input.threadId)
+          ).pipe(
+            Effect.andThen(persistChatAttachments(input)),
+            Effect.map((attachments) => ({ attachments })),
+          ),
         [WS_METHODS.subscribeVcsStatus]: (input) => vcsStatusBroadcaster.streamStatus(input),
         [WS_METHODS.subscribeWorktreeSetup]: (input) => worktreeSetupTracker.stream(input.threadId),
         [WS_METHODS.worktreeSetupCancel]: (input) =>
@@ -3392,6 +3589,10 @@ export const layerWsRpc = (
                 ),
               );
             }),
+          ).pipe(
+            currentMemberId === undefined
+              ? (events) => events
+              : Stream.map(redactServerConfigEventForMember),
           ),
         [WS_METHODS.subscribeServerLifecycle]: (_input) =>
           Stream.unwrap(
@@ -3412,6 +3613,10 @@ export const layerWsRpc = (
               );
               return Stream.concat(rpcInitialItems(snapshotEvents), liveEvents);
             }),
+          ).pipe(
+            currentMemberId === undefined
+              ? (events) => events
+              : Stream.map(redactServerLifecycleEventForMember),
           ),
         [WS_METHODS.subscribeAuthAccess]: (_input) =>
           Stream.unwrap(
@@ -3478,6 +3683,7 @@ export const layer = Layer.unwrap(
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
     const connectors = yield* Connectors.Connectors;
+    const members = yield* Members.Members;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -3518,21 +3724,25 @@ export const layer = Layer.unwrap(
             Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),
             Effect.provide(
               Layer.merge(
-                RpcAuthorization.layer(session.scopes, (method, payload) => {
-                  // Anonymous product signal: the feature and its enum variant,
-                  // credited to the connecting client's surface only.
-                  const usage = featureUsage(method, payload);
-                  return usage === undefined
-                    ? Effect.void
-                    : analytics
-                        .record("feature.used", {
-                          ...usage,
-                          ...(clientAnalyticsProps.surface === undefined
-                            ? {}
-                            : { surface: clientAnalyticsProps.surface }),
-                        })
-                        .pipe(Effect.ignore);
-                }),
+                RpcAuthorization.layer(
+                  session.scopes,
+                  (method, payload) => {
+                    // Anonymous product signal: the feature and its enum variant,
+                    // credited to the connecting client's surface only.
+                    const usage = featureUsage(method, payload);
+                    return usage === undefined
+                      ? Effect.void
+                      : analytics
+                          .record("feature.used", {
+                            ...usage,
+                            ...(clientAnalyticsProps.surface === undefined
+                              ? {}
+                              : { surface: clientAnalyticsProps.surface }),
+                          })
+                          .pipe(Effect.ignore);
+                  },
+                  memberIdFromSessionSubject(session.subject),
+                ),
                 rpcInstrumentationLayer,
               ),
             ),
@@ -3568,6 +3778,7 @@ export const layer = Layer.unwrap(
               Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
               Layer.provide(Layer.succeed(PeerLinkRequests.PeerLinkRequests, peerLinkRequests)),
               Layer.provide(Layer.succeed(Connectors.Connectors, connectors)),
+              Layer.provide(Layer.succeed(Members.Members, members)),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(
                   Layer.provide(

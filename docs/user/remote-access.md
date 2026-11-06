@@ -52,6 +52,25 @@ the defaults. Without a terminal:
 `boops status --json` prints the settings. `boops up --help` lists every flag with
 examples.
 
+### Share bots with someone
+
+You can let another person chat with some of your bots, for example a partner who only has a phone.
+They need their own Boops Connect account, and this machine must have Boops Connect on.
+
+1. Open a bot's menu and choose **Share…**, then **Invite someone** with their name and the email
+   they sign in to Boops Connect with. You can also invite from **Settings → Members**.
+2. They sign in to Boops Connect in the mobile app and accept the invite. Your machine then shows
+   only the bots you shared with them.
+
+They chat in their own conversations: you do not see their chats, and they do not see yours, your
+other projects, files, terminals or settings. Turn a bot on or off for them from its **Share…**
+menu. **Remove** in **Settings → Members** signs them out at once and archives their
+conversations; they can also leave on their own.
+
+A bot's Connections are your accounts, so they are off for the people you share it with. To let
+them use one, turn it on under **Connections they can use** in that bot's **Share…** menu. The bot
+then acts as you in that account when they ask it to.
+
 ### More machines with T3 Chat
 
 Each Boops Connect account can link up to 3 machines. Phones and browsers do not

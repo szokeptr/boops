@@ -1,6 +1,7 @@
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  EnvironmentMemberId,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
   ProjectId,
@@ -525,5 +526,93 @@ it.effect("refuses thread writes between bots that are not parent and child", ()
       ),
     );
     expect(outcomes).toEqual(["ran", "ran", "capability_denied"]);
+  }),
+);
+
+it.effect("fences an invited member's conversation to her own threads, reads included", () =>
+  Effect.gen(function* () {
+    const member = (memberId: string) => ({
+      sessionId: `member:${memberId}`,
+      label: memberId,
+      // A member is fenced at every access level, unlike a link.
+      access: "full-access" as const,
+      memberId: EnvironmentMemberId.make(memberId),
+    });
+    const annaThread = ThreadId.make("thread:anna");
+    const annaOther = ThreadId.make("thread:anna-other");
+    const bobThread = ThreadId.make("thread:bob");
+    const ownerThread = ThreadId.make("thread:owner");
+    const threadShells = new Map([
+      [annaThread, { ...liveThreadShell(annaThread), linkOrigin: member("anna") }],
+      [annaOther, { ...liveThreadShell(annaOther), linkOrigin: member("anna") }],
+      [bobThread, { ...liveThreadShell(bobThread), linkOrigin: member("bob") }],
+      [ownerThread, liveThreadShell(ownerThread)],
+    ]);
+    const threadTool = { ...probe, parameters: Schema.Struct({ threadId: ThreadId }) };
+    // Real tool names: a member's conversation reaches only the tools listed for it.
+    const MemberToolkit = Toolkit.make(
+      Tool.make("t3_thread_send", threadTool),
+      Tool.make("t3_thread_read", threadTool),
+      Tool.make("delegate_task", {
+        ...probe,
+        parameters: Schema.Struct({
+          target: Schema.optional(Schema.Struct({ environmentId: Schema.optional(Schema.String) })),
+        }),
+      }),
+      Tool.make("schedule_task", probe),
+    );
+    const server = McpHttpServer.toolkitRegistration(
+      MemberToolkit,
+      McpToolAccess.toLayer(MemberToolkit, {
+        t3_thread_send: McpToolAccess.writesThreads(
+          (input) => [input.threadId],
+          () => ran,
+        ),
+        t3_thread_read: McpToolAccess.readsThreads(
+          (input) => [input.threadId],
+          () => ran,
+        ),
+        delegate_task: McpToolAccess.actsAsCaller(() => ran),
+        schedule_task: McpToolAccess.writes(() => ran),
+      }),
+    ).pipe(
+      Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+      Layer.provideMerge(
+        Layer.mock(ThreadManagement.ThreadManagementService)({
+          getThreadShell: (threadId) => Effect.succeed(threadShells.get(threadId) ?? null),
+        }),
+      ),
+    );
+    const anna = threadCaller(annaThread);
+    const owner = threadCaller(ownerThread);
+    const outcomes = yield* Effect.forEach(
+      [
+        ["t3_thread_send", anna, { threadId: annaOther }],
+        ["t3_thread_send", anna, { threadId: ownerThread }],
+        ["t3_thread_send", anna, { threadId: bobThread }],
+        ["t3_thread_read", anna, { threadId: annaOther }],
+        ["t3_thread_read", anna, { threadId: ownerThread }],
+        ["t3_thread_read", anna, { threadId: bobThread }],
+        ["delegate_task", anna, {}],
+        ["delegate_task", anna, { target: { environmentId: "environment-box" } }],
+        ["schedule_task", anna, {}],
+        ["t3_thread_read", owner, { threadId: annaThread }],
+        ["schedule_task", owner, {}],
+      ] as const,
+      ([tool, scope, args]) => call(tool, scope, args),
+    ).pipe(Effect.provide(server));
+    expect(outcomes).toEqual([
+      "ran",
+      "capability_denied",
+      "capability_denied",
+      "ran",
+      "capability_denied",
+      "capability_denied",
+      "ran",
+      "capability_denied",
+      "capability_denied",
+      "ran",
+      "ran",
+    ]);
   }),
 );

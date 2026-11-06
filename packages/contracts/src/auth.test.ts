@@ -10,6 +10,7 @@ import {
   authScopeResponse,
   AuthSessionState,
   sessionGrantsScope,
+  sessionHasLegacyPermissions,
 } from "./auth.ts";
 
 describe("authorization grants", () => {
@@ -128,5 +129,16 @@ describe("authorization grants", () => {
     },
   ] as const)("sessionGrantsScope accepts $label", ({ session, scope, expected }) => {
     expect(sessionGrantsScope(session, scope)).toBe(expected);
+  });
+
+  it("asks a pre-split credential to re-pair, but not an invited member", () => {
+    const narrow = {
+      authenticated: true,
+      permissions: ["orchestration:read", "orchestration:operate"],
+    } as const;
+    expect(sessionHasLegacyPermissions(narrow)).toBe(true);
+    expect(sessionHasLegacyPermissions({ ...narrow, member: { id: "anna", label: "Anna" } })).toBe(
+      false,
+    );
   });
 });

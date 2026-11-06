@@ -54,8 +54,11 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/settings/about",
 ]);
 
-// Connections belong to the environment, so these pages pick an environment but no project.
-const SETTINGS_ENVIRONMENT_ONLY_PATHS: ReadonlySet<string> = new Set(["/settings/connectors"]);
+// Connections and members belong to the environment: these pages pick one, but no project.
+const SETTINGS_ENVIRONMENT_ONLY_PATHS: ReadonlySet<string> = new Set([
+  "/settings/connectors",
+  "/settings/members",
+]);
 
 interface SettingsScopeMenuProps {
   readonly value: SettingsScopeSearch;

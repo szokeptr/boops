@@ -253,6 +253,8 @@ export type EnvironmentHttpCommonError = typeof EnvironmentHttpCommonError.Type;
 
 const EnvironmentAuthenticationErrors = [
   EnvironmentAuthInvalidError,
+  // An invited member's session reaches only the endpoints her chat needs.
+  EnvironmentScopeRequiredError,
   EnvironmentInternalError,
 ] as const;
 

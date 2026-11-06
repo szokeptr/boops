@@ -2,6 +2,7 @@ import type {
   RelayAgentActivityAggregateState,
   RelayAgentActivityState,
   RelayAgentAwarenessPreferences,
+  RelayEnvironmentLinkRole,
   RelayManagedEndpointOrigin,
 } from "@t3tools/contracts/relay";
 import {
@@ -77,6 +78,13 @@ export const relayEnvironmentLinks = pgTable(
     managedTunnelsEnabled: boolean("managed_tunnels_enabled").notNull().default(false),
     holdWebhooksWhileOffline: boolean("hold_webhooks_while_offline").notNull().default(false),
     createdByDeviceId: varchar("created_by_device_id", { length: 191 }),
+    role: varchar("role", { length: 16 })
+      .notNull()
+      .default("owner")
+      .$type<RelayEnvironmentLinkRole>(),
+    // Member links borrow the owner's managed endpoint, whose allocation is keyed by the owner.
+    memberId: varchar("member_id", { length: 191 }),
+    sharedByUserId: varchar("shared_by_user_id", { length: 191 }),
     revokedAt: varchar("revoked_at", { length: 64 }),
     createdAt: varchar("created_at", { length: 64 }).notNull(),
     updatedAt: varchar("updated_at", { length: 64 }).notNull(),
@@ -84,6 +92,25 @@ export const relayEnvironmentLinks = pgTable(
   (table) => [
     primaryKey({ columns: [table.userId, table.environmentId] }),
     index("idx_relay_environment_links_environment").on(table.environmentId, table.revokedAt),
+  ],
+);
+
+/** A pending member invite, claimed by whoever signs in with the matching Clerk primary email. */
+export const relayEnvironmentInvites = pgTable(
+  "relay_environment_invites",
+  {
+    environmentId: varchar("environment_id", { length: 191 }).notNull(),
+    memberId: varchar("member_id", { length: 191 }).notNull(),
+    environmentPublicKey: text("environment_public_key").notNull(),
+    email: varchar("email", { length: 320 }).notNull(),
+    memberLabel: text("member_label").notNull(),
+    environmentLabel: text("environment_label").notNull(),
+    createdAt: varchar("created_at", { length: 64 }).notNull(),
+    updatedAt: varchar("updated_at", { length: 64 }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.environmentId, table.memberId] }),
+    index("idx_relay_environment_invites_email").on(table.email),
   ],
 );
 

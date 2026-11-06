@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import {
+  EnvironmentMemberId,
   type BotAutonomy,
   type ManagedPolicySummary,
   type ModelSelection,
@@ -113,6 +114,8 @@ const layerWithPolicy = (policy?: ManagedPolicySummary, autonomy: BotAutonomy = 
             canCreateBotsWithoutAsking: false,
             personaReady: false,
             connectionIds: [],
+            memberIds: [],
+            memberConnectionIds: [],
             createdAt: "2026-06-21T00:00:00.000Z",
             updatedAt: "2026-06-21T00:00:00.000Z",
             deletedAt: null,
@@ -162,6 +165,26 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
       assert.equal(yield* modeFor(grokInstanceId, "auto"), "auto");
       assert.equal(yield* modeFor(grokInstanceId, "full-access"), "full-access");
       assert.equal(yield* modeFor(providerInstanceId, "auto-accept-edits"), "auto-accept-edits");
+    }),
+  );
+
+  it.effect("runs an invited member's thread within the access it was stamped with", () =>
+    Effect.gen(function* () {
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const now = yield* DateTime.now;
+      const resolved = yield* policy.resolve({
+        thread: {
+          ...makeThread({ now, worktreePath: null, runtimeMode: "full-access" }),
+          linkOrigin: {
+            sessionId: "member:anna",
+            label: "Anna",
+            access: "read-only",
+            memberId: EnvironmentMemberId.make("anna"),
+          },
+        },
+        modelSelection,
+      });
+      assert.equal(resolved.runtimeMode, "approval-required");
     }),
   );
 });

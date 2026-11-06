@@ -5,6 +5,7 @@ import {
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentMemberId,
   ProviderDriverKind,
   ProviderInstanceId,
   SecretProviderId,
@@ -358,6 +359,62 @@ it.effect("separates host file URLs from readable attachment URLs", () =>
       });
     }
     expect(handled).toBe(1);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("lets a member session reach only the chat methods the member policy allows", () =>
+  Effect.gen(function* () {
+    const tested = [
+      WS_METHODS.serverProbe,
+      WS_METHODS.assetsCreateUrl,
+      WS_METHODS.serverGetHostResources,
+      WS_METHODS.projectsEnsureScratch,
+      WS_METHODS.previewList,
+    ] as const;
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, (typeof tested)[number]> =>
+          !(tested as ReadonlyArray<string>).includes(tag),
+      ),
+    );
+    const clientFor = (memberId: EnvironmentMemberId | undefined) =>
+      RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            group.toLayerHandler(WS_METHODS.serverProbe, () => Effect.succeed({})),
+            group.toLayerHandler(WS_METHODS.assetsCreateUrl, () =>
+              Effect.succeed({ relativeUrl: "/api/assets/file", expiresAt: 1 }),
+            ),
+            group.toLayerHandler(WS_METHODS.serverGetHostResources, () => Effect.die("handled")),
+            group.toLayerHandler(WS_METHODS.projectsEnsureScratch, () => Effect.die("handled")),
+            group.toLayerHandler(WS_METHODS.previewList, () => Effect.die("handled")),
+            RpcAuthorization.layer(
+              [AuthOrchestrationReadScope, AuthOrchestrationOperateScope],
+              undefined,
+              memberId,
+            ),
+          ),
+        ),
+      );
+    const favicon = { resource: { _tag: "project-favicon", cwd: "/home/user" } } as const;
+
+    const member = yield* clientFor(EnvironmentMemberId.make("anna"));
+    expect(yield* member[WS_METHODS.serverProbe]({})).toEqual({});
+    yield* member[WS_METHODS.assetsCreateUrl]({
+      resource: { _tag: "attachment", attachmentId: "image" },
+    });
+    const denials = yield* Effect.all([
+      member[WS_METHODS.assetsCreateUrl](favicon).pipe(Effect.flip),
+      member[WS_METHODS.serverGetHostResources]({}).pipe(Effect.flip),
+      member[WS_METHODS.projectsEnsureScratch]({}).pipe(Effect.flip),
+      member[WS_METHODS.previewList]({ threadId: ThreadId.make("thread") }).pipe(Effect.flip),
+    ]);
+    for (const denial of denials) {
+      expect(denial).toMatchObject({ _tag: "EnvironmentAuthorizationError" });
+    }
+
+    const owner = yield* clientFor(undefined);
+    yield* owner[WS_METHODS.assetsCreateUrl](favicon);
   }).pipe(Effect.scoped),
 );
 

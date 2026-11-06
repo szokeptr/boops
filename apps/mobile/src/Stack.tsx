@@ -85,6 +85,7 @@ import {
   SettingsScheduledTaskEditRouteScreen,
 } from "./features/settings/SettingsScheduledTasksRouteScreen";
 import { SettingsConnectorsRouteScreen } from "./features/settings/SettingsConnectorsRouteScreen";
+import { SettingsMembersRouteScreen } from "./features/settings/SettingsMembersRouteScreen";
 import { SettingsKeyboardRouteScreen } from "./features/settings/SettingsKeyboardRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
 import { SettingsMicrophoneRouteScreen } from "./features/settings/SettingsMicrophoneRouteScreen";
@@ -333,6 +334,11 @@ const SETTINGS_SCREENS = {
     screen: SettingsConnectorsRouteScreen,
     linking: "settings/connectors",
     options: { ...SETTINGS_PAGE_OPTIONS, title: "Connectors" },
+  }),
+  SettingsMembers: createNativeStackScreen({
+    screen: SettingsMembersRouteScreen,
+    linking: "settings/members",
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Members" },
   }),
   SettingsScheduledTaskNew: createNativeStackScreen({
     screen: SettingsScheduledTaskNewRouteScreen,

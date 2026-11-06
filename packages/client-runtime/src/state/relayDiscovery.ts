@@ -41,10 +41,30 @@ export function createRelayEnvironmentDiscoveryAtoms<R, E>(
       ),
   });
 
+  // One answer per invite; a second tap while the first is in flight joins it.
+  const acceptInvite = createRuntimeCommand(runtime, {
+    label: "relay-environment-discovery:accept-invite",
+    concurrency: { mode: "singleFlight", key: (inviteId: string) => inviteId },
+    execute: (inviteId: string) =>
+      RelayEnvironmentDiscovery.RelayEnvironmentDiscovery.pipe(
+        Effect.flatMap((discovery) => discovery.acceptInvite(inviteId)),
+      ),
+  });
+  const declineInvite = createRuntimeCommand(runtime, {
+    label: "relay-environment-discovery:decline-invite",
+    concurrency: { mode: "singleFlight", key: (inviteId: string) => inviteId },
+    execute: (inviteId: string) =>
+      RelayEnvironmentDiscovery.RelayEnvironmentDiscovery.pipe(
+        Effect.flatMap((discovery) => discovery.declineInvite(inviteId)),
+      ),
+  });
+
   return {
     stateAtom,
     stateValueAtom,
     refresh,
     refreshAfterMutation,
+    acceptInvite,
+    declineInvite,
   };
 }

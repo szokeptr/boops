@@ -62,8 +62,10 @@ export function useThreadActionMenu(input: {
   readonly onStartRename: () => void;
   readonly onFind?: ((threadRef: ScopedThreadRef) => void) | undefined;
   readonly canShareWithGuest: boolean;
+  /** Opens Share for the bot whose conversation this is. */
+  readonly onShareBot?: (() => void) | undefined;
 }) {
-  const { threadRef, projectCwd, onStartRename, onFind, canShareWithGuest } = input;
+  const { threadRef, projectCwd, onStartRename, onFind, canShareWithGuest, onShareBot } = input;
   const router = useRouter();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -141,6 +143,7 @@ export function useThreadActionMenu(input: {
         supports,
         snoozePresets,
         canShareWithGuest,
+        canShareBot: onShareBot !== undefined,
         canTurnIntoProject: canTurnThreadIntoProject(threadRef),
         hasSession: thread.activeProviderThreadId !== null,
       });
@@ -249,6 +252,9 @@ export function useThreadActionMenu(input: {
           return;
         case "share-guest":
           openGuestShareDialog(threadRef);
+          return;
+        case "share-bot":
+          onShareBot?.();
           return;
         case "turn-into-project": {
           const result = await turnThreadIntoProject(threadRef);

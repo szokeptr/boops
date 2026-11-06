@@ -8,6 +8,7 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
+import { EnvironmentMemberId } from "./members.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import {
   BotAutonomy,
@@ -41,6 +42,10 @@ export const OrchestrationProjectShell = Schema.Struct({
   personaReady: Schema.optional(Schema.Boolean),
   /** Connections turned on for this bot; only the user turns them on, through `connectors.*`. */
   connectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
+  /** Members this bot is shared with; only the owner changes it, through `members.setBotAccess`. */
+  memberIds: Schema.optional(Schema.Array(EnvironmentMemberId)),
+  /** Which of `connectionIds` its members' conversations may use too; through `members.setBotConnectionAccess`. */
+  memberConnectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

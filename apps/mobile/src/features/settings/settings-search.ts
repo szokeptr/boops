@@ -32,6 +32,7 @@ const SETTINGS_SEARCH_TERMS = {
   SettingsMicrophone: ["voice", "dictation", "audio input", "bluetooth"],
   SettingsScheduledTasks: ["automations", "schedule", "cron", "recurring", "webhook"],
   SettingsConnectors: ["connectors", "mcp", "linear", "notion", "integrations", "connections"],
+  SettingsMembers: ["share", "invite", "people", "family", "partner", "members"],
   SettingsProjectOverview: ["project", "overview", "checkouts", "delete project"],
   SettingsOrganization: [
     "project grouping",

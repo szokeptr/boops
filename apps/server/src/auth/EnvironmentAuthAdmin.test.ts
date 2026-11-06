@@ -1,4 +1,9 @@
-import { AuthStandardClientScopes, type ManagedPolicyDocument } from "@t3tools/contracts";
+import {
+  AuthStandardClientScopes,
+  EnvironmentMemberId,
+  type ManagedPolicyDocument,
+  memberSessionSubject,
+} from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, expect, it } from "@effect/vitest";
@@ -106,6 +111,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const sessions = yield* SessionStore.SessionStore;
         const phone = yield* sessions.issue({ subject: "one-time-token" });
         const connect = yield* sessions.issue({ subject: "cloud-connect" });
+        const member = yield* sessions.issue({
+          subject: memberSessionSubject(EnvironmentMemberId.make("anna")),
+        });
 
         yield* EnvironmentAuth.make.pipe(
           Effect.provide(
@@ -123,6 +131,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const remaining = (yield* sessions.listActive()).map((session) => session.sessionId);
         assert.include(remaining, phone.sessionId);
         assert.notInclude(remaining, connect.sessionId);
+        assert.notInclude(remaining, member.sessionId);
       }).pipe(Effect.provide(layerEnvironmentAuth())),
     );
 

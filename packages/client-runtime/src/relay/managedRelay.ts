@@ -9,6 +9,7 @@ import {
   RelayDpopTokenExchangeGrantType,
   type RelayEnvironmentConnectRequest,
   type RelayEnvironmentConnectResponse,
+  type RelayEnvironmentInvite,
   type RelayEnvironmentLinkChallengeRequest,
   type RelayEnvironmentLinkChallengeResponse,
   type RelayEnvironmentLinkRequest,
@@ -92,6 +93,8 @@ export const ManagedRelayRequestAction = Schema.Literals([
   "create relay environment link challenge",
   "link relay environment",
   "unlink relay environment",
+  "accept relay environment invite",
+  "decline relay environment invite",
   "get relay environment status",
   "connect relay environment",
   "register relay mobile device",
@@ -111,6 +114,8 @@ export const ManagedRelayRequestActivity = Schema.Literals([
   "Relay environment link challenge",
   "Relay environment linking",
   "Relay environment unlinking",
+  "Relay environment invite acceptance",
+  "Relay environment invite decline",
   "Relay environment status request",
   "Relay environment connection",
   "Relay mobile device registration",
@@ -252,6 +257,11 @@ export interface ManagedRelayAuthorization {
   readonly thumbprint: string;
 }
 
+interface ManagedRelayEnvironmentListing {
+  readonly environments: ReadonlyArray<RelayClientEnvironmentRecord>;
+  readonly invites: ReadonlyArray<RelayEnvironmentInvite>;
+}
+
 export interface ManagedRelayClientLayerOptions {
   readonly relayUrl: string;
   readonly clientId: RelayPublicClientId;
@@ -264,7 +274,7 @@ export class ManagedRelayClient extends Context.Service<
     readonly relayUrl: string;
     readonly listEnvironments: (input: {
       readonly clerkToken: string;
-    }) => Effect.Effect<ReadonlyArray<RelayClientEnvironmentRecord>, ManagedRelayClientError>;
+    }) => Effect.Effect<ManagedRelayEnvironmentListing, ManagedRelayClientError>;
     readonly listDevices: (input: {
       readonly clerkToken: string;
     }) => Effect.Effect<ReadonlyArray<RelayClientDeviceRecord>, ManagedRelayClientError>;
@@ -279,6 +289,15 @@ export class ManagedRelayClient extends Context.Service<
     readonly unlinkEnvironment: (input: {
       readonly clerkToken: string;
       readonly environmentId: RelayClientEnvironmentRecord["environmentId"];
+    }) => Effect.Effect<RelayOkResponse, ManagedRelayClientError>;
+    /** Links the signed-in user to the inviting environment as a member. */
+    readonly acceptEnvironmentInvite: (input: {
+      readonly clerkToken: string;
+      readonly inviteId: RelayEnvironmentInvite["inviteId"];
+    }) => Effect.Effect<RelayClientEnvironmentRecord, ManagedRelayClientError>;
+    readonly declineEnvironmentInvite: (input: {
+      readonly clerkToken: string;
+      readonly inviteId: RelayEnvironmentInvite["inviteId"];
     }) => Effect.Effect<RelayOkResponse, ManagedRelayClientError>;
     readonly getT3ChatLink: (input: {
       readonly clerkToken: string;
@@ -441,6 +460,8 @@ function disabledManagedRelayClient(relayUrl: string): ManagedRelayClient["Servi
     ),
     linkEnvironment: unavailable("clientRuntime.managedRelay.linkEnvironment"),
     unlinkEnvironment: unavailable("clientRuntime.managedRelay.unlinkEnvironment"),
+    acceptEnvironmentInvite: unavailable("clientRuntime.managedRelay.acceptEnvironmentInvite"),
+    declineEnvironmentInvite: unavailable("clientRuntime.managedRelay.declineEnvironmentInvite"),
     getT3ChatLink: unavailable("clientRuntime.managedRelay.getT3ChatLink"),
     createT3ChatLinkRequest: unavailable("clientRuntime.managedRelay.createT3ChatLinkRequest"),
     unlinkT3Chat: unavailable("clientRuntime.managedRelay.unlinkT3Chat"),
@@ -741,7 +762,10 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
         return yield* client.client
           .listEnvironments({ headers: bearerHeaders(input.clerkToken) })
           .pipe(
-            Effect.map((response) => response.environments),
+            Effect.map((response): ManagedRelayEnvironmentListing => ({
+              environments: response.environments,
+              invites: response.invites ?? [],
+            })),
             Effect.mapError(relayRequestError("list relay-managed environments")),
             timeoutRelayRequest("Relay environment listing"),
           );
@@ -807,6 +831,36 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
           );
       },
       Effect.withSpan("clientRuntime.managedRelay.unlinkEnvironment"),
+      withRelayClientTracing,
+    ),
+    acceptEnvironmentInvite: Effect.fnUntraced(
+      function* (input) {
+        return yield* client.client
+          .acceptEnvironmentInvite({
+            headers: bearerHeaders(input.clerkToken),
+            params: { inviteId: input.inviteId },
+          })
+          .pipe(
+            Effect.mapError(relayRequestError("accept relay environment invite")),
+            timeoutRelayRequest("Relay environment invite acceptance"),
+          );
+      },
+      Effect.withSpan("clientRuntime.managedRelay.acceptEnvironmentInvite"),
+      withRelayClientTracing,
+    ),
+    declineEnvironmentInvite: Effect.fnUntraced(
+      function* (input) {
+        return yield* client.client
+          .declineEnvironmentInvite({
+            headers: bearerHeaders(input.clerkToken),
+            params: { inviteId: input.inviteId },
+          })
+          .pipe(
+            Effect.mapError(relayRequestError("decline relay environment invite")),
+            timeoutRelayRequest("Relay environment invite decline"),
+          );
+      },
+      Effect.withSpan("clientRuntime.managedRelay.declineEnvironmentInvite"),
       withRelayClientTracing,
     ),
     getT3ChatLink: Effect.fnUntraced(

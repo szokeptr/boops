@@ -30,6 +30,7 @@ import { splitVisibleBotRows } from "./BotListScreen";
 import { BotListRow, PinnedBotTiles } from "./BotListRow";
 import { BotListToolbar } from "./BotListToolbar";
 import { useBotNavigation, useSelectedBotKey } from "./useBotNavigation";
+import { useBotShareSheet } from "../members/BotShareSheet";
 import { useBotRows } from "./useBotRows";
 
 const SIDEBAR_STICKY_HEADER_HEIGHT = 106;
@@ -41,7 +42,7 @@ interface BotNavigationSidebarProps {
   readonly onSearchQueryChange: (query: string) => void;
   readonly onOpenSettings: () => void;
   readonly onOpenEnvironmentSettings: () => void;
-  readonly onAddBot: () => void;
+  readonly onAddBot: (() => void) | undefined;
   readonly onRequestVisibility: () => void;
 }
 
@@ -107,7 +108,8 @@ function BotNavigationSidebarPane(
   const { fabClearance, fabSize } = useAndroidControlSizing();
   const { state: catalogState } = useWorkspaceState();
   const { rows, threads, machineByEnvironmentId, showMachineBadges } = useBotRows();
-  const botActions = useBotNavigation();
+  const share = useBotShareSheet();
+  const botActions = { ...useBotNavigation(), onShare: share.onShare };
   const selectedKey = useSelectedBotKey(rows, threads);
   const { visible: visibleRows, pinned, listed } = splitVisibleBotRows(rows, props.searchQuery);
   const pinnedHeader =
@@ -165,7 +167,9 @@ function BotNavigationSidebarPane(
 
   if (props.nativeChrome) {
     const headerItems = [
-      headerButton({ label: "Add bot", icon: "plus", onPress: props.onAddBot }),
+      ...(props.onAddBot
+        ? [headerButton({ label: "Add bot", icon: "plus", onPress: props.onAddBot })]
+        : []),
       headerButton({ label: "Settings", icon: "gearshape", onPress: props.onOpenSettings }),
     ];
     return (
@@ -215,6 +219,7 @@ function BotNavigationSidebarPane(
           ListHeaderComponent={pinnedHeader}
           ListEmptyComponent={pinned.length > 0 ? undefined : listEmpty}
         />
+        {share.sheet}
       </>
     );
   }
@@ -300,11 +305,13 @@ function BotNavigationSidebarPane(
               }
             />
             <View className="flex-row items-center gap-2.5">
-              <FallbackHeaderButton
-                accessibilityLabel="Add bot"
-                icon="plus"
-                onPress={props.onAddBot}
-              />
+              {props.onAddBot ? (
+                <FallbackHeaderButton
+                  accessibilityLabel="Add bot"
+                  icon="plus"
+                  onPress={props.onAddBot}
+                />
+              ) : null}
               <FallbackHeaderButton
                 accessibilityLabel="Open settings"
                 icon="gearshape"
@@ -338,6 +345,7 @@ function BotNavigationSidebarPane(
           </View>
         </View>
       )}
+      {share.sheet}
     </View>
   );
 }

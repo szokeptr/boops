@@ -1,4 +1,4 @@
-import type { ThreadId } from "@t3tools/contracts";
+import type { ConnectorConnectionId, ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -10,6 +10,22 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 
 /** The T3 server's proxy path for one connection; see ConnectorProxyHttp.ts. */
 export const CONNECTOR_PROXY_PATH = "/mcp-connectors";
+
+/** The connections a conversation's bot may use: a member's only those shared with members. */
+export const connectionsForConversation = (
+  project:
+    | {
+        readonly connectionIds?: ReadonlyArray<ConnectorConnectionId> | undefined;
+        readonly memberConnectionIds?: ReadonlyArray<ConnectorConnectionId> | undefined;
+      }
+    | undefined,
+  memberConversation: boolean,
+): ReadonlyArray<ConnectorConnectionId> => {
+  const enabled = project?.connectionIds ?? [];
+  if (!memberConversation) return enabled;
+  const shared = project?.memberConnectionIds ?? [];
+  return enabled.filter((id) => shared.includes(id));
+};
 
 /**
  * Which connectors a thread's bot uses right now. Kept apart from `Connectors` so the provider
@@ -34,10 +50,10 @@ const make = Effect.gen(function* () {
     function* (threadId) {
       const thread = yield* projectionStore.getThread(threadId);
       const project = yield* projects.get(thread.projectId);
-      const ids = Option.match(project, {
-        onNone: () => [],
-        onSome: (row) => row.connectionIds,
-      });
+      const ids = connectionsForConversation(
+        Option.getOrUndefined(project),
+        thread.linkOrigin?.memberId !== undefined,
+      );
       if (ids.length === 0) return [];
       const rows = yield* sql<{ readonly server_name: string }>`
         SELECT server_name FROM connector_connections

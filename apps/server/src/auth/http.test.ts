@@ -158,3 +158,20 @@ it.effect("sets the selected browser session cookies through the HTTP route", ()
     );
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
+
+it("lets a member's session reach only her chat's HTTP routes", () => {
+  const routes = Object.values(EnvironmentHttpApi.groups).flatMap((group) =>
+    Object.values(group.endpoints)
+      .filter((endpoint) => AuthHttp.memberMayCallHttpEndpoint(group, endpoint))
+      .map((endpoint) => `${group.identifier}.${endpoint.identifier}`),
+  );
+  expect(routes.toSorted()).toEqual([
+    "auth.webSocketTicket",
+    "auth.webSocketTicketFor",
+    "orchestration.shellSnapshot",
+    "orchestration.threadBoundedSnapshot",
+    "orchestration.threadHistoryPage",
+    "orchestration.threadSnapshot",
+    "orchestration.threadTranscript",
+  ]);
+});

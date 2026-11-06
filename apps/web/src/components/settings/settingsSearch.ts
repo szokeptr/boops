@@ -33,6 +33,7 @@ export type SettingsPath =
   | "/settings/worktrees"
   | "/settings/connections"
   | "/settings/access"
+  | "/settings/members"
   | "/settings/connectors"
   | "/settings/secrets"
   | "/settings/maintenance"
@@ -104,6 +105,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/worktrees": "Worktrees",
   "/settings/connections": "Environments",
   "/settings/access": "Sharing & access",
+  "/settings/members": "Members",
   "/settings/connectors": "Connectors",
   "/settings/secrets": "Secrets",
   "/settings/maintenance": "Maintenance",
@@ -146,6 +148,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     paths: [
       "/settings/connections",
       "/settings/access",
+      "/settings/members",
       "/settings/connectors",
       ...(isSecretsFeatureEnabled ? (["/settings/secrets"] as const) : []),
     ],
@@ -1143,6 +1146,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "members",
+    title: "People",
+    to: "/settings/members",
+    searchTerms: [
+      "members people invite share bots partner family friend email remove access phone",
+    ],
+  },
+  {
     id: "connectors",
     title: "Connected",
     to: "/settings/connectors",
@@ -1206,6 +1217,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/worktrees": "project-defaults",
   "/settings/connections": "connections",
   "/settings/access": "connections",
+  "/settings/members": null,
   "/settings/connectors": null,
   "/settings/secrets": null,
   "/settings/scheduled-tasks": null,

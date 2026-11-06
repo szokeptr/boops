@@ -16,6 +16,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { narrowToMemberAccess } from "../members/memberFence.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
@@ -129,6 +130,12 @@ export const applyBotAutonomy = (
   }
 };
 
+/** An invited member's thread runs within the access it was stamped with, whatever its mode says. */
+const memberThreadRuntimeMode = (thread: OrchestrationV2AppThread): RuntimeMode =>
+  thread.linkOrigin?.memberId === undefined
+    ? thread.runtimeMode
+    : narrowToMemberAccess(thread.runtimeMode, thread.linkOrigin.access);
+
 const refuseAboveCeiling = (
   managedPolicy: ServerSettings.ServerSettingsService["Service"]["managedPolicy"],
   thread: OrchestrationV2AppThread,
@@ -203,7 +210,10 @@ export const layerFromProjectStore: Layer.Layer<
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make(
           applyBotAutonomy(
             {
-              runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
+              runtimeMode: providerRuntimeMode(
+                memberThreadRuntimeMode(input.thread),
+                supportedRuntimeModes,
+              ),
               interactionMode: input.thread.interactionMode,
               cwd,
               ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),

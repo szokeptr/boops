@@ -180,6 +180,8 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
     createEnvironmentLinkChallenge: unexpected,
     linkEnvironment: unexpected,
     unlinkEnvironment: unexpected,
+    acceptEnvironmentInvite: unexpected,
+    declineEnvironmentInvite: unexpected,
     getT3ChatLink: unexpected,
     createT3ChatLinkRequest: unexpected,
     unlinkT3Chat: unexpected,

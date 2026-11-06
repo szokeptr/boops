@@ -1,9 +1,20 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import {
+  AuthStandardClientScopes,
+  type EnvironmentMember,
+  EnvironmentId,
+  EnvironmentMemberId,
+  memberSessionSubject,
+} from "@t3tools/contracts";
+import { RELAY_MINT_REQUEST_TYP, signRelayJwt } from "@t3tools/shared/relayJwt";
 import { assert, it } from "@effect/vitest";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Jwk from "effect/jose/Jwk";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as TestClock from "effect/testing/TestClock";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import { HttpClient, HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
@@ -15,6 +26,7 @@ import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as Members from "../members/Members.ts";
 import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import * as CliTokenManager from "./CliTokenManager.ts";
 import * as CloudLink from "./CloudLink.ts";
@@ -22,6 +34,7 @@ import * as ConnectReachability from "./ConnectReachability.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import {
   CLOUD_LINKED_USER_ID,
+  CLOUD_MINT_PUBLIC_KEY,
   HOLD_WEBHOOKS_WHILE_OFFLINE_SECRET,
   PUBLISH_AGENT_ACTIVITY_SECRET,
   RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
@@ -104,6 +117,7 @@ const withService = <A, E>(
         latest: Effect.succeedNone,
       }),
       Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
+      Layer.mock(Members.Members)({}),
       Layer.mock(CliTokenManager.CloudCliTokenManager)({}),
       Layer.mock(HttpServer.HttpServer)({
         address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
@@ -287,6 +301,7 @@ it.effect("unlinks on startup and refuses to link when the policy turns Connect 
       }),
       Layer.mock(ConnectReachability.ConnectReachability)({}),
       Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
+      Layer.mock(Members.Members)({}),
       Layer.mock(CliTokenManager.CloudCliTokenManager)({}),
       Layer.mock(HttpServer.HttpServer)({
         address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
@@ -318,4 +333,139 @@ it.effect("unlinks on startup and refuses to link when the policy turns Connect 
       ),
     );
   }),
+);
+
+it.effect("mints the owner's session, a member's session, and nothing for anyone else", () =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(1_000_000_000_000);
+    const pair = yield* Jwk.generateKeyPair({ algorithm: "EdDSA" });
+    const relayPublicKey = yield* Jwk.importPublic(pair.publicKey, "EdDSA").pipe(
+      Effect.flatMap((key) => Jwk.exportSpki(key, { format: "pem" })),
+    );
+    const relayPrivateKey = yield* Jwk.importPrivate(pair.privateKey, "EdDSA").pipe(
+      Effect.flatMap((key) => Jwk.exportPkcs8(key, { format: "pem" })),
+    );
+    const stored = new Map<string, Uint8Array>([
+      [CLOUD_LINKED_USER_ID, encode("owner-user")],
+      [CLOUD_MINT_PUBLIC_KEY, encode(relayPublicKey)],
+      [RELAY_URL_SECRET, encode("https://relay.test")],
+    ]);
+    const anna: EnvironmentMember = {
+      id: EnvironmentMemberId.make("anna"),
+      label: "Anna",
+      email: "anna@example.com",
+      access: "auto-accept-edits",
+      status: "active",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      lastConnectedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const minted: Array<{ readonly subject?: string; readonly scopes?: ReadonlyArray<string> }> =
+      [];
+    const authorized: Array<{ readonly cloudUserId: string; readonly memberId: string }> = [];
+    const layerDependencies = Layer.mergeAll(
+      Layer.mock(ServerSecretStore.ServerSecretStore)({
+        get: (name) => Effect.succeed(Option.fromNullishOr(stored.get(name))),
+        set: (name, value) => Effect.sync(() => void stored.set(name, value)),
+        create: (name, value) => Effect.sync(() => void stored.set(name, value)),
+      }),
+      Layer.mock(ServerEnvironment.ServerEnvironment)({
+        getEnvironmentId: Effect.succeed(EnvironmentId.make("environment-1")),
+      }),
+      Layer.mock(AgentAwarenessRelay.AgentAwarenessRelay)({}),
+      Layer.mock(ManagedEndpointRuntime.CloudManagedEndpointRuntime)({}),
+      ManagedPolicy.layerTest(),
+      Layer.mock(ConnectReachability.ConnectReachability)({}),
+      Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+        createPairingLink: (input) =>
+          Effect.sync(() => {
+            minted.push({
+              ...(input?.subject === undefined ? {} : { subject: input.subject }),
+              ...(input?.scopes === undefined ? {} : { scopes: input.scopes }),
+            });
+            return {
+              id: "link",
+              credential: "credential",
+              scopes: input?.scopes ?? [],
+              subject: input?.subject ?? "",
+              createdAt: DateTime.makeUnsafe(0),
+              expiresAt: DateTime.makeUnsafe(1_000_000_120_000),
+            };
+          }),
+      }),
+      Layer.mock(Members.Members)({
+        authorizeMint: (input) =>
+          Effect.sync(() => {
+            authorized.push(input);
+            return input.memberId === anna.id ? Option.some(anna) : Option.none();
+          }),
+      }),
+      Layer.mock(CliTokenManager.CloudCliTokenManager)({}),
+      Layer.mock(HttpServer.HttpServer)({
+        address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
+      }),
+      Layer.mock(ServerConfig.ServerConfig)({} as ServerConfig.ServerConfig["Service"]),
+      Layer.succeed(
+        HttpClient.HttpClient,
+        HttpClient.make(() => Effect.die("unused")),
+      ),
+      NodeServices.layer,
+      NodeCrypto.layer,
+    );
+    let proofs = 0;
+    const proof = (claims: { readonly sub: string; readonly memberId?: string }) =>
+      signRelayJwt({
+        privateKey: Redacted.value(relayPrivateKey),
+        typ: RELAY_MINT_REQUEST_TYP,
+        payload: {
+          iss: "https://relay.test",
+          aud: "t3-env:environment-1",
+          jti: `jti-${++proofs}`,
+          iat: 1_000_000_000,
+          exp: 1_000_000_060,
+          environmentId: "environment-1",
+          clientProofKeyThumbprint: "thumbprint",
+          cnf: { jkt: "thumbprint" },
+          nonce: `nonce-${proofs}`,
+          scope: ["environment:connect"],
+          ...claims,
+        },
+      });
+
+    yield* Effect.gen(function* () {
+      const link = yield* CloudLink.CloudLink;
+      const mint = (claims: Parameters<typeof proof>[0]) =>
+        proof(claims).pipe(Effect.flatMap((token) => link.mintCredential({ proof: token })));
+
+      yield* mint({ sub: "owner-user" });
+      yield* mint({ sub: "anna-user", memberId: anna.id });
+      const removed = yield* mint({ sub: "anna-user", memberId: "removed" }).pipe(Effect.flip);
+      const stranger = yield* mint({ sub: "stranger" }).pipe(Effect.flip);
+
+      assert.deepEqual(minted, [
+        { subject: "cloud-connect", scopes: AuthStandardClientScopes },
+        {
+          subject: memberSessionSubject(anna.id),
+          scopes: ["orchestration:read", "orchestration:operate"],
+        },
+      ]);
+      assert.deepEqual(authorized, [
+        { cloudUserId: "anna-user", memberId: anna.id },
+        { cloudUserId: "anna-user", memberId: "removed" },
+      ]);
+      assert.equal(removed._tag, "CloudLinkProofRejectedError");
+      assert.equal(stranger._tag, "CloudLinkProofRejectedError");
+    }).pipe(
+      Effect.provide(
+        CloudLink.layer.pipe(
+          Layer.provide(
+            Layer.mock(EnvironmentKeys.EnvironmentSigningKey)({
+              publicKey: "",
+              sign: () => Effect.succeed("signed"),
+            }),
+          ),
+          Layer.provide(layerDependencies),
+        ),
+      ),
+    );
+  }).pipe(Effect.provide(NodeCrypto.layerSignature)),
 );

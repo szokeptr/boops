@@ -14,6 +14,7 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
+import { EnvironmentMemberId } from "./members.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import type { OrchestrationV2StoredEvent } from "./orchestrationV2.ts";
 import { BotAutonomy, ReceivedProjectAvatar, ProjectScript, StoredProjectIcon } from "./project.ts";
@@ -71,6 +72,8 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   canCreateBotsWithoutAsking: Schema.optional(Schema.Boolean),
   personaReady: Schema.optional(Schema.Boolean),
   connectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
+  memberIds: Schema.optional(Schema.Array(EnvironmentMemberId)),
+  memberConnectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
   updatedAt: IsoDateTime,
 });
 export type ApplicationProjectMetaUpdatedPayload = typeof ApplicationProjectMetaUpdatedPayload.Type;

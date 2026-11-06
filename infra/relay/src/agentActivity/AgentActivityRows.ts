@@ -99,6 +99,9 @@ const encodeRelayAgentActivityStateJson = Schema.encodeEffect(
 
 const decodeRelayAgentActivityState = Schema.decodeUnknownOption(RelayAgentActivityStateSchema);
 
+/** A member's link sees only that member's threads; an owner's link only unstamped ones. */
+export const linkHearsActivityRow = sql`(${relayAgentActivityRows.stateJson} ->> 'memberId') IS NOT DISTINCT FROM ${relayEnvironmentLinks.memberId}`;
+
 const make = Effect.gen(function* () {
   const db = yield* RelayDb.RelayDb;
 
@@ -222,6 +225,7 @@ const make = Effect.gen(function* () {
             eq(relayEnvironmentLinks.userId, input.userId),
             isNull(relayEnvironmentLinks.revokedAt),
             eq(relayEnvironmentLinks.liveActivitiesEnabled, true),
+            linkHearsActivityRow,
           ),
         )
         .orderBy(desc(relayAgentActivityRows.updatedAt))
@@ -257,6 +261,7 @@ const make = Effect.gen(function* () {
           and(
             eq(relayEnvironmentLinks.userId, input.userId),
             isNull(relayEnvironmentLinks.revokedAt),
+            linkHearsActivityRow,
             eq(relayAgentActivityRows.environmentId, input.environmentId),
             eq(relayAgentActivityRows.threadId, input.threadId),
           ),

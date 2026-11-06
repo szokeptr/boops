@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 export function AndroidHomeFabLayout(props: {
-  readonly onAddBot: () => void;
+  readonly onAddBot: (() => void) | undefined;
   readonly children: ReactNode;
   readonly sidebar?: boolean;
   readonly disabled?: boolean;

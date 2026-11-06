@@ -25,6 +25,7 @@ import {
   type ServiceUpdateRecord,
 } from "./serviceProtocol.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as Members from "../members/Members.ts";
 import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import { CLOUD_CLI_DESIRED_LINK_SECRET } from "./CliState.ts";
 import * as CliTokenManager from "./CliTokenManager.ts";
@@ -165,6 +166,7 @@ describe("releaseManagedTunnelOnShutdown", () => {
         Effect.provide(
           CloudLink.layer.pipe(
             Layer.provide(EnvironmentKeys.layer),
+            Layer.provide(Layer.mock(Members.Members)({})),
             Layer.provide(ManagedPolicy.layerTest()),
           ),
         ),
