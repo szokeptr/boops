@@ -2710,6 +2710,55 @@ describe("v2 run and attempt history", () => {
       ["assistant-final-entry", true, false],
     ]);
     expect(directMessage(true).at(-1)).toEqual(["working-indicator-row", "working"]);
+
+    // Talk with a parent or child bot folds into one pill until the user writes again.
+    const message = (id: string, role: "user" | "assistant", at: string, extra = {}) => ({
+      id: `${id}-entry`,
+      kind: "message" as const,
+      createdAt: at,
+      message: {
+        id: id as never,
+        role,
+        text: id,
+        runId: null,
+        createdAt: at,
+        updatedAt: at,
+        streaming: false,
+        ...extra,
+      },
+    });
+    const fromJarvis = {
+      context: {
+        version: 1,
+        bot: { projectId: "jarvis" as never, name: "Jarvis", relation: "child" as const },
+        records: [],
+      },
+    };
+    const exchangeRows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        ...timelineEntries,
+        message("jarvis-1", "user", "2026-01-01T00:01:00Z", fromJarvis),
+        message("reply-1", "assistant", "2026-01-01T00:01:05Z"),
+        message("jarvis-2", "user", "2026-01-01T00:01:10Z", fromJarvis),
+        message("again", "user", "2026-01-01T00:02:00Z"),
+      ],
+      isWorking: false,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      directMessage: true,
+    });
+    expect(
+      exchangeRows
+        .slice(3)
+        .map((row) =>
+          row.kind === "bot-exchange"
+            ? [row.id, row.peers.map((peer) => peer.name), row.messages.map(({ id }) => id)]
+            : [row.id],
+        ),
+    ).toEqual([
+      ["bot-exchange:jarvis-1-entry", ["Jarvis"], ["jarvis-1", "reply-1", "jarvis-2"]],
+      ["again-entry"],
+    ]);
   });
   it("collapses only output from a superseded V2 attempt within the active logical run", () => {
     const runId = "run-steered" as never;

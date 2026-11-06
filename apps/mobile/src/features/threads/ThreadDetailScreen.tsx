@@ -1496,6 +1496,7 @@ function ThreadDetailBody(
                             ? null
                             : props.activeWorkStartedAt,
                         ownBubble: botBubbleColors(props.botAvatar ?? specFor(props.botName ?? "")),
+                        bot: { name: props.botName ?? "", avatar: props.botAvatar ?? null },
                       }
                     : null
                 }

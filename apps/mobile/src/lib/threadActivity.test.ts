@@ -9,6 +9,7 @@ import {
   ProviderDriverKind,
   ProviderThreadId,
   ProviderTurnId,
+  ProjectId,
   RunId,
   RunAttemptId,
   ThreadId,
@@ -944,6 +945,48 @@ describe("buildThreadFeed", () => {
     expect(
       deriveDirectMessageFeed(dmFeed, "2026-06-20T00:00:01.000Z").map((entry) => entry.type),
     ).toEqual(["message", "message", "message", "message", "thinking"]);
+
+    // Talk with a parent or child bot folds into one exchange until the user writes again.
+    const fromJarvis = (id: string, ordinal: number, at: string) => ({
+      ...userMessage(at),
+      id: TurnItemId.make(`item-${id}`),
+      messageId: MessageId.make(id),
+      ordinal,
+      context: {
+        version: 1 as const,
+        bot: { projectId: ProjectId.make("jarvis"), name: "Jarvis", relation: "child" as const },
+        records: [],
+      },
+    });
+    const exchange = deriveDirectMessageFeed(
+      buildThreadFeed([
+        projected(userMessage(), 0),
+        projected(fromJarvis("jarvis-1", 1, "2026-06-20T00:00:02.000Z"), 1),
+        projected(assistantMessage(), 2),
+        projected(fromJarvis("jarvis-2", 3, "2026-06-20T00:00:04.000Z"), 3),
+        projected(
+          {
+            ...userMessage("2026-06-20T00:00:05.000Z"),
+            id: TurnItemId.make("item-again"),
+            messageId: MessageId.make("again"),
+            ordinal: 4,
+          },
+          4,
+        ),
+      ]),
+      null,
+    );
+    expect(
+      exchange.map((entry) =>
+        entry.type === "bot-exchange"
+          ? [entry.id, entry.peers.map((peer) => peer.name), entry.messages.map(({ id }) => id)]
+          : [entry.id],
+      ),
+    ).toEqual([
+      ["message-user"],
+      ["bot-exchange:jarvis-1", ["Jarvis"], ["jarvis-1", "message-assistant", "jarvis-2"]],
+      ["again"],
+    ]);
   });
 
   // regression: #21393 show plans and fold settled progress notes
