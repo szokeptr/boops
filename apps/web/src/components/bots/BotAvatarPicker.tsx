@@ -1,5 +1,4 @@
-import type { BotHatchStage } from "@t3tools/client-runtime/bot-avatar";
-import { screeniePalette } from "@t3tools/client-runtime/bot-avatar";
+import { type BotHatchStage, visorColors } from "@t3tools/client-runtime/bot-avatar";
 import { BOT_AVATAR_ACCESSORIES, BOT_AVATAR_HUES, type ProjectAvatar } from "@t3tools/contracts";
 import { familySpec, rerollSpec } from "@t3tools/shared/botAvatar";
 import { DicesIcon } from "lucide-react";
@@ -49,7 +48,7 @@ export function BotAvatarPicker({
             aria-label={label(hue)}
             aria-pressed={current.hue === hue}
             className={cn(OPTION, "size-6")}
-            style={{ backgroundColor: screeniePalette({ ...current, hue }).b }}
+            style={{ backgroundColor: visorColors({ ...current, hue }).body }}
             onClick={() => onChange({ ...current, hue })}
           />
         ))}
