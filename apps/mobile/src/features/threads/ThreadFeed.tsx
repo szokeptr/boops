@@ -2817,6 +2817,7 @@ export const ThreadFeed = memo(function ThreadFeed({
   const endFollowEnabledRef = useRef(true);
   // Only user scrolls from drag through momentum break follow; ignore MVCP and programmatic adjustments.
   const userScrollSessionRef = useRef(false);
+  const positionedAnchorKeyRef = useRef<string | null>(null);
   const setEndFollow = (enabled: boolean) => {
     if (endFollowEnabledRef.current === enabled) {
       return;
@@ -3543,7 +3544,7 @@ export const ThreadFeed = memo(function ThreadFeed({
     setViewportHeight((current) => (Math.abs(current - nextHeight) > 1 ? nextHeight : current));
   };
 
-  const anchoredEndSpace = resolveChatListAnchoredEndSpace(
+  const anchoredEndSpaceConfig = resolveChatListAnchoredEndSpace(
     presentedFeed,
     props.anchorMessageId,
     (entry) => (entry.type === "message" ? entry.id : null),
@@ -3552,6 +3553,23 @@ export const ThreadFeed = memo(function ThreadFeed({
       anyMessage: Boolean(props.directMessage),
     },
   );
+  // The blank is a scroll inset, so growing it moves nothing; lift the sent message once it is sized.
+  const handleAnchoredEndSpaceReady = useEffectEvent(
+    (info: { anchorKey?: string | undefined; size: number }) => {
+      if (info.anchorKey === undefined || info.size <= 0) return;
+      if (positionedAnchorKeyRef.current === info.anchorKey) return;
+      if (!endFollowEnabledRef.current || userScrollSessionRef.current) return;
+      // Keyboard dismissal freezes the inset; the send path scrolls once it has closed.
+      if (props.sendingWithKeyboard) return;
+      positionedAnchorKeyRef.current = info.anchorKey;
+      requestAnimationFrame(() => {
+        void listRef.current?.scrollToEnd({ animated: !reduceMotion });
+      });
+    },
+  );
+  const anchoredEndSpace = anchoredEndSpaceConfig
+    ? { ...anchoredEndSpaceConfig, onReady: handleAnchoredEndSpaceReady }
+    : undefined;
   const failedRunIds = failedFeedRunIds(props.feed, props.latestRun);
   const terminalAssistantMessageIds = (() => {
     const terminalIdsByTurn = new Map<RunId, string>();
