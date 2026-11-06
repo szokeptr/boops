@@ -1,3 +1,4 @@
+import { resolveBotMessageToolCall } from "@t3tools/shared/t3McpToolPresentation";
 import type {
   OrchestrationV2ProjectedTurnItem,
   OrchestrationV2ThreadProjection,
@@ -194,7 +195,9 @@ function isDeferrableWorkItem(item: HistoryRow["item"]): boolean {
   return (
     item.status === "completed" &&
     item.persistentOutput !== true &&
-    DEFERRED_WORK_ITEM_TYPES.some((type) => type === item.type)
+    DEFERRED_WORK_ITEM_TYPES.some((type) => type === item.type) &&
+    // A bot's DM shows its messages to other bots, so they must reach the client inline.
+    !(item.type === "dynamic_tool" && resolveBotMessageToolCall(item.toolName, item.input) !== null)
   );
 }
 
