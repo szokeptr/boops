@@ -2000,6 +2000,7 @@ export default function ChatView(props: ChatViewProps) {
     timelineEntries,
     timelineAnchorMessageId,
     setTimelineAnchor,
+    directMessage: isBotConversation,
   });
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- schedules a frame to focus the composer DOM element when a thread opens with the terminal closed
