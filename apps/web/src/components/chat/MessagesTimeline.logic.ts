@@ -1,5 +1,6 @@
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+import { getQuestionAnswerExchange } from "@t3tools/client-runtime/work-log/user-input";
 import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
 import * as DateTime from "effect/DateTime";
 import * as Equal from "effect/Equal";
@@ -2171,10 +2172,14 @@ export function deriveMessagesTimelineRows(input: {
   }
 
   if (input.directMessage) {
-    return directMessageRows(nextRows, sentBotMessages(timelineEntries, input.botParentProjectId), {
-      typing: input.isWorking && !input.pendingApprovalRequestIds?.size,
-      startedAt: input.activeTurnStartedAt ?? null,
-    });
+    return directMessageRows(
+      insertAnsweredQuestions(nextRows, timelineEntries),
+      sentBotMessages(timelineEntries, input.botParentProjectId),
+      {
+        typing: input.isWorking && !input.pendingApprovalRequestIds?.size,
+        startedAt: input.activeTurnStartedAt ?? null,
+      },
+    );
   }
   const result = attachTrailingToolGroupsToAssistant(
     attachCreatedThreadSummaries(nextRows, timelineEntries, collapsedFoldMemberIds),
@@ -2299,6 +2304,57 @@ function foldBotExchanges(
     }
   }
   return result;
+}
+
+/**
+ * A DM drops the work an answered question lives in, so it reads as the bot asking and you
+ * replying, at the point it was asked. Neither bubble is a real message, so neither is editable.
+ */
+function insertAnsweredQuestions(
+  rows: ReadonlyArray<MessagesTimelineRow>,
+  timelineEntries: ReadonlyArray<TimelineEntry>,
+): MessagesTimelineRow[] {
+  const exchanges = timelineEntries.flatMap(
+    (entry): Array<Extract<MessagesTimelineRow, { kind: "message" }>> => {
+      const answer = entry.kind === "work" ? entry.entry.questionAnswer : undefined;
+      if (answer === undefined) return [];
+      const { question, reply } = getQuestionAnswerExchange(answer);
+      const bubble = (side: "question" | "reply", role: "assistant" | "user", text: string) => ({
+        kind: "message" as const,
+        id: `${entry.id}:${side}`,
+        createdAt: entry.createdAt,
+        message: {
+          id: `${side}:${answer.requestId}` as MessageId,
+          role,
+          text,
+          runId: null,
+          streaming: false,
+          createdAt: entry.createdAt,
+          updatedAt: entry.createdAt,
+        },
+        showAssistantMeta: false,
+        showAssistantCopyButton: false,
+        assistantCopyStreaming: false,
+      });
+      return [
+        ...(question ? [bubble("question", "assistant", question)] : []),
+        ...(reply ? [bubble("reply", "user", reply)] : []),
+      ];
+    },
+  );
+  if (exchanges.length === 0) return [...rows];
+  const pending = [...exchanges];
+  return [
+    ...rows.flatMap((row) => {
+      const before: MessagesTimelineRow[] = [];
+      while (row.createdAt !== null && pending[0] && pending[0].createdAt < row.createdAt) {
+        before.push(pending[0]);
+        pending.shift();
+      }
+      return [...before, row];
+    }),
+    ...pending,
+  ];
 }
 
 const DIRECT_MESSAGE_EVENT_TYPES: ReadonlySet<string> = new Set([
