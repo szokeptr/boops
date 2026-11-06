@@ -50,7 +50,7 @@ Boops Connect, or directly once you choose the local network in `boops up` (or r
 your local network and Tailscale addresses, so the desktop and mobile apps on
 the same network connect directly instead of through Boops Connect. It still does
 not answer on public addresses. Anyone on the same network can reach the port,
-so a pairing code is all that keeps them out. The hosted web app at app.t3.codes
+so a pairing code is all that keeps them out. The hosted web app at app.getboops.com
 stays on Boops Connect, because browsers block plain HTTP from an HTTPS page.
 
 A service installed before `T3CODE_LAN` existed keeps listening on the local

@@ -37,7 +37,7 @@ Boops drives Claude through Anthropic's Agent SDK. I confirmed it's a real bug o
 
 ## How do I use Boops remotely?
 
-Your agents run wherever Boops runs: your desktop, a server, a VPS. You connect to it from anywhere. I do this constantly. Less than 5% of my prompts run on my laptop. Run `npx boops up` on that machine and you get really good remote support. Boops Connect is the easy path. LAN pairing and Tailscale work too, and [app.t3.codes](https://app.t3.codes) is the web client. [Remote access](./remote-access.md)
+Your agents run wherever Boops runs: your desktop, a server, a VPS. You connect to it from anywhere. I do this constantly. Less than 5% of my prompts run on my laptop. Run `npx boops up` on that machine and you get really good remote support. Boops Connect is the easy path. LAN pairing and Tailscale work too, and [app.getboops.com](https://app.getboops.com) is the web client. [Remote access](./remote-access.md)
 
 ## How do I use Boops on my phone?
 

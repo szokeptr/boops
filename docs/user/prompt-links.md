@@ -15,9 +15,9 @@ and the model you picked. Sent messages have a **Copy prompt link** button too.
 You can also write a link by hand:
 
 ```
-https://app.t3.codes/new?prompt=Rate%20my%20swearing
-https://app.t3.codes/new?prompt=Fix%20the%20build&repo=owner/name&provider=codex&model=gpt-5.5
-https://app.t3.codes/new?pr=owner/name/123&prompt=Fix%20the%20failing%20check
+https://app.getboops.com/new?prompt=Rate%20my%20swearing
+https://app.getboops.com/new?prompt=Fix%20the%20build&repo=owner/name&provider=codex&model=gpt-5.5
+https://app.getboops.com/new?pr=owner/name/123&prompt=Fix%20the%20failing%20check
 ```
 
 | Parameter  | Meaning                                                                       |
@@ -32,7 +32,7 @@ Encode the prompt for a URL. In JavaScript, use `encodeURIComponent`.
 
 ## Open a link
 
-On app.t3.codes, the link first asks where to open it: the desktop or mobile app, this browser
+On app.getboops.com, the link first asks where to open it: the desktop or mobile app, this browser
 when it is connected to a machine, or the download page. Select **Remember my choice** to skip
 this step next time.
 
@@ -47,7 +47,7 @@ this step next time.
   worktree. Boops checks the code out only after you confirm, because the checkout runs your
   setup script on it.
 
-A thread link with a prompt, such as `https://app.t3.codes/<environment>/<thread>?prompt=…`,
+A thread link with a prompt, such as `https://app.getboops.com/<environment>/<thread>?prompt=…`,
 puts the prompt in that thread's composer. If you already typed a draft there, Boops asks
 before it replaces it.
 
@@ -57,7 +57,7 @@ malicious.
 
 ## Share a thread
 
-**Copy thread** copies a link such as `https://app.t3.codes/threads/<environment>/<thread>`. Paste
+**Copy thread** copies a link such as `https://app.getboops.com/threads/<environment>/<thread>`. Paste
 it anywhere, such as Slack, a GitHub comment, or your notes. On a phone with Boops installed, it
 opens the thread in the app. Elsewhere, opening it asks where to open it, like a prompt link, then
 opens the thread. Only someone connected to the machine that runs the thread can see it. In Boops,

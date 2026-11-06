@@ -125,7 +125,7 @@ export const CONNECTOR_CALLBACK_PATH = "/oauth/connectors/callback";
 
 /**
  * The environment's HTTP origin as this client reaches it, e.g. `http://localhost:3773` or the
- * T3 Connect hostname. Not the page origin on app.t3.codes. The provider redirects the browser to
+ * T3 Connect hostname. Not the page origin on app.getboops.com. The provider redirects the browser to
  * `<origin>${CONNECTOR_CALLBACK_PATH}`, which must reach this server.
  */
 const RedirectOrigin = TrimmedNonEmptyString.check(
