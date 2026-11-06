@@ -11,7 +11,7 @@ import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import {
   ThreadHeaderControls,
   useThreadCenterHeaderItems,
-  useThreadRightHeaderItems,
+  useThreadOverflowHeaderItems,
   type ThreadHeaderControlsProps,
 } from "./ThreadHeaderControls";
 
@@ -35,7 +35,7 @@ export function useThreadHeaderOptions(props: {
   const { layout, addBot } = useAdaptiveWorkspaceLayout();
   const sidebarHeaderItem = useWorkspaceSidebarHeaderItem();
   const threadCenterHeaderItems = useThreadCenterHeaderItems(props.controls);
-  const compactRightHeaderItems = useThreadRightHeaderItems(props.controls);
+  const compactRightHeaderItems = useThreadOverflowHeaderItems(props.controls);
   const splitLeftHeaderItems: NativeHeaderItems = [
     ...(!usesDuoHeader
       ? [

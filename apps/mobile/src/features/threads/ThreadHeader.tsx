@@ -38,6 +38,7 @@ export function ThreadHeader(
         accessibilityLabel: filesVisible ? "Close files" : "Open files",
         selected: filesVisible,
         icon: "folder",
+        overflowOnly: true,
         onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
       });
     }
@@ -45,6 +46,7 @@ export function ThreadHeader(
       actions.push({
         accessibilityLabel: "Open terminal",
         icon: "terminal",
+        overflowOnly: true,
         onPress: () => onOpenTerminal(null),
       });
     }
