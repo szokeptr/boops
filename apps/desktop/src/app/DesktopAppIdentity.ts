@@ -19,6 +19,16 @@ const AppPackageMetadata = Schema.Struct({
 });
 const decodeAppPackageMetadata = Schema.decodeEffect(Schema.fromJsonString(AppPackageMetadata));
 
+const NATIVE_USER_AGENT_PATTERN = /^Mozilla\/5\.0 (\([^)]*\)) .* Chrome\/(\d+)[\d.]*/;
+
+/** Chrome's reduced User-Agent, without the app and Electron tokens sites block on. */
+export const chromeUserAgent = (nativeUserAgent: string): string => {
+  const match = NATIVE_USER_AGENT_PATTERN.exec(nativeUserAgent);
+  if (!match) return nativeUserAgent;
+  const [, platform, major] = match;
+  return `Mozilla/5.0 ${platform} AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
+};
+
 export class DesktopAppIdentity extends Context.Service<
   DesktopAppIdentity,
   {
@@ -93,6 +103,8 @@ export const make = Effect.gen(function* () {
     yield* electronApp.setName(
       `${environment.branding.baseName} ${environment.branding.stageLabel}`,
     );
+    // The app-wide fallback reaches every frame and worker; a per-session rewrite broke Turnstile.
+    yield* electronApp.setUserAgentFallback(chromeUserAgent(yield* electronApp.userAgentFallback));
     yield* electronApp.setAboutPanelOptions({
       applicationName: environment.displayName,
       applicationVersion: environment.appVersion,
