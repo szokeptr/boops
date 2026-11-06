@@ -229,9 +229,12 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 
 // Match iOS PostScript names on Android so RN and the native composer share fonts before runtime loading.
 
+// Boops has no EAS project yet: without one, builds ship with OTA updates off.
+const easProjectId = repoEnv.T3CODE_EAS_PROJECT_ID?.trim() || undefined;
+
 const config: ExpoConfig = {
   name: variant.appName,
-  slug: "t3-code",
+  slug: "boops",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
   version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.2.0",
@@ -243,8 +246,8 @@ const config: ExpoConfig = {
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
   updates: {
-    enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+    enabled: easProjectId !== undefined && repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
+    ...(easProjectId ? { url: `https://u.expo.dev/${easProjectId}` } : {}),
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
   },
@@ -481,11 +484,11 @@ const config: ExpoConfig = {
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
     eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+      ...(easProjectId ? { projectId: easProjectId } : {}),
       observe: { endpointUrl: observeEndpointUrl },
     },
   },
-  owner: "pingdotgg",
+  ...(repoEnv.T3CODE_EAS_OWNER ? { owner: repoEnv.T3CODE_EAS_OWNER } : {}),
   experiments: {
     // Metro only runs babel-plugin-react-compiler when this is set; see src/reactCompilerCoverage.test.ts.
     reactCompiler: true,
