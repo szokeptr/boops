@@ -119,14 +119,14 @@ it.each([true, false])("uses the active config syntax and user bindings (Lua: %s
     NodePath.join(config, lua ? "bindings.lua" : "bindings.conf"),
     "custom bindings",
   );
-  const result = await hyprlandCaptureShortcut("com.getboops.app", "/home/test", directory);
+  const result = await hyprlandCaptureShortcut("com.getboops.desktop", "/home/test", directory);
   expect(result.shortcutConfigPath).toBe(
     NodePath.join(config, lua ? "bindings.lua" : "bindings.conf"),
   );
   expect(result.shortcutBinding).toBe(
     lua
-      ? 'hl.bind("CTRL + SHIFT + 2", hl.dsp.global("com.getboops.app:capture-window"))'
-      : "bind = CTRL SHIFT, 2, global, com.getboops.app:capture-window",
+      ? 'hl.bind("CTRL + SHIFT + 2", hl.dsp.global("com.getboops.desktop:capture-window"))'
+      : "bind = CTRL SHIFT, 2, global, com.getboops.desktop:capture-window",
   );
   expect(await NodeFSP.readFile(result.shortcutConfigPath, "utf8")).toBe("custom bindings");
 });

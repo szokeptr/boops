@@ -15,8 +15,8 @@ const devBundleIdSuffix = NodePath.basename(repoRoot)
   .replaceAll(/[^a-z0-9]+/g, "");
 const APP_DISPLAY_NAME = isDevelopment ? "Boops (Dev)" : "Boops (Beta)";
 const APP_BUNDLE_ID = isDevelopment
-  ? `com.getboops.app.dev.${devBundleIdSuffix || "local"}`
-  : "com.getboops.app";
+  ? `com.getboops.desktop.dev.${devBundleIdSuffix || "local"}`
+  : "com.getboops.desktop";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["boops-dev"] : ["boops"];
 const LAUNCHER_VERSION = 20;
 const developmentMacIconPngPath = NodePath.join(

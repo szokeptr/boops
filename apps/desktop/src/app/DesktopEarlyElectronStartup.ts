@@ -31,7 +31,7 @@ export interface EarlyLinuxElectronOptions {
 }
 
 export const resolveLinuxDesktopEntryName = (isDevelopment: boolean): string =>
-  isDevelopment ? "com.getboops.app.dev.desktop" : "com.getboops.app.desktop";
+  isDevelopment ? "com.getboops.desktop.dev.desktop" : "com.getboops.desktop.desktop";
 
 const trimNonEmpty = (value: string | undefined): string | null => {
   const trimmed = value?.trim();
