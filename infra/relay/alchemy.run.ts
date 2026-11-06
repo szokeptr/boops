@@ -26,7 +26,8 @@ export default Alchemy.Stack(
       Planetscale.providers(),
       PreviewTunnelSweepProvider(),
     ),
-    state: Cloudflare.state(),
+    // Own store: the Cloudflare account already hosts another project's default store.
+    state: Cloudflare.state({ workerName: "boops-alchemy-state" }),
   },
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
