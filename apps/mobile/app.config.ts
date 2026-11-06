@@ -25,6 +25,12 @@ const observeEndpointUrl = repoEnv.T3CODE_RELAY_URL?.trim()
   ? new URL("/v1/mobile/observe", repoEnv.T3CODE_RELAY_URL.trim()).toString()
   : "https://observe.invalid";
 
+// Passkeys and sign-in links are bound to the Clerk Frontend API host encoded in the publishable key.
+const clerkFrontendApiHost = (() => {
+  const encoded = repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim().split("_")[2];
+  return encoded ? Buffer.from(encoded, "base64").toString("utf8").replace(/\$$/, "") : undefined;
+})();
+
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
 
 if (
@@ -82,7 +88,6 @@ const VARIANT_CONFIG = {
     scheme: "boops-dev",
     iosBundleIdentifier: "com.getboops.app.dev",
     androidPackage: "com.getboops.app.dev",
-    relyingParty: "clerk.t3.codes",
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
@@ -90,7 +95,6 @@ const VARIANT_CONFIG = {
     scheme: "boops-preview",
     iosBundleIdentifier: "com.getboops.app.preview",
     androidPackage: "com.getboops.app.preview",
-    relyingParty: "clerk.t3.codes",
     assets: PREVIEW_ASSETS,
   },
   production: {
@@ -98,7 +102,6 @@ const VARIANT_CONFIG = {
     scheme: "boops",
     iosBundleIdentifier: "com.getboops.app",
     androidPackage: "com.getboops.app",
-    relyingParty: "clerk.t3.codes",
     assets: RELEASE_ASSETS,
   },
 } as const;
@@ -251,10 +254,11 @@ const config: ExpoConfig = {
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
     // Avoid Personal Team fallback: it cannot sign App Groups, Apple sign-in or push entitlements.
-    appleTeamId: repoEnv.T3CODE_IOS_TEAM_ID?.trim() || "ARK85ZXQ4Z",
+    appleTeamId: repoEnv.T3CODE_IOS_TEAM_ID?.trim() || "RMVRBAFHK5",
     associatedDomains: [
-      `applinks:${variant.relyingParty}`,
-      `webcredentials:${variant.relyingParty}`,
+      ...(clerkFrontendApiHost
+        ? [`applinks:${clerkFrontendApiHost}`, `webcredentials:${clerkFrontendApiHost}`]
+        : []),
       `applinks:${HOSTED_APP_HOST}`,
     ],
     entitlements: {

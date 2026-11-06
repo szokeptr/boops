@@ -3,9 +3,9 @@
     "details": [
       {
         "appIDs": [
-          "ARK85ZXQ4Z.com.getboops.app",
-          "ARK85ZXQ4Z.com.getboops.app.preview",
-          "ARK85ZXQ4Z.com.getboops.app.dev"
+          "RMVRBAFHK5.com.getboops.app",
+          "RMVRBAFHK5.com.getboops.app.preview",
+          "RMVRBAFHK5.com.getboops.app.dev"
         ],
         "components": [{ "/": "/threads/*" }]
       }
