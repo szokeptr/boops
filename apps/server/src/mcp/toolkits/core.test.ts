@@ -119,9 +119,9 @@ const client = McpSchema.McpServerClient.of({
 it.effect("checks capability through the production registration", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
-    expect(server.tools.some(({ tool }) => tool.name === "t3_thread_organize")).toBe(true);
+    expect(server.tools.some(({ tool }) => tool.name === "boops_thread_organize")).toBe(true);
     const result = yield* server
-      .callTool({ name: "t3_thread_organize", arguments: { action: "pin" } })
+      .callTool({ name: "boops_thread_organize", arguments: { action: "pin" } })
       .pipe(
         Effect.provideService(McpInvocationContext.McpInvocationContext, {
           ...scope,
@@ -152,7 +152,7 @@ it.effect("an answered question reports already answered instead of not found", 
     const respond = (id: string) =>
       server
         .callTool({
-          name: "t3_pending_request",
+          name: "boops_pending_request",
           arguments: { action: "respond", requestId: id, answers: { size: "large" } },
         })
         .pipe(
@@ -271,12 +271,12 @@ it.effect("returns an HTML render reference that Codex and Claude tool rows both
         Effect.provideService(McpSchema.McpServerClient, client),
       );
     const reference = htmlRenderFromToolItem({
-      toolName: "t3-code.html_render",
+      toolName: "boops.html_render",
       output: result.structuredContent,
     });
     expect(reference).toMatchObject({ title: "Revenue", height: 240 });
     expect(
-      htmlRenderFromToolItem({ toolName: "mcp__t3-code__html_render", output: result.content }),
+      htmlRenderFromToolItem({ toolName: "mcp__boops__html_render", output: result.content }),
     ).toEqual(reference);
   }).pipe(
     Effect.provide(
@@ -314,7 +314,7 @@ it.effect("records only failed calls of tools that hand off no work", () => {
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const organize = (capabilities: McpInvocationContext.McpInvocationScope["capabilities"]) =>
-      server.callTool({ name: "t3_thread_organize", arguments: { action: "pin" } }).pipe(
+      server.callTool({ name: "boops_thread_organize", arguments: { action: "pin" } }).pipe(
         Effect.provideService(McpInvocationContext.McpInvocationContext, {
           ...scope,
           capabilities,
@@ -328,7 +328,7 @@ it.effect("records only failed calls of tools that hand off no work", () => {
     // The successful call ran first, so it would be the first event if it were recorded.
     expect(yield* Deferred.await(recorded)).toMatchObject({
       event: "mcp.tool.invoked",
-      properties: { tool: "t3_thread_organize", outcome: "error" },
+      properties: { tool: "boops_thread_organize", outcome: "error" },
     });
   }).pipe(
     Effect.provide(
@@ -369,7 +369,7 @@ it.effect("rejects an unknown organize target instead of archiving the calling t
     const server = yield* McpServer.McpServer;
     const outcome = yield* server
       .callTool({
-        name: "t3_thread_organize",
+        name: "boops_thread_organize",
         arguments: { action: "archive", threadIds: ["other-thread"] },
       })
       .pipe(
@@ -409,7 +409,7 @@ it.effect("keeps unexpected handler defects private through the production regis
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const result = yield* server
-      .callTool({ name: "t3_thread_organize", arguments: { action: "pin" } })
+      .callTool({ name: "boops_thread_organize", arguments: { action: "pin" } })
       .pipe(
         Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
         Effect.provideService(McpSchema.McpServerClient, client),
@@ -511,11 +511,11 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
           Effect.provideService(McpSchema.McpServerClient, client),
         );
 
-    const untargeted = yield* call("t3_thread_organize", { action: "pin" }, clientScope("auto"));
+    const untargeted = yield* call("boops_thread_organize", { action: "pin" }, clientScope("auto"));
     expect(declaredFailure(untargeted)).toMatchObject({ code: "target_required" });
 
     const pinned = yield* call(
-      "t3_thread_organize",
+      "boops_thread_organize",
       { action: "pin", threadId: "other-project-thread" },
       clientScope("auto"),
     );
@@ -523,7 +523,7 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
     expect(pinned.structuredContent).toMatchObject({ sequence: 7 });
 
     const aboveCeiling = yield* call(
-      "t3_thread_organize",
+      "boops_thread_organize",
       { action: "pin", threadId: "other-project-thread" },
       clientScope("approval-required"),
     );
@@ -532,7 +532,7 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
     });
 
     const forked = yield* call(
-      "t3_thread_transfer",
+      "boops_thread_transfer",
       { action: "fork", sourcePoint: { type: "latest_stable" } },
       clientScope("auto"),
     );
@@ -578,20 +578,20 @@ it.effect("a read-only client reads threads and is refused every write before it
           Effect.provideService(McpSchema.McpServerClient, client),
         );
 
-    const configuration = yield* call("t3_thread_configure", {
+    const configuration = yield* call("boops_thread_configure", {
       threadId: "other-project-thread",
     });
     expect(configuration.isError).toBe(false);
     expect(configuration.structuredContent).toMatchObject({ runtimeMode: "auto" });
 
-    const pinned = yield* call("t3_thread_organize", {
+    const pinned = yield* call("boops_thread_organize", {
       action: "pin",
       threadId: "other-project-thread",
     });
     expect(declaredFailure(pinned)).toMatchObject({ code: "capability_denied" });
     expect(dispatched).toEqual([]);
 
-    const configure = yield* call("t3_thread_configure", {
+    const configure = yield* call("boops_thread_configure", {
       threadId: "other-project-thread",
       modelSelection: { instanceId: "codex", model: "gpt-5" },
     });
@@ -835,7 +835,7 @@ function scheduledTask(id: string, runtimeMode: "auto" | "full-access"): never {
   } as never;
 }
 
-it.effect.each(["t3_thread_interrupt", "t3_workflow_stop"])(
+it.effect.each(["boops_thread_interrupt", "boops_workflow_stop"])(
   "a caller cannot use %s on a thread that runs above its own modes",
   (toolName) =>
     Effect.gen(function* () {
@@ -845,7 +845,7 @@ it.effect.each(["t3_thread_interrupt", "t3_workflow_stop"])(
           name: toolName,
           arguments: {
             threadId: "full-access-thread",
-            ...(toolName === "t3_workflow_stop" ? { subagentId: "workflow-coordinator" } : {}),
+            ...(toolName === "boops_workflow_stop" ? { subagentId: "workflow-coordinator" } : {}),
           },
         })
         .pipe(
@@ -942,7 +942,7 @@ it.effect("discovers workflow stop targets and requires orchestration capability
     const server = yield* McpServer.McpServer;
     const scope = clientScope("full-access");
     const read = yield* server
-      .callTool({ name: "t3_thread_read", arguments: { threadId, view: "activity" } })
+      .callTool({ name: "boops_thread_read", arguments: { threadId, view: "activity" } })
       .pipe(
         Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
         Effect.provideService(McpSchema.McpServerClient, client),
@@ -953,7 +953,7 @@ it.effect("discovers workflow stop targets and requires orchestration capability
     const call = (invocation: McpInvocationContext.McpInvocationScope) =>
       server
         .callTool({
-          name: "t3_workflow_stop",
+          name: "boops_workflow_stop",
           arguments: { threadId, subagentId: result.items[0]?.subagentId },
         })
         .pipe(
@@ -1018,7 +1018,7 @@ it.effect("only the caller that prepared a pending upload can discard it", () =>
           Effect.provideService(McpSchema.McpServerClient, client),
         );
     const prepared = yield* call(
-      "t3_attachment_prepare_upload",
+      "boops_attachment_prepare_upload",
       { upload: { name: "shot.png", mimeType: "image/png", sizeBytes: 4 } },
       scope,
     );
@@ -1029,18 +1029,18 @@ it.effect("only the caller that prepared a pending upload can discard it", () =>
       thread: { ...scope.thread!, threadId: ThreadId.make("other-thread") },
     };
 
-    const refused = yield* call("t3_attachment_discard", { attachmentId }, otherThread);
+    const refused = yield* call("boops_attachment_discard", { attachmentId }, otherThread);
     expect(declaredFailure(refused)).toMatchObject({ code: "invalid_request" });
 
     yield* TestClock.adjust(24 * 60 * 60 * 1000 + 5 * 60_000);
     yield* call(
-      "t3_attachment_prepare_upload",
+      "boops_attachment_prepare_upload",
       { upload: { name: "later.png", mimeType: "image/png", sizeBytes: 4 } },
       scope,
     );
 
     const discarded = yield* call(
-      "t3_attachment_discard",
+      "boops_attachment_discard",
       { attachmentId },
       { ...scope, requestNamespace: "mcp-core-session-2" },
     );
@@ -1064,7 +1064,7 @@ it.effect("only the caller that prepared a pending upload can discard it", () =>
 );
 
 it.effect(
-  "t3_thread_list settled:false with an empty statuses list lists the unsettled threads",
+  "boops_thread_list settled:false with an empty statuses list lists the unsettled threads",
   () => {
     const unsettled = McpToolAccessTestkit.liveThreadShell(ThreadId.make("unsettled-thread"));
     const settled = {
@@ -1075,7 +1075,7 @@ it.effect(
       const server = yield* McpServer.McpServer;
       const result = yield* server
         .callTool({
-          name: "t3_thread_list",
+          name: "boops_thread_list",
           arguments: { projectId: unsettled.projectId, settled: false, statuses: [] },
         })
         .pipe(

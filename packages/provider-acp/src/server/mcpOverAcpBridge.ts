@@ -193,7 +193,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
   return {
     connect: Effect.fn("mcpOverAcpBridge.connect")(function* (request) {
       const target =
-        request.serverId === "t3-code"
+        request.serverId === "boops"
           ? { endpoint: options.endpoint, authorization: options.authorization }
           : Object.hasOwn(options.connectors ?? {}, request.serverId)
             ? options.connectors![request.serverId]

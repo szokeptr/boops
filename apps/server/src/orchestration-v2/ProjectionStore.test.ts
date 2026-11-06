@@ -807,7 +807,7 @@ it.effect("SQL shells flag only an active turn blocked solely on Boops thread wa
       id: TurnItemId.make("item:thread-wait:active"),
       runId: run.id,
       type: "dynamic_tool" as const,
-      toolName: "mcp__t3_code__t3_thread_wait",
+      toolName: "mcp__boops__boops_thread_wait",
       input: { threadId: "child-thread" },
       status: "running" as const,
     };
@@ -821,7 +821,7 @@ it.effect("SQL shells flag only an active turn blocked solely on Boops thread wa
     const foreign = {
       ...wait,
       id: TurnItemId.make("item:thread-wait:foreign"),
-      toolName: "weather.t3_thread_wait",
+      toolName: "weather.boops_thread_wait",
     };
     yield* updateItem(foreign);
     yield* assertBlocked(false);
@@ -903,7 +903,7 @@ it.effect("SQL shells flag only an active turn blocked solely on Boops thread wa
     const delegation = {
       ...wait,
       id: TurnItemId.make("item:thread-wait:delegation"),
-      toolName: "t3-code-thread_opencode2-adapter_delegate_task",
+      toolName: "boops-thread_opencode2-adapter_delegate_task",
       input: { task: "Review", mode: "async" },
     };
     yield* updateItem(delegation);
@@ -2929,7 +2929,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         workCursor = page.nextCursor;
       }
       assert.strictEqual(workIds.size, 999);
-      for (const toolName of ["t3-code.delegate_task", "mcp__t3_code__delegate_task"]) {
+      for (const toolName of ["boops.delegate_task", "mcp__boops__delegate_task"]) {
         yield* sql`UPDATE orchestration_v2_projection_turn_items SET type = 'dynamic_tool',
           payload_json = json_set(payload_json, '$.type', 'dynamic_tool', '$.toolName', ${toolName})
           WHERE thread_id = ${threadId} AND ordinal = 2`;

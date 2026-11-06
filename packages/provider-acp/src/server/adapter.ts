@@ -825,7 +825,7 @@ function acpMcpContext(
   }
   // T3's own server first, then the bot's connectors, all reached through T3's endpoints.
   const targets = [
-    { name: "t3-code", url: session.endpoint, authorization: session.authorizationHeader },
+    { name: "boops", url: session.endpoint, authorization: session.authorizationHeader },
     ...(session.connectors ?? []).map((connector) => ({
       name: connector.name,
       url: connector.url,
@@ -840,8 +840,8 @@ function acpMcpContext(
       args: [...selfInvocationArgs(self, ["acp-mcp-bridge"])],
       env: [
         { name: "ELECTRON_RUN_AS_NODE", value: "1" },
-        { name: "T3_ACP_MCP_ENDPOINT", value: target.url },
-        { name: "T3_ACP_MCP_AUTHORIZATION", value: target.authorization },
+        { name: "BOOPS_ACP_MCP_ENDPOINT", value: target.url },
+        { name: "BOOPS_ACP_MCP_AUTHORIZATION", value: target.authorization },
       ],
     })),
     acpServers: targets.map((target) => ({
@@ -870,10 +870,10 @@ function acpMcpContext(
     ),
     connectorKey,
     processEnvironment: {
-      T3_ACP_MCP_ENDPOINT: session.endpoint,
-      T3_ACP_MCP_AUTHORIZATION: session.authorizationHeader,
-      T3_ACP_MCP_NODE: self.command,
-      ...(self.entrypoint === undefined ? {} : { T3_ACP_MCP_ENTRYPOINT: self.entrypoint }),
+      BOOPS_ACP_MCP_ENDPOINT: session.endpoint,
+      BOOPS_ACP_MCP_AUTHORIZATION: session.authorizationHeader,
+      BOOPS_ACP_MCP_NODE: self.command,
+      ...(self.entrypoint === undefined ? {} : { BOOPS_ACP_MCP_ENTRYPOINT: self.entrypoint }),
     },
   };
 }

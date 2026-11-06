@@ -377,7 +377,7 @@ it.effect("an agent here works on a linked environment's threads within its own 
       yield* linkTo(a.links, b, "auto");
       yield* Ref.set(linkSession, (yield* b.linkedSessions)[0]!.sessionId);
 
-      const listed = yield* a.call("thread:laptop-full", "t3_environment_links", {});
+      const listed = yield* a.call("thread:laptop-full", "boops_environment_links", {});
       expect(listed.structuredContent).toMatchObject({
         environmentId: laptop.environmentId,
         links: [
@@ -385,7 +385,7 @@ it.effect("an agent here works on a linked environment's threads within its own 
         ],
       });
 
-      const threads = yield* a.call("thread:laptop-full", "t3_thread_list", {
+      const threads = yield* a.call("thread:laptop-full", "boops_thread_list", {
         environmentId: box.environmentId,
         projectId: boxProject,
       });
@@ -397,7 +397,7 @@ it.effect("an agent here works on a linked environment's threads within its own 
 
       // A full-access agent here is held to the link's `auto` there, which
       // the box's `auto` thread is within.
-      const sent = yield* a.call("thread:laptop-full", "t3_thread_send", {
+      const sent = yield* a.call("thread:laptop-full", "boops_thread_send", {
         environmentId: box.environmentId,
         threadId: boxThread,
         message: "Carry on there.",
@@ -408,7 +408,7 @@ it.effect("an agent here works on a linked environment's threads within its own 
 
       // A plan-mode agent here may not steer that thread there: the box
       // refuses it, because the call carries the agent's own modes.
-      const planned = yield* a.call("thread:laptop-plan", "t3_thread_send", {
+      const planned = yield* a.call("thread:laptop-plan", "boops_thread_send", {
         environmentId: box.environmentId,
         threadId: boxThread,
         message: "Change course.",
@@ -418,7 +418,7 @@ it.effect("an agent here works on a linked environment's threads within its own 
 
       // stop=true stops the thread there as its Stop button does: the whole
       // thread and the tasks it delegated, not just the running turn.
-      const stopped = yield* a.call("thread:laptop-full", "t3_thread_interrupt", {
+      const stopped = yield* a.call("thread:laptop-full", "boops_thread_interrupt", {
         environmentId: box.environmentId,
         threadId: boxThread,
         stop: true,
@@ -447,7 +447,7 @@ it.effect("keeps a forwarded wait short and its retries scoped to the caller", (
       yield* linkTo(a.links, b, "auto");
       yield* Ref.set(linkSession, (yield* b.linkedSessions)[0]!.sessionId);
 
-      const waited = yield* a.call("thread:laptop-full", "t3_thread_wait", {
+      const waited = yield* a.call("thread:laptop-full", "boops_thread_wait", {
         environmentId: box.environmentId,
         threadId: boxThread,
         timeoutMs: 600_000,
@@ -469,7 +469,7 @@ it.effect("keeps a forwarded wait short and its retries scoped to the caller", (
       ]);
 
       const send = (caller: string, clientRequestId: string) =>
-        a.call(caller, "t3_thread_send", {
+        a.call(caller, "boops_thread_send", {
           environmentId: box.environmentId,
           threadId: boxThread,
           message: "Once.",
@@ -500,7 +500,7 @@ it.effect("launches in a linked environment with the caller's modes, retry-safe"
       yield* Ref.set(linkSession, (yield* b.linkedSessions)[0]!.sessionId);
       const codex = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" };
       const launch = (caller: string, args: Record<string, unknown> = {}) =>
-        a.call(caller, "t3_thread_launch", {
+        a.call(caller, "boops_thread_launch", {
           environmentId: box.environmentId,
           projectId: boxProject,
           title: "Run the suite there",
@@ -552,12 +552,12 @@ it.effect("brings a repository to a linked environment, only through full access
       const register = { title: "t3code", workspaceRoot: "/home/box/t3code" };
 
       yield* linkTo(a.links, b, "full-access");
-      const cloned = yield* a.call("thread:laptop-full", "t3_project_clone", {
+      const cloned = yield* a.call("thread:laptop-full", "boops_project_clone", {
         environmentId: box.environmentId,
         ...clone,
       });
       expect(cloned.structuredContent).toMatchObject({ cwd: clone.destinationPath });
-      const created = yield* a.call("thread:laptop-full", "t3_project_create", {
+      const created = yield* a.call("thread:laptop-full", "boops_project_create", {
         environmentId: box.environmentId,
         ...register,
       });
@@ -567,7 +567,7 @@ it.effect("brings a repository to a linked environment, only through full access
 
       // A plan-mode agent here may not, and nothing leaves.
       yield* Ref.set(b.bearers, []);
-      const planned = yield* a.call("thread:laptop-plan", "t3_project_create", {
+      const planned = yield* a.call("thread:laptop-plan", "boops_project_create", {
         environmentId: box.environmentId,
         ...register,
       });
@@ -577,8 +577,8 @@ it.effect("brings a repository to a linked environment, only through full access
       // Nor may a full-access agent through a link with less: the box holds it.
       yield* linkTo(a.links, b, "auto");
       for (const [name, args] of [
-        ["t3_project_clone", clone],
-        ["t3_project_create", register],
+        ["boops_project_clone", clone],
+        ["boops_project_create", register],
       ] as const) {
         const refused = yield* a.call("thread:laptop-full", name, {
           environmentId: box.environmentId,
@@ -602,12 +602,12 @@ it.effect("runs any tool that takes a linked environment there", () =>
       yield* linkTo(a.links, b, "auto");
       yield* Ref.set(linkSession, (yield* b.linkedSessions)[0]!.sessionId);
 
-      const there = yield* a.call("thread:laptop-full", "t3_thread_configure", {
+      const there = yield* a.call("thread:laptop-full", "boops_thread_configure", {
         environmentId: box.environmentId,
         threadId: boxThread,
       });
       expect(there.structuredContent).toMatchObject({ threadId: boxThread, runtimeMode: "auto" });
-      const archived = yield* a.call("thread:laptop-full", "t3_thread_organize", {
+      const archived = yield* a.call("thread:laptop-full", "boops_thread_organize", {
         environmentId: box.environmentId,
         threadId: boxThread,
         action: "archive",
@@ -616,7 +616,7 @@ it.effect("runs any tool that takes a linked environment there", () =>
       expect((yield* Ref.get(seen)).stops).toEqual([`thread.archive ${boxThread}`]);
 
       // This environment's own id keeps the call here.
-      const own = yield* a.call("thread:laptop-full", "t3_thread_configure", {
+      const own = yield* a.call("thread:laptop-full", "boops_thread_configure", {
         environmentId: laptop.environmentId,
       });
       expect(own.structuredContent).toMatchObject({
@@ -638,7 +638,7 @@ it.effect("refuses what a linked environment cannot take before anything leaves"
       yield* Ref.set(linkSession, (yield* b.linkedSessions)[0]!.sessionId);
       yield* Ref.set(b.bearers, []);
 
-      const unknown = yield* a.call("thread:laptop-full", "t3_thread_read", {
+      const unknown = yield* a.call("thread:laptop-full", "boops_thread_read", {
         environmentId: EnvironmentId.make("environment-elsewhere"),
         threadId: boxThread,
       });
@@ -649,21 +649,21 @@ it.effect("refuses what a linked environment cannot take before anything leaves"
       // threads here may not reach them there either.
       const previewOnly = new Set<McpInvocationContext.McpCapability>(["preview"]);
       for (const [name, args] of [
-        ["t3_environment_links", {}],
-        ["t3_project_list", { environmentId: box.environmentId }],
-        ["t3_thread_list", { environmentId: box.environmentId, projectId: boxProject }],
-        ["t3_thread_read", { environmentId: box.environmentId, threadId: boxThread }],
-        ["t3_thread_wait", { environmentId: box.environmentId, threadId: boxThread }],
+        ["boops_environment_links", {}],
+        ["boops_project_list", { environmentId: box.environmentId }],
+        ["boops_thread_list", { environmentId: box.environmentId, projectId: boxProject }],
+        ["boops_thread_read", { environmentId: box.environmentId, threadId: boxThread }],
+        ["boops_thread_wait", { environmentId: box.environmentId, threadId: boxThread }],
         [
-          "t3_thread_send",
+          "boops_thread_send",
           { environmentId: box.environmentId, threadId: boxThread, message: "Carry on there." },
         ],
         [
-          "t3_thread_organize",
+          "boops_thread_organize",
           { environmentId: box.environmentId, threadId: boxThread, action: "archive" },
         ],
         [
-          "t3_thread_launch",
+          "boops_thread_launch",
           {
             environmentId: box.environmentId,
             projectId: boxProject,
@@ -681,13 +681,13 @@ it.effect("refuses what a linked environment cannot take before anything leaves"
       // Work a desk's link started here never uses this laptop's links: the
       // box would see the laptop, not the desk, so its fence could not hold.
       for (const [name, args] of [
-        ["t3_thread_read", { environmentId: box.environmentId, threadId: boxThread }],
+        ["boops_thread_read", { environmentId: box.environmentId, threadId: boxThread }],
         [
-          "t3_thread_send",
+          "boops_thread_send",
           { environmentId: box.environmentId, threadId: boxThread, message: "From the desk." },
         ],
         [
-          "t3_thread_launch",
+          "boops_thread_launch",
           { environmentId: box.environmentId, projectId: boxProject, title: "x" },
         ],
       ] as const) {

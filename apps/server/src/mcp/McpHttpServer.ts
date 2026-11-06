@@ -825,22 +825,22 @@ const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(funct
 const HANDOFF_TOOLS: ReadonlySet<string> = new Set([
   "delegate_task",
   "create_threads",
-  "t3_thread_launch",
-  "t3_thread_send",
-  "t3_thread_send_attachments",
+  "boops_thread_launch",
+  "boops_thread_send",
+  "boops_thread_send_attachments",
   "schedule_task",
   "run_scheduled_task_now",
 ]);
 
 /** Tool actions that hand work over with only a `{ sequence }` result; the input names the thread. */
 const INPUT_TARGET_ACTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
-  t3_queue: new Set(["edit", "promote_to_steer"]),
-  t3_pending_request: new Set(["respond"]),
+  boops_queue: new Set(["edit", "promote_to_steer"]),
+  boops_pending_request: new Set(["respond"]),
 };
 
 /** Tool actions that hand work over and name the receiving thread in their result. */
 const RESULT_TARGET_ACTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
-  t3_thread_transfer: new Set(["fork", "merge_back"]),
+  boops_thread_transfer: new Set(["fork", "merge_back"]),
 };
 
 const hasAction = (

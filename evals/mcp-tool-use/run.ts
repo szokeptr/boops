@@ -113,7 +113,7 @@ type PricedModel = keyof typeof PRICES;
 const PROXY_SHELL_MODELS = ["gpt-6-luna", "gpt-6.1-terra"] as const;
 type ShellModel = PricedModel | (typeof PROXY_SHELL_MODELS)[number];
 const isPricedModel = (model: ShellModel): model is PricedModel => model in PRICES;
-const T3_PREFIX = "mcp__t3-code__";
+const T3_PREFIX = "mcp__boops__";
 const RUNTIME_MARKER = "<runtime_info>";
 const TOOL_LOADED = "Tool loaded.";
 const DEFERRED_LIST =
@@ -184,7 +184,7 @@ const McpToolUseExpect = Schema.Struct({
   minCalls: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
   maxCalls: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
   /**
-   * One `args`-style value per new top-level thread the agent asks for, by `t3_thread_launch` or a
+   * One `args`-style value per new top-level thread the agent asks for, by `boops_thread_launch` or a
    * `create_threads` entry. Each matches a different thread's request; no other thread is asked for.
    */
   newThreads: Schema.optional(Schema.Array(Schema.Unknown)),
@@ -396,7 +396,7 @@ const toolResult = (id: string, content: unknown): Block => ({
 });
 const texts = (content: typeof Content.Type) =>
   typeof content === "string" ? [content] : content.flatMap((block) => block.text ?? []);
-const isT3Name = (name: string) => name.startsWith(T3_PREFIX) || name.startsWith("mcp__t3_code__");
+const isT3Name = (name: string) => name.startsWith(T3_PREFIX);
 const hasTool = (tools: ReadonlyArray<ApiTool>, name: string) =>
   tools.some((tool) => tool.name === name);
 
@@ -513,7 +513,7 @@ const claudeQueryOptions = (model: Model, device = true) => {
     nativeThreadId: "mcp-tool-use-eval",
     resume: false,
     cwd: null,
-    mcpServers: { "t3-code": { type: "http", url: "http://127.0.0.1/mcp" } },
+    mcpServers: { boops: { type: "http", url: "http://127.0.0.1/mcp" } },
     deviceToolsAvailable: device,
   };
   return makeClaudeQueryOptions(input);
@@ -706,7 +706,7 @@ const buildCodexBase = (
       ? item.content.map((block: Block) => valueText(block.text)).join("\n")
       : valueText(item.content);
   const joined = template.input.map(contentText).join("\n");
-  if (!joined.includes("<t3_code_runtime>"))
+  if (!joined.includes("<boops_runtime>"))
     throw new Error("Codex template needs full Boops context.");
   const cwd = /<cwd>(.*?)<\/cwd>/.exec(joined)?.[1] ?? "/home/user/app";
   const home = /^\/(?:home|Users)\/[^/]+/.exec(cwd)?.[0];
@@ -720,7 +720,7 @@ const buildCodexBase = (
   // The captured <collaboration_mode> message stays: Codex supplies its own mode text natively.
   const input = template.input.flatMap((item) => {
     const content = contentText(item);
-    if (content.includes("<t3_code_")) return [];
+    if (content.includes("<boops_")) return [];
     if (item.role === "user") {
       const env = /<environment_context>[\s\S]*?<\/environment_context>/.exec(content)?.[0];
       return env ? [message(clean(options.keepUserInstructions ? content : env), "user")] : [];
@@ -781,7 +781,7 @@ const codexCall = (name: string, input: unknown) => {
           : `python3 -c ${JSON.stringify(`from pathlib import Path; p=Path(${JSON.stringify(file)}); p.write_text(p.read_text().replace(${JSON.stringify(args.old_string)}, ${JSON.stringify(args.new_string)}))`)}`;
     return `text(await tools.exec_command(${JSON.stringify({ cmd: command })}));`;
   }
-  return `text(await tools.${name.replace("mcp__t3-code__", "mcp__t3_code__")}(${JSON.stringify(input)}));`;
+  return `text(await tools.${name}(${JSON.stringify(input)}));`;
 };
 const codexMessages = (messages: ReadonlyArray<ApiMessage>): Array<Block> =>
   messages.flatMap((message) =>
@@ -1124,7 +1124,7 @@ export const t3Default = (
     };
   };
   switch (name) {
-    case "t3_thread_launch":
+    case "boops_thread_launch":
       return newThread(input, input.message);
     case "create_threads":
       return {
@@ -1246,7 +1246,7 @@ export const t3Default = (
         })),
         chains: [],
       };
-    case "t3_thread_read": {
+    case "boops_thread_read": {
       const threadId = valueText(input.threadId);
       const launched = sample.threads.get(threadId);
       if (launched !== undefined) {
@@ -1324,16 +1324,16 @@ const withProductFields = (name: string, value: unknown, child: boolean): unknow
       const running = task.status === "running" && task.next === undefined;
       return running ? { ...task, next: ORCHESTRATOR_MCP_RUNNING_TASK_NEXT } : task;
     }
-    case "t3_thread_read":
+    case "boops_thread_read":
       return { ...value, thread: linked(value.thread) };
-    case "t3_thread_launch":
-    case "t3_thread_send":
+    case "boops_thread_launch":
+    case "boops_thread_send":
     case "run_scheduled_task_now":
       return linked(value);
-    case "t3_thread_list":
+    case "boops_thread_list":
     case "create_threads":
       return listed("threads");
-    case "t3_thread_search":
+    case "boops_thread_search":
       return listed("matches");
     case "link_pull_request":
     case "link_pull_requests":
@@ -1661,7 +1661,7 @@ const matches = (expected: unknown, actual: unknown): boolean => {
 const newThreadRequests = (calls: ReadonlyArray<Call>) =>
   calls.flatMap((call): ReadonlyArray<{ request: unknown; brief: unknown }> => {
     if (call.failed === true || !isRecord(call.input)) return [];
-    if (call.tool === "t3_thread_launch")
+    if (call.tool === "boops_thread_launch")
       return [{ request: call.input, brief: call.input.message }];
     if (call.tool !== "create_threads" || !Array.isArray(call.input.threads)) return [];
     return call.input.threads.map((request: unknown) => ({
@@ -1853,7 +1853,7 @@ export const executeCodex = async (
 
 const codexCatalog = (base: Base) => [
   ...base.t3.map((tool) => ({
-    name: tool.name.replace("mcp__t3-code__", "mcp__t3_code__"),
+    name: tool.name,
     description: `${valueText(tool.description)}\nInput JSON schema: ${JSON.stringify(tool.input_schema)}`,
   })),
   ...[

@@ -312,7 +312,7 @@ export function openCodeMcpServers(
     oauth: false,
   });
   return {
-    "t3-code": remote(session.endpoint, { Authorization: session.authorizationHeader }),
+    boops: remote(session.endpoint, { Authorization: session.authorizationHeader }),
     ...Object.fromEntries(
       (session.connectors ?? []).map((connector) => [
         connector.name,
@@ -1017,7 +1017,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         });
         if (hasT3Mcp) {
           yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
-            client.mcp.add({ name: "t3-code", config: openCodeMcpServers(mcpSession)["t3-code"]! }),
+            client.mcp.add({ name: "boops", config: openCodeMcpServers(mcpSession)["boops"]! }),
           );
           yield* syncConnectors(mcpSession);
           // Bots see only T3's servers; the user's own opencode.json servers stay off.
@@ -1028,7 +1028,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             Effect.orElseSucceed((): ReadonlyArray<string> => []),
           );
           for (const name of native) {
-            if (name === "t3-code" || connectorNames.includes(name)) continue;
+            if (name === "boops" || connectorNames.includes(name)) continue;
             yield* OpenCodeRuntime.runOpenCodeSdk("mcp.disconnect", () =>
               client.mcp.disconnect({ name }, { throwOnError: true }),
             ).pipe(Effect.ignore);

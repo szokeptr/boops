@@ -468,7 +468,7 @@ describe("OpenCodeAdapterV2", () => {
               },
               status: async () => ({
                 data: {
-                  "t3-code": { status: "connected" },
+                  boops: { status: "connected" },
                   linear: { status: "connected" },
                   user_tool: { status: "connected" },
                 },

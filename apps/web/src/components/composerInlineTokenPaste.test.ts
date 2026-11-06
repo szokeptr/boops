@@ -44,7 +44,7 @@ describe("importPastedComposerText", () => {
 
   it("makes a chip of a v2 link pasted without T3's clipboard format", () => {
     const text = importPastedComposerText(
-      clipboard({ "text/plain": "[Login](t3-thread://v2/env-1/thread-1)" }),
+      clipboard({ "text/plain": "[Login](boops-thread://v2/env-1/thread-1)" }),
       importAll([]),
     );
     expect(text).toBe(chip("Login"));

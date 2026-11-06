@@ -72,7 +72,7 @@ describe("Codex bot context", () => {
 describe("Codex device context", () => {
   it("adds the shared device block only when the session holds device access", () => {
     const tools = (device: boolean) =>
-      buildCodexAdditionalContext({ model: "gpt-6.1-sol" }, { browser: true, device }).t3_code_tools
+      buildCodexAdditionalContext({ model: "gpt-6.1-sol" }, { browser: true, device }).boops_tools
         ?.value ?? "";
 
     NodeAssert.ok(tools(true).includes(T3_CODE_DEVICE_TOOL_INSTRUCTIONS));
@@ -82,5 +82,5 @@ describe("Codex device context", () => {
 });
 
 function runtimeInstructions(runtime: Parameters<typeof buildCodexAdditionalContext>[0]) {
-  return buildCodexAdditionalContext(runtime).t3_code_runtime!.value;
+  return buildCodexAdditionalContext(runtime).boops_runtime!.value;
 }

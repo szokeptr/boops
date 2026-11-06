@@ -397,7 +397,7 @@ const runStatus = (harness: ReturnType<typeof makeHarness>) =>
 
 const decodeHandoffInput = Schema.decodeUnknownEffect(WorktreeMcpHandoffInput);
 
-describe("t3_worktree_handoff", () => {
+describe("boops_worktree_handoff", () => {
   it.effect("reports a continuation failure without failing the handoff", () => {
     const harness = makeHarness({ continuation: "fails" });
     return Effect.gen(function* () {
@@ -707,7 +707,7 @@ describe("t3_worktree_handoff", () => {
   });
 });
 
-describe("t3_worktree_status", () => {
+describe("boops_worktree_status", () => {
   it.effect("reports an attached thread's worktree and branch", () => {
     const harness = makeHarness({
       thread: {
@@ -728,7 +728,7 @@ describe("t3_worktree_status", () => {
   });
 });
 
-describe("t3_worktree_list", () => {
+describe("boops_worktree_list", () => {
   const listRefs = (harness: ReturnType<typeof makeHarness>, worktreePath: string | null) =>
     Effect.gen(function* () {
       const service = yield* WorktreeMcpService.WorktreeMcpService;
