@@ -6,7 +6,6 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 
-import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import { readChromiumLocalStorage } from "./chromiumLocalStorage.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
@@ -22,6 +21,8 @@ export class DesktopLegacyLocalStorage extends Context.Service<
 
 const MARKER_FILE_NAME = "v1-local-storage-imported";
 const V1_PROFILE_NAMES = ["T3 Code (Alpha)", "t3code"];
+// V1 was T3 Code, so its renderer stored Local Storage under T3's scheme, not Boops'.
+const V1_RENDERER_ORIGIN = "t3code://app";
 
 const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
@@ -78,8 +79,7 @@ const make = Effect.gen(function* () {
     yield* Ref.set(markerPath, Option.some(marker));
     const directory = yield* findV1LocalStorage;
     if (directory === null) return yield* writeMarker;
-    const origin = ElectronProtocol.getDesktopUrl(false).replace(/\/$/, "");
-    const read = yield* readChromiumLocalStorage(directory, origin).pipe(
+    const read = yield* readChromiumLocalStorage(directory, V1_RENDERER_ORIGIN).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Path.Path, path),
       Effect.tapError((error) =>

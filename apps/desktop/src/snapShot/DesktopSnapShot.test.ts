@@ -495,7 +495,7 @@ const layerTest = (
             platform,
             displayName: "Boops (Dev)",
             stateDir: "/state",
-            linuxDesktopEntryName: "com.t3tools.T3Code.desktop",
+            linuxDesktopEntryName: "com.getboops.app.desktop",
             appRoot: "/repo",
             linuxApplicationsDir: "/test-data/applications",
           } as DesktopEnvironment.DesktopEnvironment["Service"]),
