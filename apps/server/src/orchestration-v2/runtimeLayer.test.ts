@@ -8808,7 +8808,7 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
         const [kickoff] = started.messages;
         assert.deepInclude(kickoff, {
           role: "user",
-          text: Bots.HATCH_KICKOFF_TEXT,
+          text: Bots.hatchKickoffText("Hatched"),
           createdBy: "system",
           creationSource: "server",
         });
@@ -8923,14 +8923,14 @@ it.layer(layerBotsTest)("bot families", (it) => {
       assert.lengthOf(fromBrief.runs, 1);
       assert.deepInclude(fromBrief.messages[0], {
         role: "user",
-        text: Bots.childBriefKickoffText("Wren", brief),
+        text: Bots.childBriefKickoffText("Wren", "Pace", brief),
         createdBy: "agent",
         senderThreadId: parent.mainThreadId,
       });
       const hatching = yield* orchestrator.getThreadProjection(interviewing.mainThreadId);
       assert.lengthOf(hatching.runs, 1);
       assert.deepInclude(hatching.messages[0], {
-        text: Bots.childHatchKickoffText("Wren"),
+        text: Bots.childHatchKickoffText("Wren", "Tally"),
         createdBy: "system",
       });
     }).pipe(Effect.scoped),
