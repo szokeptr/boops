@@ -337,7 +337,7 @@ const nullPath = (
   return undefined;
 };
 
-/** A device configuration profile that installs `document` for `com.t3tools.t3code`. */
+/** A device configuration profile that installs `document` for `com.getboops.app`. */
 export function macosProfile(
   document: ManagedPolicyDocument,
   uuids: { readonly profile: string; readonly payload: string },
@@ -358,8 +358,8 @@ export function macosProfile(
     PayloadContent: [
       {
         PayloadDisplayName: "Boops policy",
-        PayloadIdentifier: `com.t3tools.t3code.policy.${uuids.payload}`,
-        PayloadType: "com.t3tools.t3code",
+        PayloadIdentifier: `com.getboops.app.policy.${uuids.payload}`,
+        PayloadType: "com.getboops.app",
         PayloadUUID: uuids.payload,
         PayloadVersion: 1,
         ...document,
@@ -367,7 +367,7 @@ export function macosProfile(
     ],
     PayloadDescription: "Configures Boops for every user on this Mac.",
     PayloadDisplayName: `Boops policy for ${document.organization}`,
-    PayloadIdentifier: `com.t3tools.t3code.policy`,
+    PayloadIdentifier: `com.getboops.app.policy`,
     PayloadOrganization: document.organization,
     PayloadScope: "System",
     PayloadType: "Configuration",
