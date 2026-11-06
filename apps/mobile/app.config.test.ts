@@ -26,22 +26,22 @@ it.each(["prod", ""])("rejects APP_VARIANT=%j before selecting production IDs", 
 });
 
 it.each([
-  [undefined, "com.getboops.app"],
-  ["development", "com.getboops.app.dev"],
-  ["preview", "com.getboops.app.preview"],
-  ["production", "com.getboops.app"],
-])("keeps the iOS and Android identifiers for APP_VARIANT=%j", async (value, identifier) => {
+  [undefined, "com.getboops.ios", "com.getboops.app"],
+  ["development", "com.getboops.ios.dev", "com.getboops.app.dev"],
+  ["preview", "com.getboops.ios.preview", "com.getboops.app.preview"],
+  ["production", "com.getboops.ios", "com.getboops.app"],
+])("keeps the iOS and Android identifiers for APP_VARIANT=%j", async (value, iosId, androidId) => {
   const config = await loadConfig(value);
-  expect(config.ios?.bundleIdentifier).toBe(identifier);
-  expect(config.android?.package).toBe(identifier);
+  expect(config.ios?.bundleIdentifier).toBe(iosId);
+  expect(config.android?.package).toBe(androidId);
   // Copied thread links open this app only while app.t3.codes lists it.
   const host = new URL(DEFAULT_HOSTED_APP_URL).host;
   expect(config.ios?.associatedDomains).toContain(`applinks:${host}`);
   expect(appleAppSiteAssociation.applinks.details[0]?.appIDs).toContain(
-    `${config.ios?.appleTeamId}.${identifier}`,
+    `${config.ios?.appleTeamId}.${iosId}`,
   );
   expect(config.android?.intentFilters?.[0]?.data).toEqual([
     { scheme: "https", host, pathPrefix: "/threads/" },
   ]);
-  expect(assetLinks.map((link) => link.target.package_name)).toContain(identifier);
+  expect(assetLinks.map((link) => link.target.package_name)).toContain(androidId);
 });

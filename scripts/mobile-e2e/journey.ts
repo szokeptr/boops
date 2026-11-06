@@ -14,7 +14,7 @@ import {
   type SnapshotNode,
   tabBarRect,
 } from "./checks.ts";
-import { BUNDLE_ID, delay, type Device } from "./device.ts";
+import { BUNDLE_IDS, delay, type Device } from "./device.ts";
 import { lagCheck } from "./video.ts";
 
 export interface StepResult {
@@ -71,6 +71,7 @@ export async function runJourney(
   steps: StepResult[],
 ): Promise<void> {
   const phone = device.pose.form === "phone";
+  const bundleId = BUNDLE_IDS[device.pose.platform];
   const tap = async (node: SnapshotNode | undefined, label: string) => {
     if (!node?.ref || !node.rect) throw new Error(`no ${label} to tap`);
     // agent-device refuses refs it considers covered, such as on the unfolded Duo's inner
@@ -97,7 +98,7 @@ export async function runJourney(
     await device.screenshot(screenshot);
     const step = {
       name,
-      checks: [...layoutChecks(snapshot, BUNDLE_ID), ...expectations],
+      checks: [...layoutChecks(snapshot, bundleId), ...expectations],
       screenshot,
       ...extra,
     };
@@ -197,7 +198,7 @@ export async function runJourney(
     video: opening,
     ...(openLag?.frame ? { lagFrame: openLag.frame } : {}),
     checks: [
-      ...layoutChecks(thread, BUNDLE_ID),
+      ...layoutChecks(thread, bundleId),
       check(
         "composer inside the screen",
         inside(composer(thread)?.rect, thread),
@@ -274,7 +275,7 @@ export async function runJourney(
       video: back,
       ...(backLag?.frame ? { lagFrame: backLag.frame } : {}),
       checks: [
-        ...layoutChecks(list, BUNDLE_ID),
+        ...layoutChecks(list, bundleId),
         check("tab bar back", inside(tabBarRect(list), list), describeRect(tabBarRect(list))),
         ...(backLag ? [backLag.check] : []),
       ],

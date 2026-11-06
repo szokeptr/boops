@@ -44,7 +44,13 @@ process.stdout.write(`boops-dev://connections/new?${query}`);
 NODE
 )"
 
-if ! "$agent_device_command" open com.getboops.app.dev "$deep_link" "$@" \
+# The dev client's iOS bundle ID differs from its Android package; the target args name the platform.
+app_id="com.getboops.ios.dev"
+for arg in "$@"; do
+  if [[ "$arg" == "android" ]]; then app_id="com.getboops.app.dev"; fi
+done
+
+if ! "$agent_device_command" open "$app_id" "$deep_link" "$@" \
   >/dev/null 2>&1; then
   echo "AgentDevice could not open the pairing route. Check the Device panel and retry with a fresh credential." >&2
   exit 1

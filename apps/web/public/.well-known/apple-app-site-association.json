@@ -3,9 +3,9 @@
     "details": [
       {
         "appIDs": [
-          "RMVRBAFHK5.com.getboops.app",
-          "RMVRBAFHK5.com.getboops.app.preview",
-          "RMVRBAFHK5.com.getboops.app.dev"
+          "RMVRBAFHK5.com.getboops.ios",
+          "RMVRBAFHK5.com.getboops.ios.preview",
+          "RMVRBAFHK5.com.getboops.ios.dev"
         ],
         "components": [{ "/": "/threads/*" }]
       }
