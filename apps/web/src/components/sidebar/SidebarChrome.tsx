@@ -177,7 +177,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
     <BoopsWordmark
-      className={cn("h-[18px] w-auto shrink-0", onBackdrop ? "text-white" : "text-foreground")}
+      className={cn("h-5 w-auto shrink-0", onBackdrop ? "text-white" : "text-foreground")}
     />
   );
 }

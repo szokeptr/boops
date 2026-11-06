@@ -1,20 +1,19 @@
 ---
-import { Image } from "astro:assets";
-import appIcon from "../assets/icon.webp";
+import BotVisor from "../components/BotVisor.astro";
 import Layout from "../layouts/Layout.astro";
 
 const bots = [
-  { name: "Juniper", state: "needs", status: "Needs you", hue: "#ee8e80" },
-  { name: "Inbox Ranger", state: "working", status: "Sorting 38 emails…", hue: "#7fc6ec" },
-  { name: "Ledger", state: "working", status: "Reconciling Oct…", hue: "#f8cf5c" },
-  { name: "Gym Buddy", state: "idle", status: "Leg day moved", hue: "#9ad89a" },
-  { name: "Biscuit", state: "sleep", status: "Dozing", hue: "#b79cf0" },
+  { name: "Juniper", state: "needs", status: "Needs you", hue: 8, accessory: "antenna" },
+  { name: "Inbox Ranger", state: "working", status: "Sorting 38 emails…", hue: 200, accessory: "phones" },
+  { name: "Ledger", state: "working", status: "Reconciling Oct…", hue: 45, accessory: "handle" },
+  { name: "Gym Buddy", state: "idle", status: "Leg day moved", hue: 110, accessory: "none" },
+  { name: "Biscuit", state: "sleep", status: "Dozing", hue: 258, accessory: "antenna" },
 ];
 
 const states = [
-  { state: "working", label: "Working", copy: "Its screen ticks while it works." },
-  { state: "needs", label: "Needs you", copy: "Goes amber and pings your phone." },
-  { state: "sleep", label: "Dozing", copy: "Wakes up for its next routine." },
+  { state: "working", label: "Working", copy: "Its eyes scan while it works.", hue: 200 },
+  { state: "needs", label: "Needs you", copy: "Its eyes go amber and your phone pings.", hue: 8 },
+  { state: "sleep", label: "Dozing", copy: "Wakes up for its next routine.", hue: 258 },
 ];
 
 const modes = [
@@ -54,16 +53,7 @@ const comparison = [
 
       <div class="hero-mascot" data-rise style="--d:180ms" aria-hidden="true">
         <span class="bubble pixel">hi! I'm new</span>
-        <Image
-          src={appIcon}
-          alt=""
-          width={208}
-          height={208}
-          densities={[1, 2]}
-          format="webp"
-          quality={95}
-          loading="eager"
-        />
+        <BotVisor hue={258} accessory="antenna" size={208} />
       </div>
     </div>
 
@@ -80,7 +70,7 @@ const comparison = [
             <div class="shot-side-head pixel"><span>Bots</span><span>+ hatch</span></div>
             {bots.map((bot, index) => (
               <div class:list={["shot-bot", index === 0 && "is-on"]}>
-                <span class="av" style={`--hue:${bot.hue}`} data-state={bot.state}></span>
+                <span class="av"><BotVisor hue={bot.hue} state={bot.state as "idle" | "working" | "needs" | "sleep"} accessory={bot.accessory as "none" | "antenna" | "handle" | "phones"} /></span>
                 <span class="shot-bot-text">
                   {bot.name}
                   <small class:list={[bot.state === "needs" && "is-needs"]}>{bot.status}</small>
@@ -90,7 +80,7 @@ const comparison = [
           </div>
           <div class="shot-conv">
             <div class="shot-conv-head">
-              <span class="av" style="--hue:#ee8e80" data-state="needs"></span>
+              <span class="av"><BotVisor hue={8} state="needs" accessory="antenna" /></span>
               <span><b>Juniper</b><small>● Needs you</small></span>
             </div>
             <div class="shot-msgs">
@@ -116,7 +106,7 @@ const comparison = [
       <div class="glance-tiles">
         {states.map((item) => (
           <div class="glance-tile">
-            <span class="av av--lg" data-state={item.state}></span>
+            <span class="av av--lg"><BotVisor hue={item.hue} state={item.state as "working" | "needs" | "sleep"} accessory="antenna" size={56} /></span>
             <b>{item.label}</b>
             <p>{item.copy}</p>
           </div>
@@ -322,11 +312,8 @@ const comparison = [
     padding-top: 40px;
   }
 
-  .hero-mascot img {
-    width: 208px;
-    height: 208px;
-    border-radius: 44px;
-    image-rendering: pixelated;
+  .hero-mascot :global(.bot-visor) {
+    filter: drop-shadow(0 18px 30px rgba(29, 26, 42, 0.18));
   }
 
   .bubble {
@@ -488,63 +475,12 @@ const comparison = [
     border: 1px solid rgba(255, 255, 255, 0.2);
   }
 
-  /* Pixel avatar stand-in: a bot-hue screen with a status corner. */
+  /* Bot avatars: the SVG draws status in the eyes, so no corner badge. */
   .av {
-    --hue: var(--phosphor);
-    --size: 34px;
-    position: relative;
     flex: none;
-    width: var(--size);
-    height: var(--size);
-    border-radius: 7px;
-    background:
-      linear-gradient(var(--night), var(--night)) center / 62% 46% no-repeat,
-      var(--hue);
+    display: inline-flex;
+    line-height: 0;
   }
-
-  .av::before {
-    content: "";
-    position: absolute;
-    left: 31%;
-    top: 40%;
-    width: 38%;
-    height: 12%;
-    background:
-      linear-gradient(var(--phosphor), var(--phosphor)) left / 28% 100% no-repeat,
-      linear-gradient(var(--phosphor), var(--phosphor)) right / 28% 100% no-repeat;
-  }
-
-  .av[data-state="sleep"]::before {
-    top: 46%;
-    height: 6%;
-    opacity: 0.5;
-  }
-
-  .av[data-state="needs"]::after,
-  .av[data-state="working"]::after {
-    content: "";
-    position: absolute;
-    right: -3px;
-    bottom: -3px;
-    width: 9px;
-    height: 9px;
-    outline: 2px solid #17161f;
-    background: var(--blue);
-  }
-
-  .av[data-state="needs"]::after {
-    background: var(--amber);
-  }
-
-  .av--lg {
-    --size: 52px;
-    border-radius: 10px;
-  }
-
-  .glance-tile .av[data-state="working"] { --hue: #7fc6ec; }
-  .glance-tile .av[data-state="needs"] { --hue: #ee8e80; }
-  .glance-tile .av[data-state="sleep"] { --hue: #b79cf0; }
-  .glance-tile .av::after { outline-color: var(--paper); }
 
   /* Glance */
   .glance-grid {

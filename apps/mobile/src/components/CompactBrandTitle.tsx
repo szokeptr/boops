@@ -50,7 +50,7 @@ export function CompactBrandTitle(
         props.fit && { flexShrink: 0 },
       ]}
     >
-      <T3Wordmark colorClassName="accent-icon" height={Math.round(18 * scale)} />
+      <T3Wordmark colorClassName="accent-icon" height={Math.round(22 * scale)} />
       {showStage ? (
         <View
           className="rounded-full bg-subtle px-1.5 py-0.5"

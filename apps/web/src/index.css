@@ -169,6 +169,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
    default stacks are mirrored in `appearanceFonts.ts`. */
 @theme {
   --color-boops-glow: #86ffcf;
+  --color-boops-tile: #1d1a2a;
+  --color-boops-tile-rim: #1d1a2a;
+  --color-boops-visor: #2f2b45;
   --font-sans:
     -apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI", system-ui, sans-serif;
   --font-mono:
@@ -2591,4 +2594,11 @@ code {
 [data-workspace-area]:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+
+/* The Boops mark lifts its tile and adds a rim on dark surfaces, so it does not vanish. */
+.dark {
+  --color-boops-tile: #262338;
+  --color-boops-tile-rim: #3d3958;
+  --color-boops-visor: #13111c;
 }

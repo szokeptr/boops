@@ -240,7 +240,7 @@ export function WelcomeWizard({
       >
         <WizardHeader
           title="Set up Boops"
-          identity={<BoopsWordmark className="h-[27px] w-auto shrink-0" />}
+          identity={<BoopsWordmark className="h-8 w-auto shrink-0" />}
         >
           <WizardSteps
             steps={ONBOARDING_STAGES}

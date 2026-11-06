@@ -25,9 +25,9 @@ const SVG_DENSITY = 300;
 const OUTPUT_DIRECTORY = "apps/mobile/assets";
 // Matches the fill in each assets/<variant>/app-icon.icon/icon.json.
 const BACKGROUND: Record<IconVariant, string> = {
-  dev: "#FBF8F1",
+  dev: "#FBF8F3",
   nightly: "#86FFCF",
-  prod: "#25223A",
+  prod: "#1D1A2A",
 };
 const FOREGROUND_FILE: Record<IconVariant, string> = {
   dev: "android-icon-foreground-dev.png",
@@ -43,11 +43,10 @@ export class AndroidIconRenderError extends Schema.TaggedError<AndroidIconRender
 const attempt = <A>(layer: string, run: () => Promise<A>) =>
   Effect.tryPromise({ try: run, catch: (cause) => new AndroidIconRenderError({ layer, cause }) });
 
-// Pixel art: nearest-neighbour keeps the sprite edges hard.
 const rasterize = (layer: string, svg: string, size: number) =>
   attempt(layer, () =>
     sharp(Buffer.from(svg), { density: SVG_DENSITY })
-      .resize(size, size, { kernel: "nearest" })
+      .resize(size, size, { fit: "contain", background: "#00000000" })
       .png()
       .toBuffer(),
   );

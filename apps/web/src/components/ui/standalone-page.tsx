@@ -22,7 +22,7 @@ export function StandalonePageHeader({
   return (
     <>
       <div className="flex items-baseline justify-between gap-3 text-muted-foreground">
-        <BoopsWordmark className="h-[18px] w-auto shrink-0 text-foreground" />
+        <BoopsWordmark className="h-6 w-auto shrink-0 text-foreground" />
         {context ? <span className="text-sm">{context}</span> : null}
       </div>
       <h1 className="mt-6 text-xl leading-tight font-semibold">{title}</h1>
