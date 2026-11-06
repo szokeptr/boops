@@ -200,6 +200,7 @@ import {
 } from "../../lib/markdownLinks";
 import {
   createThreadFeedCache,
+  deriveDirectMessageFeed,
   threadFeedCompactionLabels,
   failedFeedRunIds,
   deriveThreadFeedPresentation,
@@ -242,6 +243,7 @@ import {
 } from "./pending-thread-feed";
 import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
 import { resolveThreadFeedFixedItemSize } from "./thread-feed-item-size";
+import { ThreadTypingRow } from "./thread-typing-row";
 import { htmlRenderFrameHeight } from "@t3tools/shared/htmlRender";
 import { htmlRenderRowHeight, ThreadHtmlRender } from "./HtmlRenderWebView";
 import { ThreadMcpApp } from "./McpAppWebView";
@@ -361,6 +363,8 @@ export interface ThreadFeedProps {
   readonly latestRun: ThreadFeedLatestRun | null;
   readonly activeWorkStartedAt: string | null;
   readonly runlessWorkActive?: boolean;
+  /** Set in a bot's main conversation, which reads like a DM: bubbles and a typing row, not the work. */
+  readonly directMessage?: { readonly typingSince: string | null } | null;
   readonly listRef: RefObject<LegendListRef | null>;
   readonly freeze: SharedValue<boolean>;
   readonly anchorMessageId: MessageId | null;
@@ -1706,7 +1710,8 @@ function renderFeedEntry(
     readonly contentWidth: number;
     readonly threadTitle: string;
     readonly workflowOpening: WorkflowOpening | null;
-    readonly userMessageGrouping: GroupedThreadFeedRow["userMessageGrouping"];
+    readonly messageGrouping: GroupedThreadFeedRow["messageGrouping"];
+    readonly directMessage: boolean;
   },
 ) {
   const entry = info.item;
@@ -1744,6 +1749,15 @@ function renderFeedEntry(
           iconColor={iconSubtleColor}
         />
       </View>
+    );
+  }
+
+  if (entry.type === "thinking" && props.directMessage) {
+    return (
+      <ThreadTypingRow
+        startedAt={entry.createdAt}
+        minHeight={props.workRowSizing.estimatedRowHeight}
+      />
     );
   }
 
@@ -1956,7 +1970,7 @@ function renderFeedEntry(
       const foldRowId = presentation.attribution === "agent" ? `agent:${message.id}` : null;
       const foldExpanded = foldRowId !== null && (props.expandedWorkRows[foldRowId] ?? false);
       const bubbleBodyVisible = foldRowId === null || foldExpanded;
-      const intentBadge = props.userMessageGrouping.continuesSteer
+      const intentBadge = props.messageGrouping.continuesSteer
         ? null
         : resolveUserMessageIntentBadge(message.inputIntent);
       const referenceIds = new Set(
@@ -1998,7 +2012,7 @@ function renderFeedEntry(
           visibleAttachments.length + pendingBubbleAttachments.length > 0);
       return (
         <Animated.View
-          className={cn("items-end", props.userMessageGrouping.groupedWithNext ? "mb-1" : "mb-5")}
+          className={cn("items-end", props.messageGrouping.groupedWithNext ? "mb-1" : "mb-5")}
           {...(enterAnimated ? { entering: FadeInDown.duration(220) } : {})}
         >
           {presentation.attribution === "t3code" ? (
@@ -2066,7 +2080,11 @@ function renderFeedEntry(
           ) : null}
           {hasBubble ? (
             <View
-              className="min-w-0 rounded-[20px]"
+              className={cn(
+                "min-w-0 rounded-[20px]",
+                props.directMessage && props.messageGrouping.groupedWithPrevious && "rounded-tr-md",
+                props.directMessage && props.messageGrouping.groupedWithNext && "rounded-br-md",
+              )}
               style={{
                 backgroundColor: userBubbleColor,
                 maxWidth: props.duoColumns ? "85%" : props.userBubbleMaxWidth,
@@ -2188,7 +2206,7 @@ function renderFeedEntry(
               ) : null}
             </View>
           ) : null}
-          {bubbleBodyVisible ? (
+          {bubbleBodyVisible && !(props.directMessage && props.messageGrouping.groupedWithNext) ? (
             <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
               {foldRowId !== null && message.senderThreadId ? (
                 <OpenSenderThreadButton
@@ -2275,6 +2293,50 @@ function renderFeedEntry(
     }
 
     const enterAnimated = isFreshTimestamp(message.createdAt);
+    if (props.directMessage) {
+      const bubbleMaxWidth = props.duoColumns ? "85%" : props.userBubbleMaxWidth;
+      return (
+        <Animated.View
+          className={cn("items-start", props.messageGrouping.groupedWithNext ? "mb-1" : "mb-5")}
+          {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
+        >
+          <View
+            className={cn(
+              "min-w-0 gap-2 rounded-[20px] px-3.5 py-2.5",
+              props.messageGrouping.groupedWithPrevious && "rounded-tl-md",
+              props.messageGrouping.groupedWithNext && "rounded-bl-md",
+            )}
+            style={{
+              backgroundColor: userBubbleColor,
+              maxWidth: bubbleMaxWidth,
+              ...(hasWideBlock || attachments.length > 0 ? { width: bubbleMaxWidth } : null),
+            }}
+          >
+            {renderedText.trim().length > 0 ? (
+              <MarkdownImageAvailableWidthContext
+                value={props.userBubbleMaxWidth - USER_BUBBLE_HORIZONTAL_PADDING * 2}
+              >
+                <AssistantMarkdownContent
+                  markdown={renderedText}
+                  environmentId={props.environmentId}
+                  markdownStyles={styles}
+                  linkHandlers={props.markdownLinkHandlers}
+                  onUseArtifactTemplate={props.onUseArtifactTemplate}
+                  renderImage={props.renderMarkdownImage}
+                  skills={props.skills}
+                />
+              </MarkdownImageAvailableWidthContext>
+            ) : null}
+            <MessageAttachmentList
+              attachments={attachments}
+              environmentId={props.environmentId}
+              onPressPreview={props.onPressPreview}
+              onPlaybackStart={props.onPlaybackStart}
+            />
+          </View>
+        </Animated.View>
+      );
+    }
     return (
       <Animated.View
         className={cn(
@@ -2574,6 +2636,13 @@ function useThreadFeedPresentation(
   expandedWorkGroups: Record<string, boolean>,
 ) {
   const [feedCache] = useState(createThreadFeedCache);
+  if (props.directMessage) {
+    return appendPendingThreadMessages(
+      deriveDirectMessageFeed(props.feed, props.directMessage.typingSince),
+      props.feed,
+      props.queuedMessages,
+    );
+  }
   return appendPendingThreadMessages(
     deriveThreadFeedPresentation(
       props.feed,
@@ -3313,6 +3382,7 @@ export const ThreadFeed = memo(function ThreadFeed({
   );
   const [groupFeed] = useState(createThreadFeedGrouping);
   const groupedFeed = groupFeed(presentedFeed, {
+    directMessage: Boolean(props.directMessage),
     workflowOpeningMessageId: workflowOpening?.messageId,
     setupAnchorIndex:
       props.worktreeSetup || props.setupWorkingStartedAt ? setupAnchorIndex : undefined,
@@ -3710,7 +3780,8 @@ export const ThreadFeed = memo(function ThreadFeed({
         workspaceRoot={props.workspaceRoot}
       >
         <ThreadMediaVisibility>
-          {info.item.type === "message" &&
+          {!props.directMessage &&
+          info.item.type === "message" &&
           !isCompactionCommandFeedEntry(info.item) &&
           info.item.message.projectedItem?.item.type === "user_message" &&
           info.item.message.projectedItem.item.modelSwitch ? (
@@ -3721,7 +3792,8 @@ export const ThreadFeed = memo(function ThreadFeed({
             />
           ) : null}
           {renderFeedEntry(info, {
-            userMessageGrouping: info.item.userMessageGrouping,
+            messageGrouping: info.item.messageGrouping,
+            directMessage: Boolean(props.directMessage),
             environmentId: props.environmentId,
             dispatchingMessageId: props.dispatchingMessageId,
             onEditPendingMessage: props.onEditPendingMessage,

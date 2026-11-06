@@ -28,6 +28,7 @@ import {
   workEntryRowLabel,
   threadFeedCompactionLabels,
   createThreadFeedCache,
+  deriveDirectMessageFeed,
   deriveThreadFeedPresentation,
   isConnectionRequestActivityGroup,
   messageFoldRunId,
@@ -922,6 +923,27 @@ describe("buildThreadFeed", () => {
       "message-middle",
       "message-assistant",
     ]);
+
+    // A bot's DM keeps every message, drops the work and the hatching kickoff, and types while working.
+    const kickoff = {
+      ...userMessage("2026-06-20T00:00:00.500Z"),
+      id: TurnItemId.make("item-kickoff"),
+      messageId: MessageId.make("message-kickoff"),
+      createdBy: "system" as const,
+    };
+    const dmFeed = buildThreadFeed([
+      projected(kickoff, 0),
+      projected(userMessage(), 1),
+      projected(opening, 2),
+      projected(command(), 3),
+      projected(middle, 4),
+      projected(assistantMessage(), 5),
+    ]);
+    const dmIds = ["message-user", "message-opening", "message-middle", "message-assistant"];
+    expect(deriveDirectMessageFeed(dmFeed, null).map((entry) => entry.id)).toEqual(dmIds);
+    expect(
+      deriveDirectMessageFeed(dmFeed, "2026-06-20T00:00:01.000Z").map((entry) => entry.type),
+    ).toEqual(["message", "message", "message", "message", "thinking"]);
   });
 
   // regression: #21393 show plans and fold settled progress notes
