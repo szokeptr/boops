@@ -45,3 +45,11 @@ it.each([
   ]);
   expect(assetLinks.map((link) => link.target.package_name)).toContain(androidId);
 });
+
+it("ships without OTA updates until Boops has its own EAS project", async () => {
+  const config = await loadConfig("production");
+  expect(config.updates?.enabled).toBe(false);
+  expect(config.updates?.url).toBeUndefined();
+  expect(config.extra?.eas?.projectId).toBeUndefined();
+  expect(config.owner).toBeUndefined();
+});
