@@ -451,10 +451,11 @@ function ThreadRouteContent(
     selectedThread &&
     isBotConversationThread(selectedThread, selectedThreadProject.mainThreadId)
       ? {
+          environmentId: selectedThread.environmentId,
+          projectId: selectedThreadProject.id,
+          threadId: selectedThread.id,
           name: selectedThreadProject.title,
           avatar: selectedThreadProject.avatar ?? null,
-          conversation:
-            selectedThread.id === selectedThreadProject.mainThreadId ? null : selectedThread.title,
         }
       : null;
   const headerSubtitle = [
