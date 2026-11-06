@@ -55,7 +55,7 @@ export function selectPendingAcknowledgedMessages(
 export type ThreadFeedRow = PendingThreadFeedEntry | GuestPendingFeedEntry;
 
 export type GroupedThreadFeedRow = ThreadFeedRow & {
-  readonly userMessageGrouping: ReturnType<typeof resolveUserMessageGrouping>;
+  readonly messageGrouping: ReturnType<typeof resolveUserMessageGrouping>;
 };
 
 export function createThreadFeedGrouping() {
@@ -63,8 +63,17 @@ export function createThreadFeedGrouping() {
   const ungrouped = resolveUserMessageGrouping(undefined, undefined, undefined);
   return (
     feed: ReadonlyArray<ThreadFeedRow>,
-    options: { readonly workflowOpeningMessageId?: string; readonly setupAnchorIndex?: number },
+    options: {
+      readonly workflowOpeningMessageId?: string;
+      readonly setupAnchorIndex?: number;
+      /** A bot's DM also stacks the bot's run of replies. */
+      readonly directMessage?: boolean;
+    },
   ): ReadonlyArray<GroupedThreadFeedRow> => {
+    const isAssistantMessage = (index: number) => {
+      const entry = feed[index];
+      return entry?.type === "message" && entry.message.role === "assistant";
+    };
     const groupingMessage = (index: number) => {
       const entry = feed[index];
       return entry?.type === "message" &&
@@ -77,21 +86,27 @@ export function createThreadFeedGrouping() {
     return feed.map((entry, index) => {
       const message = groupingMessage(index);
       const grouping =
-        message === undefined
-          ? ungrouped
-          : resolveUserMessageGrouping(
-              message,
-              index - 1 === options.setupAnchorIndex ? undefined : groupingMessage(index - 1),
-              index === options.setupAnchorIndex ? undefined : groupingMessage(index + 1),
-            );
+        options.directMessage && isAssistantMessage(index)
+          ? {
+              groupedWithPrevious: isAssistantMessage(index - 1),
+              groupedWithNext: isAssistantMessage(index + 1),
+              continuesSteer: false,
+            }
+          : message === undefined
+            ? ungrouped
+            : resolveUserMessageGrouping(
+                message,
+                index - 1 === options.setupAnchorIndex ? undefined : groupingMessage(index - 1),
+                index === options.setupAnchorIndex ? undefined : groupingMessage(index + 1),
+              );
       const previous = rows.get(entry);
       if (
-        previous?.userMessageGrouping.groupedWithPrevious === grouping.groupedWithPrevious &&
-        previous.userMessageGrouping.groupedWithNext === grouping.groupedWithNext &&
-        previous.userMessageGrouping.continuesSteer === grouping.continuesSteer
+        previous?.messageGrouping.groupedWithPrevious === grouping.groupedWithPrevious &&
+        previous.messageGrouping.groupedWithNext === grouping.groupedWithNext &&
+        previous.messageGrouping.continuesSteer === grouping.continuesSteer
       )
         return previous;
-      const row = { ...entry, userMessageGrouping: grouping };
+      const row = { ...entry, messageGrouping: grouping };
       rows.set(entry, row);
       return row;
     });

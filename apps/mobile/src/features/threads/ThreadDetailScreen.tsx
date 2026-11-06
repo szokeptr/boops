@@ -223,6 +223,8 @@ export interface ThreadDetailScreenProps {
   };
   readonly worktreeSetup?: WorktreeSetupCardProps | null;
   readonly setupWorkingStartedAt?: string | null;
+  /** Set in a bot's main conversation, which reads like a DM with the bot. */
+  readonly botName?: string | null;
   readonly canOperateThread: boolean;
   readonly selectedThread: EnvironmentThreadShell;
   /** Use this for detail reads; it stays null until queued creation reaches the server. */
@@ -481,7 +483,9 @@ function ThreadDetailBody(
   const composerError = useAtomValue(threadComposerErrorsAtom)[selectedThreadKey]?.message ?? null;
   const queuedCount = useThreadQueuedCount(props.selectedThreadDetailRef);
   const turnSubagents = useThreadTurnSubagents(props.selectedThreadDetailRef);
-  const agentsSegment = resolveSubagentPillSegment(turnSubagents);
+  const directMessage = props.botName != null;
+  // A bot's helpers live in its Activity view, and its typing row shows it working.
+  const agentsSegment = directMessage ? null : resolveSubagentPillSegment(turnSubagents);
   const defaultComposerEditorRef = useRef<ComposerEditorHandle>(null);
   const composerEditorRef = props.draftMode?.editorRef ?? defaultComposerEditorRef;
   const isProviderSubagent = isProviderNativeSubagentThread(props.selectedThread.source);
@@ -811,10 +815,14 @@ function ThreadDetailBody(
     if (props.isCompacting && contentPresentationKind === "ready") {
       return { kind: "compacting" };
     }
-    if (props.activeWorkStartedAt !== null && contentPresentationKind === "ready") {
+    if (
+      !directMessage &&
+      props.activeWorkStartedAt !== null &&
+      contentPresentationKind === "ready"
+    ) {
       return { kind: "working", startedAt: props.activeWorkStartedAt };
     }
-    if (pendingBackgroundWork !== null && contentPresentationKind === "ready") {
+    if (!directMessage && pendingBackgroundWork !== null && contentPresentationKind === "ready") {
       return {
         kind: "background",
         label: pendingBackgroundWork.title,
@@ -1474,8 +1482,18 @@ function ThreadDetailBody(
                 workspaceRoot={props.threadCwd}
                 feed={props.selectedThreadFeed}
                 pendingHandoff={props.pendingHandoff}
-                worktreeSetup={props.worktreeSetup}
-                setupWorkingStartedAt={props.setupWorkingStartedAt}
+                worktreeSetup={directMessage ? null : props.worktreeSetup}
+                setupWorkingStartedAt={directMessage ? null : props.setupWorkingStartedAt}
+                directMessage={
+                  directMessage
+                    ? {
+                        typingSince:
+                          props.activePendingApproval || props.activePendingUserInput
+                            ? null
+                            : props.activeWorkStartedAt,
+                      }
+                    : null
+                }
                 queuedMessages={props.queuedMessages}
                 dispatchingMessageId={props.dispatchingMessageId}
                 // A native subagent has no composer to edit a pending message in;
@@ -1827,7 +1845,9 @@ function ThreadDetailBody(
                             ? props.activePendingApproval.supportsFeedback
                               ? "Send feedback to decline this request"
                               : "Send a message to decline and redirect the agent"
-                            : "Ask anything"
+                            : props.botName != null
+                              ? `Message ${props.botName}`
+                              : "Ask anything"
                         }
                         contentMaxWidth={contentMaxWidth}
                         draftControls={props.draftMode?.controls}

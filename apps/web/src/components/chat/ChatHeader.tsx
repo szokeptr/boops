@@ -42,6 +42,7 @@ import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
+import { BotAvatar } from "../bots/BotAvatar";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -56,6 +57,8 @@ interface ChatHeaderProps {
   onNewThreadInProject: () => void;
   onOpenProjectSettings?: (() => void) | undefined;
   onFindInThread?: ((threadRef: ScopedThreadRef) => void) | undefined;
+  /** A bot's conversation is headed by the bot, like a DM, not by a project and thread. */
+  isBotConversation?: boolean;
 }
 
 function resolveRenameCommit(input: {
@@ -83,6 +86,7 @@ export const ChatHeader = memo(function ChatHeader({
   onNewThreadInProject,
   onOpenProjectSettings,
   onFindInThread,
+  isBotConversation = false,
 }: ChatHeaderProps) {
   const activeProjectName = activeProject?.isScratch ? "No project" : activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
@@ -292,7 +296,7 @@ export const ChatHeader = memo(function ChatHeader({
         ariaLabel="Thread breadcrumb"
         className="flex-1 overflow-clip [overflow-clip-margin:2px]"
       >
-        {activeProject ? (
+        {activeProject && !isBotConversation ? (
           <>
             <WorkspaceBreadcrumbItem className="shrink">
               <Tooltip>
@@ -354,6 +358,15 @@ export const ChatHeader = memo(function ChatHeader({
           </>
         ) : null}
         <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
+          {isBotConversation && activeProject ? (
+            <BotAvatar
+              avatar={activeProject.avatar ?? null}
+              name={activeProject.title}
+              status="idle"
+              size={32}
+              className="me-2 shrink-0"
+            />
+          ) : null}
           {renamingTitle !== null ? (
             <input
               autoFocus

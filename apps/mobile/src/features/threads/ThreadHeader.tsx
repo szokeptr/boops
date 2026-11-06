@@ -6,6 +6,7 @@ import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import type { ThreadInspectorMode } from "./thread-inspector-navigation";
 import { useThreadHeaderOptions } from "./useThreadHeaderOptions";
 import { useWorkspaceBackNavigation } from "../workspace/useAndroidWorkspaceNavigation";
+import { BotConversationTitle } from "../bots/BotConversationTitle";
 
 export function ThreadHeader(
   props: Parameters<typeof useThreadHeaderOptions>[0] & {
@@ -64,6 +65,7 @@ export function ThreadHeader(
     <>
       <AppBar
         title={props.title}
+        titleContent={props.bot ? <BotConversationTitle bot={props.bot} /> : undefined}
         subtitle={props.subtitle}
         options={native.options}
         optionsVersion={native.optionsVersion}

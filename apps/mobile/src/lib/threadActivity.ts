@@ -75,6 +75,7 @@ import * as DateTime from "effect/DateTime";
 import {
   IDLE_COMPACTION_TITLES,
   IDLE_COMPACTING_LABELS,
+  resolveUserMessagePresentation,
 } from "@t3tools/client-runtime/user-message";
 
 export type PendingApproval = ThreadPendingApproval;
@@ -1627,6 +1628,43 @@ export function deriveThreadFeedPresentation(
     };
   }
   return result;
+}
+
+const DIRECT_MESSAGE_ITEM_TYPES: ReadonlySet<string> = new Set([
+  "secret_request",
+  "connection_request",
+  "link_request",
+  "proposed_plan",
+]);
+
+/**
+ * A bot's conversation reads like a DM: what was said, the cards that need the user, and what the
+ * bot shows. One typing row stands in for the work until the reply starts streaming.
+ */
+export function deriveDirectMessageFeed(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+  typingSince: string | null,
+): ThreadFeedEntry[] {
+  const kept = feed.filter((entry) => {
+    switch (entry.type) {
+      case "message":
+        return (
+          entry.message.role === "assistant" ||
+          (!isCompactionCommandMessage(entry.message) &&
+            resolveUserMessagePresentation(entry.message).attribution !== "system")
+        );
+      case "activity-group":
+        return DIRECT_MESSAGE_ITEM_TYPES.has(entry.activities[0]?.projectedItem.item.type ?? "");
+      case "html-render":
+      case "mcp-app":
+        return true;
+      default:
+        return false;
+    }
+  });
+  const last = kept.at(-1);
+  const replying = last?.type === "message" && last.message.streaming;
+  return typingSince === null || replying ? kept : [...kept, thinkingRow(typingSince, null)];
 }
 
 const continuedWorkLogRows = new WeakMap<ThreadFeedEntry, ThreadFeedEntry>();

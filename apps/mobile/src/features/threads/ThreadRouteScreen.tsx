@@ -440,6 +440,12 @@ function ThreadRouteContent(
       : scopeThreadRef(delegatedFrom.environmentId, delegatedFrom.threadId);
   // The title it had at delegation, until this client sees the parent itself.
   const delegatedFromThread = useThreadShell(delegatedFromRef);
+  const conversationBot =
+    selectedThreadProject &&
+    selectedThread &&
+    selectedThreadProject.mainThreadId === selectedThread.id
+      ? { name: selectedThreadProject.title, avatar: selectedThreadProject.avatar ?? null }
+      : null;
   const headerSubtitle = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
@@ -805,8 +811,9 @@ function ThreadRouteContent(
           header={
             props.inspectorPresentation ? null : (
               <ThreadHeader
-                title={selectedThread.title}
+                title={conversationBot?.name ?? selectedThread.title}
                 subtitle={headerSubtitle}
+                bot={conversationBot}
                 headerColor={headerColor}
                 usesNativeHeaderGlass={usesNativeHeaderGlass}
                 controls={threadHeaderControls}
@@ -821,6 +828,7 @@ function ThreadRouteContent(
             )
           }
           canOperateThread={canOperateThread}
+          botName={conversationBot?.name ?? null}
           selectedThread={selectedThreadWithDraftSettings ?? selectedThread}
           selectedThreadDetailRef={selectedThreadDetailRef}
           contentPresentation={contentPresentation}

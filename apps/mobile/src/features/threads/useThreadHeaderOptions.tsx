@@ -1,4 +1,5 @@
 import { useWorkspaceSidebarHeaderItem } from "../layout/useWorkspaceSidebarHeaderItem";
+import { BotConversationTitle, type ConversationBot } from "../bots/BotConversationTitle";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { threadHeaderAppearance } from "./thread-header-appearance";
 import { isDuoDevice } from "../../lib/device-type";
@@ -24,6 +25,8 @@ export function useThreadHeaderOptions(props: {
   readonly controls: ThreadHeaderControlsProps;
   readonly onReturnToThread?: () => void;
   readonly draft?: boolean;
+  /** A bot's main conversation is headed by the bot. */
+  readonly bot?: ConversationBot | null;
 }) {
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const deviceType = useDeviceType();
@@ -78,9 +81,10 @@ export function useThreadHeaderOptions(props: {
     }),
   ];
 
+  const bot = props.bot;
   const options: AppNativeStackNavigationOptions = {
     ...threadHeaderAppearance(props.usesNativeHeaderGlass),
-    headerTitle: props.title,
+    headerTitle: bot ? () => <BotConversationTitle bot={bot} /> : props.title,
     title: props.title,
     headerBackVisible: !layout.usesSplitView,
     unstable_headerLeftItems: layout.usesSplitView
@@ -92,7 +96,7 @@ export function useThreadHeaderOptions(props: {
     unstable_headerRightItems: () =>
       usesDuoHeader || layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems,
     unstable_headerToolbarItems: () => [],
-    unstable_headerSubtitle: props.usesNativeHeaderGlass ? props.subtitle : undefined,
+    unstable_headerSubtitle: props.usesNativeHeaderGlass && !bot ? props.subtitle : undefined,
     contentStyle: undefined,
   };
   const { environmentId, threadId } = props.controls;
@@ -106,6 +110,8 @@ export function useThreadHeaderOptions(props: {
       usesDuoHeader,
       environmentId,
       threadId,
+      bot?.name,
+      bot?.avatar,
     ],
     fallback:
       !layout.usesSplitView && !props.usesNativeHeaderGlass ? (

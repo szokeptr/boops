@@ -275,9 +275,32 @@ function ExpandedWorkGroupEntries({
 
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
+const TYPING_LABELS = ["Mulling it over", "On it", "Thinking", "Working on it"] as const;
+
+/** A bot's working row reads like a friend typing; the label holds still for the turn. */
+function TypingTimelineRow({ createdAt }: { createdAt: string | null }) {
+  const seed = [...(createdAt ?? "")].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return (
+    <div className="flex h-8 items-center gap-2.5 px-1 text-sm text-muted-foreground">
+      <span ref={observeVisibleAnimation} aria-hidden className="flex items-center gap-1">
+        {[0, 400, 800].map((delay) => (
+          <span
+            key={delay}
+            className="typing-dot size-2 rounded-full bg-foreground"
+            style={{ animationDelay: `${delay}ms` }}
+          />
+        ))}
+      </span>
+      {TYPING_LABELS[seed % TYPING_LABELS.length]}
+    </div>
+  );
+}
+
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
+  const { directMessage } = use(TimelineRowCtx);
   const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup } =
     use(TimelineRowActivityCtx);
+  if (directMessage) return <TypingTimelineRow createdAt={row.createdAt} />;
   const compacting = row.compacting === true || isCompacting;
   const shimmer = isPreparingWorktree || compacting;
   const label = isPreparingWorktree ? (

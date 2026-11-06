@@ -2690,6 +2690,26 @@ describe("v2 run and attempt history", () => {
       expect.objectContaining({ id: "work-1" }),
       expect.objectContaining({ id: "provider-recovered" }),
     ]);
+
+    // A bot's DM keeps every message, stacks the bot's run of them, and hides the work.
+    const directMessage = (isWorking: boolean) =>
+      deriveMessagesTimelineRows({
+        timelineEntries,
+        isWorking,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+        directMessage: true,
+      }).map((row) =>
+        row.kind === "message"
+          ? [row.id, row.groupedWithPrevious, row.groupedWithNext]
+          : [row.id, row.kind],
+      );
+    expect(directMessage(false)).toEqual([
+      ["user-entry", false, false],
+      ["assistant-thought-entry", false, true],
+      ["assistant-final-entry", true, false],
+    ]);
+    expect(directMessage(true).at(-1)).toEqual(["working-indicator-row", "working"]);
   });
   it("collapses only output from a superseded V2 attempt within the active logical run", () => {
     const runId = "run-steered" as never;

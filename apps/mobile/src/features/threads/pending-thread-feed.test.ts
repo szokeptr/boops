@@ -52,10 +52,10 @@ describe("pending timeline messages", () => {
     const appended = group([first, second, third, reply], {});
     expect(appended[0]).toBe(initial[0]);
     expect(appended[1]).not.toBe(initial[1]);
-    expect(appended[1]?.userMessageGrouping.groupedWithNext).toBe(true);
-    expect(appended[2]?.userMessageGrouping.groupedWithPrevious).toBe(true);
+    expect(appended[1]?.messageGrouping.groupedWithNext).toBe(true);
+    expect(appended[2]?.messageGrouping.groupedWithPrevious).toBe(true);
     const removed = group([first, second, reply], {});
-    expect(removed[1]?.userMessageGrouping.groupedWithNext).toBe(false);
+    expect(removed[1]?.messageGrouping.groupedWithNext).toBe(false);
     const steer = {
       ...second,
       message: { ...second.message, inputIntent: "promoted_queued_to_steer" as const },
@@ -65,28 +65,33 @@ describe("pending timeline messages", () => {
       [{ ...first, message: { ...first.message, inputIntent: "steer" } }, steer],
       {},
     );
-    expect(steers[1]?.userMessageGrouping.continuesSteer).toBe(true);
-    expect(singleSteer[1]?.userMessageGrouping.continuesSteer).toBe(false);
+    expect(steers[1]?.messageGrouping.continuesSteer).toBe(true);
+    expect(singleSteer[1]?.messageGrouping.continuesSteer).toBe(false);
     expect(steers[1]).not.toBe(singleSteer[1]);
+    const dm = group([first, reply, { ...reply, id: "reply-2" }], { directMessage: true });
+    expect(dm.map((row) => row.messageGrouping.groupedWithNext)).toEqual([false, true, false]);
+    expect(group([first, reply, { ...reply, id: "reply-3" }], {})[2]?.messageGrouping).toEqual(
+      expect.objectContaining({ groupedWithPrevious: false }),
+    );
   });
 
   it("preserves setup, workflow, and compaction grouping boundaries", () => {
     const group = createThreadFeedGrouping();
     const feed = appendPendingThreadMessages([], [], [pending("first"), pending("second")]);
-    expect(group(feed, {})[0]?.userMessageGrouping.groupedWithNext).toBe(true);
+    expect(group(feed, {})[0]?.messageGrouping.groupedWithNext).toBe(true);
     for (const options of [{ setupAnchorIndex: 0 }, { workflowOpeningMessageId: "first" }]) {
       const rows = group(feed, options);
-      expect(rows[0]?.userMessageGrouping.groupedWithNext).toBe(false);
-      expect(rows[1]?.userMessageGrouping.groupedWithPrevious).toBe(false);
+      expect(rows[0]?.messageGrouping.groupedWithNext).toBe(false);
+      expect(rows[1]?.messageGrouping.groupedWithPrevious).toBe(false);
     }
     const compact = appendPendingThreadMessages(
       [],
       [],
       [{ ...pending("compact"), text: "/compact" }],
     )[0]!;
-    expect(group([feed[0]!, compact], {})[0]?.userMessageGrouping.groupedWithNext).toBe(true);
+    expect(group([feed[0]!, compact], {})[0]?.messageGrouping.groupedWithNext).toBe(true);
     expect(
-      group([feed[0]!, { ...compact, pendingMessage: undefined }], {})[0]?.userMessageGrouping
+      group([feed[0]!, { ...compact, pendingMessage: undefined }], {})[0]?.messageGrouping
         .groupedWithNext,
     ).toBe(false);
   });
