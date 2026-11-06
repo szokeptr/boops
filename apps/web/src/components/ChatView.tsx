@@ -1,3 +1,4 @@
+import { BotQuestionCard } from "./chat/BotQuestionCard";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -2910,13 +2911,38 @@ export default function ChatView(props: ChatViewProps) {
       .join(" · ") || null;
   // The end of the timeline holds the thread's present and next turns: what it is doing now,
   // its lifecycle status, guest messages awaiting you, then your queued messages.
+  const botQuestion =
+    isBotConversation &&
+    activePendingUserInput !== null &&
+    !heldApprovalRequestIds.has(activePendingUserInput.requestId)
+      ? activePendingUserInput
+      : null;
   const timelineFooter =
     pendingHandoff === null &&
     !hasThreadNow &&
     threadStatusLine === null &&
     pendingGuestMessageCount === 0 &&
-    !hasQueuedTurns ? null : (
+    !hasQueuedTurns &&
+    botQuestion === null ? null : (
       <>
+        {botQuestion === null ? null : (
+          <BotQuestionCard
+            key={botQuestion.requestId}
+            prompt={botQuestion}
+            cwd={gitCwd ?? undefined}
+            threadRef={routeThreadRef}
+            disabled={!canOperateThread}
+            isResponding={
+              activePendingIsResponding || respondingRequestIds.includes(botQuestion.requestId)
+            }
+            answers={activePendingDraftAnswers}
+            questionIndex={activePendingQuestionIndex}
+            onToggleOption={onSelectActivePendingUserInputOptionStable}
+            onAdvance={onAdvanceActivePendingUserInputStable}
+            onDismiss={onDismissUserInputStable}
+            onChangeCustomAnswer={onChangeActivePendingUserInputCustomAnswer}
+          />
+        )}
         {pendingHandoff === null ? null : (
           <div className="chat-content-lane">
             <HandoffRow
@@ -3340,7 +3366,11 @@ export default function ChatView(props: ChatViewProps) {
                     }
                   >
                     <ChildThreadApprovals threadRef={activeThreadRef} />
-                    <ComposerSurface.Shell contextRow={showComposerContextStrip}>
+                    {/* A bot's open question takes the composer's place; see BotQuestionCard. */}
+                    <ComposerSurface.Shell
+                      contextRow={showComposerContextStrip}
+                      hidden={botQuestion !== null}
+                    >
                       <ComposerSurface.Host
                         inert={queuedRunEdit.isSaving}
                         aria-busy={queuedRunEdit.isSaving}

@@ -41,6 +41,7 @@ import {
   buildPendingUserInputAnswers,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
+  type PendingUserInputAnswer,
   type PendingUserInputDraftAnswer,
 } from "@t3tools/client-runtime/state/pending-user-input";
 import { appAtomRegistry } from "./atom-registry";
@@ -320,12 +321,14 @@ export function useSelectedThreadRequests() {
     return result;
   };
 
-  const onSubmitUserInput = async () => {
+  const onSubmitUserInput = async (
+    answers: Record<string, PendingUserInputAnswer> | null = activePendingUserInputAnswers,
+  ) => {
     if (
       !selectedThreadShell ||
       !activePendingUserInput ||
       activePendingUserInput.responseCapability === "not_resumable" ||
-      !activePendingUserInputAnswers ||
+      !answers ||
       !readEnvironmentScope(selectedThreadShell.environmentId, AuthOrchestrationOperateScope)
     ) {
       return;
@@ -383,7 +386,7 @@ export function useSelectedThreadRequests() {
       input: {
         threadId: selectedThreadShell.id,
         requestId: activePendingUserInput.requestId,
-        answers: activePendingUserInputAnswers,
+        answers,
         ...(attachmentsByQuestionId.size > 0
           ? { attachmentsByQuestionId: Object.fromEntries(attachmentsByQuestionId) }
           : {}),

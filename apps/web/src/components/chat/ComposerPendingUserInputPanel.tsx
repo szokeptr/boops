@@ -1,18 +1,20 @@
 import { type RuntimeRequestId, type ScopedThreadRef } from "@t3tools/contracts";
 import { markdownProseDirection, textDirection } from "~/textDirection";
-import { memo, use, useEffect, useEffectEvent, useRef, useState } from "react";
-import { BackgroundThreadContext } from "./backgroundThread";
-import { useStableCallback } from "~/hooks/useStableCallback";
+import { memo, useState } from "react";
 import { type PendingUserInput } from "../../session-logic";
 import type { PendingUserInputDraftAnswer } from "@t3tools/client-runtime/state/pending-user-input";
-import { derivePendingUserInputProgress } from "../../pendingUserInput";
 import { CheckboxMark } from "../ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Kbd } from "../ui/kbd";
 import { cn } from "~/lib/utils";
-import { isInSideChatPane } from "~/lib/sideChatPane";
 import { ComposerBanner } from "./ComposerBanner";
 import ChatMarkdown from "../ChatMarkdown";
+import { usePendingQuestionAnswering } from "./usePendingQuestionAnswering";
+
+function digitShortcutIndex(key: string): number | null {
+  const digit = Number.parseInt(key, 10);
+  return Number.isNaN(digit) || digit < 1 || digit > 9 ? null : digit - 1;
+}
 
 interface PendingUserInputPanelProps {
   pendingUserInputs: PendingUserInput[];
@@ -83,98 +85,22 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   onAdvance: () => void;
   onDismiss: (requestId: RuntimeRequestId) => void;
 }) {
-  // Message-mode requests remain answerable after their provider turn ends.
-  const canRespond = prompt.responseCapability !== "not_resumable";
-  const responseDisabled = disabled || isResponding || !canRespond;
-  const autoAdvanceTimerRef = useRef<number | null>(null);
-  const advance = useStableCallback(onAdvance);
-  const [optimisticSingleSelect, setOptimisticSingleSelect] = useState<{
-    questionId: string;
-    optionValue: string;
-  } | null>(null);
   const [collapsedQuestionId, setCollapsedQuestionId] = useState<string | null>(null);
-  // Keep question identity stable for its shortcut listener.
-  const progress = derivePendingUserInputProgress(prompt.questions, answers, questionIndex);
-  const activeQuestion = progress.activeQuestion;
-  const customAnswerActive = progress.customAnswer.trim().length > 0;
-  // Read before later hooks to preserve the question's compiler cache.
-  const draftSelectedOptions = activeQuestion?.options.map(
-    (option) =>
-      !customAnswerActive && progress.selectedOptionValues.includes(option.value ?? option.label),
-  );
-  const isCollapsed = collapsedQuestionId !== null && collapsedQuestionId === activeQuestion?.id;
-
-  if (
-    optimisticSingleSelect &&
-    activeQuestion &&
-    !activeQuestion.multiSelect &&
-    (optimisticSingleSelect.questionId !== activeQuestion.id ||
-      (!customAnswerActive &&
-        progress.selectedOptionValues.includes(optimisticSingleSelect.optionValue)))
-  ) {
-    setOptimisticSingleSelect(null);
-  }
-
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the auto-advance timer when the question changes, input is disabled, or the panel unmounts
-  useEffect(() => {
-    const clearAutoAdvance = () => {
-      if (autoAdvanceTimerRef.current !== null) {
-        window.clearTimeout(autoAdvanceTimerRef.current);
-        autoAdvanceTimerRef.current = null;
-      }
-    };
-    if (disabled || activeQuestion?.id === undefined) clearAutoAdvance();
-    return clearAutoAdvance;
-  }, [activeQuestion?.id, disabled]);
-
-  const handleOptionSelection = (questionId: string, optionValue: string) => {
-    if (disabled || isResponding) return;
-    if (activeQuestion?.multiSelect) {
-      onToggleOption(questionId, optionValue);
-      return;
-    }
-    setOptimisticSingleSelect({ questionId, optionValue });
-    onToggleOption(questionId, optionValue);
-    if (autoAdvanceTimerRef.current !== null) {
-      window.clearTimeout(autoAdvanceTimerRef.current);
-    }
-    autoAdvanceTimerRef.current = window.setTimeout(() => {
-      autoAdvanceTimerRef.current = null;
-      advance();
-    }, 200);
-  };
-
-  const selectOptionFromShortcut = useEffectEvent(handleOptionSelection);
-  const backgroundThread = use(BackgroundThreadContext);
-
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes a document keydown listener for digit shortcuts while a question is answerable
-  useEffect(() => {
-    if (!activeQuestion || responseDisabled || isCollapsed || backgroundThread) return;
-    const handler = (event: globalThis.KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target;
-      if (isInSideChatPane(target)) return;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-        return;
-      }
-      if (
-        target instanceof HTMLElement &&
-        target.closest('[contenteditable]:not([contenteditable="false"])')
-      ) {
-        return;
-      }
-      const digit = Number.parseInt(event.key, 10);
-      if (Number.isNaN(digit) || digit < 1 || digit > 9) return;
-      const optionIndex = digit - 1;
-      if (optionIndex >= activeQuestion.options.length) return;
-      const option = activeQuestion.options[optionIndex];
-      if (!option) return;
-      event.preventDefault();
-      selectOptionFromShortcut(activeQuestion.id, option.value ?? option.label);
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [activeQuestion, backgroundThread, isCollapsed, responseDisabled]);
+  const isCollapsed =
+    collapsedQuestionId !== null &&
+    collapsedQuestionId ===
+      prompt.questions[Math.min(questionIndex, prompt.questions.length - 1)]?.id;
+  const { activeQuestion, selectOption, isOptionSelected } = usePendingQuestionAnswering({
+    prompt,
+    disabled,
+    isResponding,
+    answers,
+    questionIndex,
+    onToggleOption,
+    onAdvance,
+    shortcutsEnabled: !isCollapsed,
+    shortcutIndex: digitShortcutIndex,
+  });
 
   if (!activeQuestion) {
     return null;
@@ -268,11 +194,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
             <div className="-ms-2 mt-1.5 sm:-ms-1.5">
               {activeQuestion.options.map((option, index) => {
                 const optionValue = option.value ?? option.label;
-                const isOptimisticallySelected =
-                  optimisticSingleSelect?.questionId === activeQuestion.id &&
-                  optimisticSingleSelect.optionValue === optionValue;
-                const isSelected =
-                  isOptimisticallySelected || draftSelectedOptions?.[index] === true;
+                const isSelected = isOptionSelected(index, optionValue);
                 const className = cn(
                   questionTextAlign,
                   "group flex w-full items-start gap-2.5 rounded-md bg-transparent py-1.5 ps-2 sm:ps-1.5 outline-none transition-colors duration-150 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/25",
@@ -317,7 +239,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                     aria-pressed={isSelected}
                     disabled={disabled || isResponding}
                     onClick={() => {
-                      handleOptionSelection(activeQuestion.id, optionValue);
+                      selectOption(activeQuestion.id, optionValue);
                     }}
                     className={className}
                   >

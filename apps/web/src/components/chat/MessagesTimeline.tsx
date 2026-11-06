@@ -688,7 +688,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     expandedRunIds: visibleExpandedRunIds,
     expandedAttemptIds: visibleExpandedAttemptIds,
     expandedWorkGroupIds,
-    isWorking,
+    // A bot waiting on your answer is not typing.
+    isWorking: isWorking && !(directMessage && awaitingUser !== null),
     runlessWorkActive,
     activeTurnStartedAt,
     turnDiffSummaries,

@@ -362,6 +362,8 @@ export interface ThreadFeedProps {
   readonly workspaceRoot?: string | null;
   readonly feed: ReadonlyArray<ThreadFeedEntry>;
   readonly pendingHandoff?: HandoffEndpoints | null;
+  /** Shown after the last entry, such as a bot's open question. */
+  readonly footer?: ReactNode;
   readonly contentPresentation: ThreadContentPresentation;
   readonly latestRun: ThreadFeedLatestRun | null;
   readonly activeWorkStartedAt: string | null;
@@ -4050,14 +4052,19 @@ export const ThreadFeed = memo(function ThreadFeed({
               </>
             }
             ListFooterComponent={
-              props.pendingHandoff ? (
-                <ThreadHandoffDivider
-                  environmentId={props.environmentId}
-                  endpoints={props.pendingHandoff}
-                  iconColor={iconSubtleColor}
-                  surfaceColor={screenColor}
-                  label="Context handoff pending"
-                />
+              props.pendingHandoff || props.footer ? (
+                <>
+                  {props.pendingHandoff ? (
+                    <ThreadHandoffDivider
+                      environmentId={props.environmentId}
+                      endpoints={props.pendingHandoff}
+                      iconColor={iconSubtleColor}
+                      surfaceColor={screenColor}
+                      label="Context handoff pending"
+                    />
+                  ) : null}
+                  {props.footer ? <View className="pb-3 pt-1">{props.footer}</View> : null}
+                </>
               ) : null
             }
             contentContainerStyle={{

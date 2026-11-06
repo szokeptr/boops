@@ -26,6 +26,7 @@ import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
 import { useLiveThreadLinkLabels } from "../../state/entities";
 import {
   isPendingUserInputOptionSelected,
+  type PendingUserInputAnswer,
   type PendingUserInputDraftAnswer,
 } from "@t3tools/client-runtime/state/pending-user-input";
 import type { PendingUserInput } from "../../lib/threadActivity";
@@ -54,11 +55,11 @@ export interface PendingUserInputCardProps {
     questionId: string,
     customAnswer: string,
   ) => void;
-  readonly onSubmit: () => Promise<unknown>;
+  readonly onSubmit: (answers?: Record<string, PendingUserInputAnswer>) => Promise<unknown>;
   readonly onDismiss: () => Promise<unknown>;
 }
 
-function proseDirectionStyle(text: string, setDirection: TextDirection | undefined) {
+export function proseDirectionStyle(text: string, setDirection: TextDirection | undefined) {
   const direction = textDirection(text);
   return {
     ...(direction ? { direction, writingDirection: direction } : null),
@@ -66,17 +67,26 @@ function proseDirectionStyle(text: string, setDirection: TextDirection | undefin
   } as const;
 }
 
-function QuestionText(props: {
+export function QuestionText(props: {
   readonly markdown: string;
   readonly environmentId: EnvironmentId;
   readonly setDirection: TextDirection | undefined;
+  readonly bold?: boolean;
 }) {
   const styles = useMarkdownPreviewStyles();
   const markdown = useLiveThreadLinkLabels(props.markdown, props.environmentId);
   return (
     <SelectableMarkdownText
       markdown={markdown}
-      textStyle={styles.nativeTextStyle}
+      textStyle={
+        props.bold
+          ? {
+              ...styles.nativeTextStyle,
+              color: styles.nativeTextStyle.strongColor,
+              fontFamily: styles.nativeTextStyle.boldFontFamily,
+            }
+          : styles.nativeTextStyle
+      }
       writingDirection={markdownProseDirection(markdown)}
       // Android's renderer aligns relative to each paragraph's direction.
       textAlign={

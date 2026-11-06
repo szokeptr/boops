@@ -1198,8 +1198,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const activePendingUserInput = pendingUserInputs[0] ?? null;
   const isChoiceOnlyPendingQuestion =
     activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
+  // A bot's chat asks its questions in the timeline instead of above the composer.
+  const questionsInComposer = botName === undefined && pendingUserInputs.length > 0;
   const showComposerTopDrawer =
-    pendingUserInputs.length > 0 ||
+    questionsInComposer ||
     (!isComposerCollapsedMobile && showPlanFollowUpPrompt && activeProposedPlan !== null);
   const showCollapsedMobilePromptRow = isComposerCollapsedMobile;
   const showComposerAttachAction =
@@ -2279,7 +2281,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     importContextRecords,
     expandMobileComposer: expandMobileComposerStable,
   });
-  const hasBlockingComposerTopDrawer = pendingUserInputs.length > 0;
   const composerControlsCollapsed = isComposerCollapsedMobile;
   // The collapsed mobile web composer keeps a second controls row inside the card.
   const showInlineRestingControls = isComposerCollapsedMobile;
@@ -2396,7 +2397,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 }),
           },
         ];
-  const shelfItems = hasBlockingComposerTopDrawer
+  const shelfItems = questionsInComposer
     ? bannerItems.filter(
         (item) =>
           item.group === "environment" && (item.variant === "error" || item.variant === "warning"),
@@ -3199,7 +3200,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           {showComposerTopDrawer ? (
             <ComposerBanner.Attachment>
               <ComposerBanner.Root data-chat-composer-top-drawer="true" variant="info">
-                {pendingUserInputs.length > 0 ? (
+                {questionsInComposer ? (
                   <ComposerPendingUserInputPanel
                     pendingUserInputs={pendingUserInputs}
                     cwd={gitCwd ?? undefined}
@@ -3425,7 +3426,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         : activePendingProgress
                           ? isChoiceOnlyPendingQuestion
                             ? "Choose an option above"
-                            : "Type your own answer, or leave this blank to use the selected option"
+                            : botName !== undefined
+                              ? "Or type your own answer"
+                              : "Type your own answer, or leave this blank to use the selected option"
                           : showPlanFollowUpPrompt && activeProposedPlan
                             ? "Add feedback to refine the plan, or leave this blank to implement it"
                             : projectSelectionRequired

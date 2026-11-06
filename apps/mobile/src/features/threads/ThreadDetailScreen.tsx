@@ -171,7 +171,12 @@ import { threadStreamHaptics } from "./threadStreamHaptics";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useDelayedStatus } from "../../lib/useDelayedStatus";
-import type { PendingUserInputDraftAnswer } from "@t3tools/client-runtime/state/pending-user-input";
+import {
+  buildPendingUserInputAnswers,
+  setPendingUserInputCustomAnswer,
+  type PendingUserInputAnswer,
+  type PendingUserInputDraftAnswer,
+} from "@t3tools/client-runtime/state/pending-user-input";
 import type { RunStopPresentation } from "@t3tools/client-runtime/state/thread-execution";
 import type {
   PendingApproval,
@@ -184,6 +189,7 @@ import { ComposerErrorNotice } from "./ComposerErrorNotice";
 import { ManagedRuntimeModeNotice } from "./ManagedRuntimeModeNotice";
 import { ComposerFeedback } from "./ComposerFeedback";
 import { ComposerUsageLimits } from "./ComposerUsageLimits";
+import { BotQuestionCard } from "./BotQuestionCard";
 import { PendingUserInputCard } from "./PendingUserInputCard";
 import { ProviderSubagentBar } from "./ProviderSubagentBar";
 import { ThreadCreationFailedCard } from "./ThreadCreationFailedCard";
@@ -321,7 +327,9 @@ export interface ThreadDetailScreenProps {
     questionId: string,
     customAnswer: string,
   ) => void;
-  readonly onSubmitUserInput: () => Promise<unknown>;
+  readonly onSubmitUserInput: (
+    answers?: Record<string, PendingUserInputAnswer>,
+  ) => Promise<unknown>;
   readonly onDismissUserInput: () => Promise<unknown>;
   readonly showContent?: boolean;
 }
@@ -962,9 +970,26 @@ function ThreadDetailBody(
     readonly collapsed: boolean;
   } | null>(null);
   const activeUserInputRequestId = props.activePendingUserInput?.requestId ?? null;
-  const questionInFlow = Platform.OS === "android" && activeUserInputRequestId !== null;
-  const composerSlotHidden =
-    activeUserInputRequestId !== null || props.creationState?.kind === "failed";
+  // A bot's chat asks in the feed; elsewhere the question sheet takes the composer's place.
+  const sheetUserInput = directMessage ? null : props.activePendingUserInput;
+  // The question a bot's card shows; its card asks one at a time.
+  const [botQuestionStep, setBotQuestionStep] = useState<{
+    readonly requestId: RuntimeRequestId;
+    readonly index: number;
+  } | null>(null);
+  const botQuestionIndex =
+    botQuestionStep !== null && botQuestionStep.requestId === activeUserInputRequestId
+      ? botQuestionStep.index
+      : 0;
+  const advanceBotQuestion = () => {
+    if (activeUserInputRequestId === null) return;
+    setBotQuestionStep({ requestId: activeUserInputRequestId, index: botQuestionIndex + 1 });
+  };
+  const botQuestion = directMessage
+    ? props.activePendingUserInput?.questions[botQuestionIndex]
+    : undefined;
+  const questionInFlow = Platform.OS === "android" && sheetUserInput !== null;
+  const composerSlotHidden = sheetUserInput !== null || props.creationState?.kind === "failed";
   const pendingMessageEditBlocked =
     queuedRunEditBlockedReason({ openQuestionCount: activeUserInputRequestId === null ? 0 : 1 }) !==
     null;
@@ -1153,7 +1178,7 @@ function ThreadDetailBody(
       ),
     [floatingCoverageTarget],
   );
-  const userInputCoverageApplies = Platform.OS === "ios" && activeUserInputRequestId !== null;
+  const userInputCoverageApplies = Platform.OS === "ios" && sheetUserInput !== null;
   const questionStatusSpace = useAnimatedStyle(() => ({ height: floatingControlCoverage.value }));
   const combinedContentInsetEndAdjustment = useSharedValue(
     Math.max(0, estimatedOverlayHeight - nativeInsetOvercount),
@@ -1287,6 +1312,43 @@ function ThreadDetailBody(
     // Runs only once the send path has validated the draft and is about to deliver it, so an
     // empty submit, a queued-message edit, or `/feedback` leaves approvals alone.
     const approvalsToDecline = props.activePendingApprovals;
+    // In a bot's chat the composer answers the question its card shows.
+    const answeringQuestion = botQuestion;
+    const answeringInput = directMessage ? props.activePendingUserInput : null;
+    const answerBeforeDispatch =
+      answeringQuestion && answeringInput
+        ? async (text: string, hasAttachmentsOrContext: boolean) => {
+            if (answeringQuestion.allowCustomAnswer === false) {
+              Dialog.alert("Answer", "Choose one of the options above.");
+              return false;
+            }
+            if (hasAttachmentsOrContext) {
+              Dialog.alert("Answer", "Send your answer without attachments or added context.");
+              return false;
+            }
+            const questions = answeringInput.questions;
+            if (questions.at(-1)?.id !== answeringQuestion.id) {
+              props.onChangeUserInputCustomAnswer(
+                answeringInput.requestId,
+                answeringQuestion.id,
+                text,
+              );
+              advanceBotQuestion();
+              return "responded" as const;
+            }
+            const answers = buildPendingUserInputAnswers(questions, {
+              ...props.activePendingUserInputDrafts,
+              [answeringQuestion.id]: setPendingUserInputCustomAnswer(
+                answeringQuestion,
+                props.activePendingUserInputDrafts[answeringQuestion.id],
+                text,
+              ),
+            });
+            if (answers === null) return false;
+            await props.onSubmitUserInput(answers);
+            return "responded" as const;
+          }
+        : undefined;
     const declineBeforeDispatch =
       approvalsToDecline.length > 0 && props.activePendingUserInput === null
         ? async (text: string, hasAttachmentsOrContext: boolean) => {
@@ -1321,17 +1383,21 @@ function ThreadDetailBody(
           }
         : undefined;
     let dismissingKeyboard = false;
-    const messageId = await props.onSendMessage(followUp, declineBeforeDispatch, () => {
-      if (
-        scope.aborted ||
-        Platform.OS !== "ios" ||
-        !hasUserMessage ||
-        !KeyboardController.isVisible()
-      )
-        return;
-      setSendingWithKeyboard(true);
-      dismissingKeyboard = true;
-    });
+    const messageId = await props.onSendMessage(
+      followUp,
+      answerBeforeDispatch ?? declineBeforeDispatch,
+      () => {
+        if (
+          scope.aborted ||
+          Platform.OS !== "ios" ||
+          !hasUserMessage ||
+          !KeyboardController.isVisible()
+        )
+          return;
+        setSendingWithKeyboard(true);
+        dismissingKeyboard = true;
+      },
+    );
     if (messageId === null || scope.aborted) {
       return messageId;
     }
@@ -1497,6 +1563,23 @@ function ThreadDetailBody(
                 workspaceRoot={props.threadCwd}
                 feed={props.selectedThreadFeed}
                 pendingHandoff={props.pendingHandoff}
+                footer={
+                  botQuestion && props.activePendingUserInput ? (
+                    <BotQuestionCard
+                      key={props.activePendingUserInput.requestId}
+                      environmentId={props.environmentId}
+                      canOperateThread={props.canOperateThread}
+                      pendingUserInput={props.activePendingUserInput}
+                      questionIndex={botQuestionIndex}
+                      drafts={props.activePendingUserInputDrafts}
+                      respondingUserInputId={props.respondingUserInputId}
+                      onSelectOption={props.onSelectUserInputOption}
+                      onAdvance={advanceBotQuestion}
+                      onSubmit={props.onSubmitUserInput}
+                      onDismiss={props.onDismissUserInput}
+                    />
+                  ) : null
+                }
                 worktreeSetup={directMessage ? null : props.worktreeSetup}
                 setupWorkingStartedAt={directMessage ? null : props.setupWorkingStartedAt}
                 directMessage={
@@ -1765,11 +1848,11 @@ function ThreadDetailBody(
                         />
                       </Animated.View>
                     ) : null}
-                    {props.activePendingApproval || props.activePendingUserInput ? (
+                    {props.activePendingApproval || sheetUserInput ? (
                       <Animated.View
                         className="shrink-0 gap-3 px-4 pb-3"
                         style={
-                          activeUserInputRequestId !== null
+                          sheetUserInput !== null
                             ? { paddingBottom: composerBottomInset }
                             : undefined
                         }
@@ -1784,11 +1867,11 @@ function ThreadDetailBody(
                             onRespond={props.onRespondToApproval}
                           />
                         ) : null}
-                        {props.activePendingUserInput ? (
+                        {sheetUserInput ? (
                           <PendingUserInputCard
                             environmentId={props.environmentId}
                             canOperateThread={props.canOperateThread}
-                            pendingUserInput={props.activePendingUserInput}
+                            pendingUserInput={sheetUserInput}
                             maxHeight={pendingUserInputMaxHeight}
                             collapsed={userInputCollapsed}
                             onToggleCollapsed={handleToggleUserInputCollapsed}
