@@ -1571,8 +1571,8 @@ function OpenCommandPaletteDialog(props: {
     actionItems.push({
       kind: "action",
       value: "action:project-pin",
-      searchTerms: ["pin", "unpin", "project", "favorite"],
-      title: currentProjectGroup.pinned ? "Unpin project" : "Pin project",
+      searchTerms: ["pin", "unpin", "bot", "project", "favorite"],
+      title: currentProjectGroup.pinned ? "Unpin bot" : "Pin bot",
       description: currentProjectGroup.displayName,
       icon: currentProjectGroup.pinned ? (
         <PinOffIcon className={ITEM_ICON_CLASS} />

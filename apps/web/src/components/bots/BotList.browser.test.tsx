@@ -24,6 +24,7 @@ function botRow(overrides: Partial<BotRow> = {}): BotRow {
     lastActivityAt: "2026-06-01T00:00:00.000Z",
     activityThreadCount: 2,
     madeBy: null,
+    pinnedAt: null,
     ...overrides,
   };
 }
@@ -41,6 +42,7 @@ describe("BotList", () => {
     });
     await using screen = await render(
       <BotList
+        pinnedRows={[]}
         rows={[botRow(), fresh]}
         activeKey={null}
         showMachineBadges

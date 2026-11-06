@@ -1,4 +1,4 @@
-import type { BotRow } from "@t3tools/client-runtime/state/bot-list";
+import { splitPinnedBots, type BotRow } from "@t3tools/client-runtime/state/bot-list";
 import type { LegendListRef } from "@legendapp/list/react-native";
 import { LegendList } from "@legendapp/list/react-native";
 import { use, useRef, useState, type ComponentProps } from "react";
@@ -37,7 +37,7 @@ import type { WorkspaceState } from "../../state/workspaceModel";
 import { useFabScroll } from "../home/FabScrollContext";
 import { useSearchScrollRestoration } from "../workspace/useSearchScrollRestoration";
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
-import { BotListRow } from "./BotListRow";
+import { BotListRow, PinnedBotTiles } from "./BotListRow";
 import { useBotNavigation, useSelectedBotKey } from "./useBotNavigation";
 import { useBotRows } from "./useBotRows";
 
@@ -132,6 +132,14 @@ export function filterBotRows(rows: ReadonlyArray<BotRow>, query: string) {
     : rows.filter((row) => row.name.toLocaleLowerCase().includes(needle));
 }
 
+/** Pinned bots lead as avatars; a search lists every match as a row. */
+export function splitVisibleBotRows(rows: ReadonlyArray<BotRow>, query: string) {
+  const visible = filterBotRows(rows, query);
+  if (query.trim().length > 0) return { visible, pinned: [], listed: visible };
+  const { pinned, unpinned } = splitPinnedBots(visible);
+  return { visible, pinned, listed: unpinned };
+}
+
 /** Home: one list of every bot across linked environments. */
 export function BotListScreen(props: {
   readonly visible: boolean;
@@ -142,7 +150,7 @@ export function BotListScreen(props: {
   readonly onAddBot: () => void;
 }) {
   const { rows, threads, machineByEnvironmentId, showMachineBadges } = useBotRows(props.visible);
-  const { openBot, openActivity } = useBotNavigation();
+  const botActions = useBotNavigation();
   const selectedKey = useSelectedBotKey(rows, threads);
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const workspace = useWorkspaceTabs();
@@ -248,7 +256,11 @@ export function BotListScreen(props: {
     );
   }
 
-  const visibleRows = filterBotRows(rows, props.searchQuery);
+  const { pinned, listed } = splitVisibleBotRows(rows, props.searchQuery);
+  const pinnedHeader =
+    pinned.length > 0 ? (
+      <PinnedBotTiles rows={pinned} selectedKey={selectedKey} {...botActions} />
+    ) : null;
   return (
     <View className={containerClassName}>
       <ScreenContent surface="screen">
@@ -256,7 +268,7 @@ export function BotListScreen(props: {
           <LegendList
             ref={listRef}
             renderScrollComponent={Platform.OS === "ios" ? renderBotListScrollView : undefined}
-            data={visibleRows}
+            data={listed}
             keyExtractor={(row) => row.key}
             extraData={selectedKey}
             renderItem={({ item }) => (
@@ -265,19 +277,25 @@ export function BotListScreen(props: {
                 selected={item.key === selectedKey}
                 machineKind={machineByEnvironmentId.get(item.environmentId)}
                 showMachineBadge={showMachineBadges}
-                onOpen={openBot}
-                onOpenActivity={openActivity}
+                {...botActions}
               />
             )}
             estimatedItemSize={ESTIMATED_BOT_ROW_HEIGHT}
             recycleItems
-            ListHeaderComponent={Platform.OS === "ios" ? undefined : <View className="h-4" />}
+            ListHeaderComponent={
+              <>
+                {Platform.OS === "ios" ? null : <View className="h-4" />}
+                {pinnedHeader}
+              </>
+            }
             ListEmptyComponent={
-              <EmptyState
-                title="No results"
-                detail={`No bots matching "${props.searchQuery}".`}
-                variant="plain"
-              />
+              pinned.length > 0 ? undefined : (
+                <EmptyState
+                  title="No results"
+                  detail={`No bots matching "${props.searchQuery}".`}
+                  variant="plain"
+                />
+              )
             }
             style={{ flex: 1 }}
             automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}

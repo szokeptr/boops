@@ -15,7 +15,7 @@ export function ArchivedBotList() {
     .toSorted((a, b) => a.title.localeCompare(b.title));
   if (archived.length === 0) return null;
   return (
-    <Collapsible className="mt-2">
+    <Collapsible>
       <CollapsibleTrigger className="flex h-7 w-full items-center gap-1 rounded-md px-2 text-xs text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground data-panel-open:[&_svg]:rotate-90">
         <ChevronRightIcon aria-hidden className="size-3 transition-transform" />
         Archived ({archived.length})

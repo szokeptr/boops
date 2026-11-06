@@ -1,15 +1,16 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { BotRow } from "@t3tools/client-runtime/state/bot-list";
+import { splitPinnedBots, type BotRow } from "@t3tools/client-runtime/state/bot-list";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { useParams, useRouter } from "@tanstack/react-router";
-import { PlusIcon } from "lucide-react";
-import { useEffect, type ComponentProps, type ReactNode } from "react";
+import { PlusIcon, SearchIcon } from "lucide-react";
+import { useEffect, type MouseEvent, type ReactNode } from "react";
 
-import { cn } from "~/lib/utils";
-import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { isCommandPaletteOpen, openCommandPalette } from "../../commandPaletteBus";
 import { openCreateBotDialog } from "../CreateBotDialog";
 import { isElectron } from "../../env";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { useProjectPin } from "../../hooks/useProjectGroupUpdate";
+import { readLocalApi } from "../../localApi";
 import { useBotRows } from "../../hooks/useBotRows";
 import { useTerminalFocus } from "../../hooks/useTerminalFocus";
 import {
@@ -31,7 +32,7 @@ import { useThreadRouteRef } from "../../hooks/useThreadRouteTarget";
 import { resolveAdjacentThreadId, useThreadJumpHintsVisible } from "../Sidebar.logic";
 import { Button } from "../ui/button";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
-import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "../ui/sidebar";
+import { SidebarContent, SidebarGroup, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ArchivedBotList } from "./ArchivedBotList";
 import { BotList } from "./BotList";
@@ -70,8 +71,43 @@ function useOpenBot() {
   };
 }
 
+/** Right-click on a bot: pin or unpin it, or open its activity. */
+function useBotContextMenu(onNavigate: (() => void) | undefined) {
+  const router = useRouter();
+  const { canPinProjectGroup, setProjectGroupPinned } = useProjectPin();
+  return async (row: BotRow, event: MouseEvent) => {
+    const api = readLocalApi();
+    if (!api) return;
+    event.preventDefault();
+    const group = {
+      memberProjects: [
+        { environmentId: row.environmentId, id: row.projectId, environmentLabel: row.machineLabel },
+      ],
+      pinned: row.pinnedAt !== null,
+    };
+    const items: Array<{ id: "pin" | "activity"; label: string; disabled?: boolean }> = [
+      { id: "pin", label: group.pinned ? "Unpin" : "Pin", disabled: !canPinProjectGroup(group) },
+    ];
+    if (row.activityThreadCount > 0) {
+      items.push({ id: "activity", label: `Activity (${row.activityThreadCount})` });
+    }
+    const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
+    if (action === "pin") setProjectGroupPinned(group, !group.pinned);
+    if (action === "activity") {
+      onNavigate?.();
+      void router.navigate({
+        to: "/bots/$environmentId/$projectId/activity",
+        params: { environmentId: row.environmentId, projectId: row.projectId },
+      });
+    }
+  };
+}
+
 export function BotListPanel({ onNavigate }: { readonly onNavigate?: () => void }) {
-  const rows = useBotRows();
+  const { pinned, unpinned } = splitPinnedBots(useBotRows());
+  // Jump shortcuts and next/previous follow the order shown: pins first.
+  const rows = [...pinned, ...unpinned];
+  const showBotContextMenu = useBotContextMenu(onNavigate);
   const activeKey = useActiveBotKey();
   const machineKindById = useEnvironmentMachines();
   const openBot = useOpenBot();
@@ -147,7 +183,8 @@ export function BotListPanel({ onNavigate }: { readonly onNavigate?: () => void 
   }
   return (
     <BotList
-      rows={rows}
+      pinnedRows={pinned}
+      rows={unpinned}
       activeKey={activeKey}
       showMachineBadges={new Set(rows.map((row) => row.environmentId)).size > 1}
       machineKindById={machineKindById}
@@ -157,6 +194,7 @@ export function BotListPanel({ onNavigate }: { readonly onNavigate?: () => void 
         onNavigate?.();
         void openBot(row);
       }}
+      onContextMenu={(row, event) => void showBotContextMenu(row, event)}
     />
   );
 }
@@ -174,25 +212,25 @@ export default function BotSidebar() {
   const { isMobile, setOpenMobile } = useSidebar();
   return (
     <>
-      <SidebarChromeHeader isElectron={isElectron} />
-      <SidebarContent
-        className="min-h-full"
-        fixedHeader={
-          <SidebarGroup className="z-[1]">
-            <div className="flex h-8 items-center gap-1 pl-2">
-              <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-muted-foreground">
-                Bots
-              </h2>
-              <SidebarHeaderIconButton label="Add bot" onClick={openCreateBotDialog}>
-                <PlusIcon />
-              </SidebarHeaderIconButton>
-            </div>
-          </SidebarGroup>
+      <SidebarChromeHeader
+        isElectron={isElectron}
+        actions={
+          <>
+            <SidebarHeaderRoundButton label="Search" onClick={() => openCommandPalette()}>
+              <SearchIcon />
+            </SidebarHeaderRoundButton>
+            <SidebarHeaderRoundButton label="Add bot" onClick={openCreateBotDialog}>
+              <PlusIcon />
+            </SidebarHeaderRoundButton>
+          </>
         }
-      >
+      />
+      <SidebarContent className="min-h-full">
         <SidebarGroup className="flex-1" role="presentation">
           <BotListPanel {...(isMobile ? { onNavigate: () => setOpenMobile(false) } : {})} />
-          <ArchivedBotList />
+          <div className="mt-auto pt-2">
+            <ArchivedBotList />
+          </div>
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />
@@ -200,39 +238,21 @@ export default function BotSidebar() {
   );
 }
 
-function SidebarHeaderIconButton({
-  label,
-  className,
-  children,
-  ...rest
-}: {
-  label: string;
-  className?: string | undefined;
-  children?: ReactNode;
-} & Omit<
-  ComponentProps<typeof SidebarMenuButton>,
-  "children" | "className" | "tooltip" | "isActive" | "aria-label"
->) {
+function SidebarHeaderRoundButton(props: {
+  readonly label: string;
+  readonly onClick: () => void;
+  readonly children: ReactNode;
+}) {
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          <SidebarMenuButton
-            size="icon"
-            type="button"
-            aria-label={label}
-            {...rest}
-            className={cn("relative size-7 shrink-0", className)}
-          />
+          <Button variant="glass" size="icon-sm" aria-label={props.label} onClick={props.onClick} />
         }
       >
-        {children}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-        />
+        {props.children}
       </TooltipTrigger>
-      <TooltipPopup side="top">{label}</TooltipPopup>
+      <TooltipPopup side="bottom">{props.label}</TooltipPopup>
     </Tooltip>
   );
 }

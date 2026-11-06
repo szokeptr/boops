@@ -26,8 +26,8 @@ import {
 } from "../settings/appearance/AppearancePreferencesProvider";
 import { SidebarNavigationShell } from "../threads/sidebar-navigation-shell";
 import { FLOATING_TABS } from "../workspace/floating-workspace-tabs";
-import { filterBotRows } from "./BotListScreen";
-import { BotListRow } from "./BotListRow";
+import { splitVisibleBotRows } from "./BotListScreen";
+import { BotListRow, PinnedBotTiles } from "./BotListRow";
 import { BotListToolbar } from "./BotListToolbar";
 import { useBotNavigation, useSelectedBotKey } from "./useBotNavigation";
 import { useBotRows } from "./useBotRows";
@@ -107,9 +107,13 @@ function BotNavigationSidebarPane(
   const { fabClearance, fabSize } = useAndroidControlSizing();
   const { state: catalogState } = useWorkspaceState();
   const { rows, threads, machineByEnvironmentId, showMachineBadges } = useBotRows();
-  const { openBot, openActivity } = useBotNavigation();
+  const botActions = useBotNavigation();
   const selectedKey = useSelectedBotKey(rows, threads);
-  const visibleRows = filterBotRows(rows, props.searchQuery);
+  const { visible: visibleRows, pinned, listed } = splitVisibleBotRows(rows, props.searchQuery);
+  const pinnedHeader =
+    pinned.length > 0 ? (
+      <PinnedBotTiles rows={pinned} selectedKey={selectedKey} {...botActions} />
+    ) : undefined;
   const searchInputRef = useRef<TextInputInstance>(null);
   const searchBarRef = useRef<SearchBarCommands>(null);
   const [measuredHeaderHeight, setMeasuredHeaderHeight] = useState<number | null>(null);
@@ -155,8 +159,7 @@ function BotNavigationSidebarPane(
       selected={item.key === selectedKey}
       machineKind={machineByEnvironmentId.get(item.environmentId)}
       showMachineBadge={showMachineBadges}
-      onOpen={openBot}
-      onOpenActivity={openActivity}
+      {...botActions}
     />
   );
 
@@ -192,7 +195,7 @@ function BotNavigationSidebarPane(
         />
         <LegendList
           renderScrollComponent={NativeScrollView}
-          data={visibleRows}
+          data={listed}
           keyExtractor={(row) => row.key}
           extraData={selectedKey}
           renderItem={renderItem}
@@ -209,7 +212,8 @@ function BotNavigationSidebarPane(
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           style={{ flex: 1 }}
-          ListEmptyComponent={listEmpty}
+          ListHeaderComponent={pinnedHeader}
+          ListEmptyComponent={pinned.length > 0 ? undefined : listEmpty}
         />
       </>
     );
@@ -243,7 +247,7 @@ function BotNavigationSidebarPane(
         ) : (
           // oxlint-disable-next-line t3code/require-registered-list-scroll -- Only the non-native workspace layout (Android and the fallback) renders this pane, which has no native header to register with.
           <LegendList
-            data={visibleRows}
+            data={listed}
             keyExtractor={(row) => row.key}
             extraData={selectedKey}
             renderItem={renderItem}
@@ -263,7 +267,8 @@ function BotNavigationSidebarPane(
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             style={{ flex: 1 }}
-            ListEmptyComponent={listEmpty}
+            ListHeaderComponent={pinnedHeader}
+            ListEmptyComponent={pinned.length > 0 ? undefined : listEmpty}
           />
         )}
       </View>
