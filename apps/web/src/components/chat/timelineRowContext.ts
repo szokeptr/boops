@@ -45,6 +45,8 @@ export interface TurnItemSource {
 export interface TimelineRowSharedState {
   /** A bot's conversation, drawn as chat bubbles. */
   directMessage: boolean;
+  /** Your bubbles in a bot's DM, in the bot's colour. */
+  ownBubbleColors: { readonly background: string; readonly foreground: string } | null;
   pendingApprovals: ReadonlyMap<RuntimeRequestId, PendingApproval>;
   respondingRequestIds: ReadonlyArray<RuntimeRequestId>;
   canOperateThread: boolean;

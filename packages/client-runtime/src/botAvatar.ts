@@ -115,6 +115,15 @@ export function screeniePalette(avatar: ProjectAvatar): SpritePalette {
   >;
 }
 
+/** Your bubbles in a bot's DM wear its body colour, inked like its outline so text reads in both themes. */
+export function botBubbleColors(avatar: ProjectAvatar): {
+  readonly background: string;
+  readonly foreground: string;
+} {
+  const palette = screeniePalette(avatar);
+  return { background: palette.b, foreground: palette.k };
+}
+
 type MutableGrid = Array<Array<PaletteKey | null>>;
 type Layer = { readonly y: number; readonly rows: ReadonlyArray<string> };
 

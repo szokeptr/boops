@@ -829,6 +829,7 @@ function ThreadRouteContent(
           }
           canOperateThread={canOperateThread}
           botName={conversationBot?.name ?? null}
+          botAvatar={conversationBot?.avatar ?? null}
           selectedThread={selectedThreadWithDraftSettings ?? selectedThread}
           selectedThreadDetailRef={selectedThreadDetailRef}
           contentPresentation={contentPresentation}
