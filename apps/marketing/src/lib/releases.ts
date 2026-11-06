@@ -1,5 +1,5 @@
 // Boops has no release repository yet, so downloads still resolve to upstream T3 Code builds.
-const REPO = "pingdotgg/t3code";
+const REPO = "szokeptr/boops";
 
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 export const NIGHTLY_RELEASES_URL = `${RELEASES_URL}?q=nightly&expanded=true`;

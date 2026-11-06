@@ -27,6 +27,6 @@
     <category>Development</category>
   </categories>
   <url type="homepage">https://getboops.com</url>
-  <url type="bugtracker">https://github.com/pingdotgg/t3code/issues</url>
-  <url type="vcs-browser">https://github.com/pingdotgg/t3code</url>
+  <url type="bugtracker">https://github.com/szokeptr/boops/issues</url>
+  <url type="vcs-browser">https://github.com/szokeptr/boops</url>
 </component>

@@ -21,7 +21,7 @@ describe("shouldHandleAppLink", () => {
     "boops://threads/env-1/thread-1",
     "boops://pair?pairingUrl=x",
     "boops-dev://settings/usage?tab=limits",
-    "https://app.t3.codes/threads/env/thread?prompt=Fix%20expo-development-client%20and%20boops://expo-sharing",
+    "https://app.getboops.com/threads/env/thread?prompt=Fix%20expo-development-client%20and%20boops://expo-sharing",
   ])("handles path-bearing URL %s", (url) => {
     expect(shouldHandleAppLink(url, true)).toBe(true);
   });
