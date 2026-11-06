@@ -18,7 +18,7 @@ const APP_BUNDLE_ID = isDevelopment
   ? `com.getboops.app.dev.${devBundleIdSuffix || "local"}`
   : "com.getboops.app";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["boops-dev"] : ["boops"];
-const LAUNCHER_VERSION = 20;
+const LAUNCHER_VERSION = 21;
 const developmentMacIconPngPath = NodePath.join(
   repoRoot,
   "assets",
@@ -26,6 +26,8 @@ const developmentMacIconPngPath = NodePath.join(
   "blueprint-macos-1024.png",
 );
 const productionMacIconPngPath = NodePath.join(repoRoot, "assets", "prod", "black-macos-1024.png");
+const developmentIconComposerPath = NodePath.join(repoRoot, "assets", "dev", "app-icon.icon");
+const productionIconComposerPath = NodePath.join(repoRoot, "assets", "prod", "app-icon.icon");
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher script has no Effect runtime.
 const hostPlatform = NodeOS.platform();
 
@@ -260,6 +262,67 @@ function ensureMacIconIcns(runtimeDir) {
   }
 }
 
+function latestMtimeMs(path) {
+  const stat = NodeFS.statSync(path);
+  if (!stat.isDirectory()) {
+    return stat.mtimeMs;
+  }
+  return NodeFS.readdirSync(path).reduce(
+    (latest, entry) => Math.max(latest, latestMtimeMs(NodePath.join(path, entry))),
+    stat.mtimeMs,
+  );
+}
+
+// macOS 26 draws Liquid Glass only from a compiled Icon Composer catalog; the .icns stays as the older-macOS fallback.
+function ensureMacAssetCatalog(runtimeDir) {
+  const sourcePath = isDevelopment ? developmentIconComposerPath : productionIconComposerPath;
+  const catalogDir = NodePath.join(
+    runtimeDir,
+    isDevelopment ? "icon-dev-catalog" : "icon-prod-catalog",
+  );
+  const catalogPath = NodePath.join(catalogDir, "Assets.car");
+  if (
+    NodeFS.existsSync(catalogPath) &&
+    NodeFS.statSync(catalogPath).mtimeMs >= latestMtimeMs(sourcePath)
+  ) {
+    return catalogPath;
+  }
+
+  const workDir = NodeFS.mkdtempSync(NodePath.join(runtimeDir, "icon-catalog-"));
+  try {
+    // actool names the app icon after the .icon bundle, so it must be Icon.icon to match CFBundleIconName.
+    const iconPath = NodePath.join(workDir, "Icon.icon");
+    NodeFS.cpSync(sourcePath, iconPath, { recursive: true });
+    runChecked("xcrun", [
+      "actool",
+      iconPath,
+      "--compile",
+      workDir,
+      "--output-partial-info-plist",
+      NodePath.join(workDir, "partial.plist"),
+      "--app-icon",
+      "Icon",
+      "--include-all-app-icons",
+      "--target-device",
+      "mac",
+      "--minimum-deployment-target",
+      "26.0",
+      "--platform",
+      "macosx",
+    ]);
+    NodeFS.mkdirSync(catalogDir, { recursive: true });
+    NodeFS.copyFileSync(NodePath.join(workDir, "Assets.car"), catalogPath);
+    return catalogPath;
+  } catch (error) {
+    console.warn(
+      `[electron-launcher] Icon Composer catalog skipped, using the flat icon (needs Xcode 26+): ${error.message}`,
+    );
+    return null;
+  } finally {
+    NodeFS.rmSync(workDir, { recursive: true, force: true });
+  }
+}
+
 function resolveMacBundleInfoPlistStrings(executableName) {
   return {
     CFBundleDisplayName: APP_DISPLAY_NAME,
@@ -273,7 +336,7 @@ function resolveMacBundleInfoPlistStrings(executableName) {
   };
 }
 
-function patchMainBundleInfoPlist(appBundlePath, iconPath, executableName) {
+function patchMainBundleInfoPlist(appBundlePath, iconPath, assetCatalogPath, executableName) {
   const infoPlistPath = NodePath.join(appBundlePath, "Contents", "Info.plist");
   for (const [key, value] of Object.entries(resolveMacBundleInfoPlistStrings(executableName))) {
     setPlistString(infoPlistPath, key, value);
@@ -290,6 +353,10 @@ function patchMainBundleInfoPlist(appBundlePath, iconPath, executableName) {
   const resourcesDir = NodePath.join(appBundlePath, "Contents", "Resources");
   NodeFS.copyFileSync(iconPath, NodePath.join(resourcesDir, "icon.icns"));
   NodeFS.copyFileSync(iconPath, NodePath.join(resourcesDir, "electron.icns"));
+  if (assetCatalogPath) {
+    NodeFS.copyFileSync(assetCatalogPath, NodePath.join(resourcesDir, "Assets.car"));
+    setPlistString(infoPlistPath, "CFBundleIconName", "Icon");
+  }
 }
 
 function patchHelperBundleInfoPlists(appBundlePath) {
@@ -351,6 +418,7 @@ function buildMacLauncher(electronBinaryPath) {
     ? developmentPaths.launcherBinaryPath
     : runtimeElectronBinaryPath;
   const iconPath = ensureMacIconIcns(runtimeDir);
+  const assetCatalogPath = ensureMacAssetCatalog(runtimeDir);
   const metadataPath = NodePath.join(runtimeDir, "metadata.json");
 
   NodeFS.mkdirSync(runtimeDir, { recursive: true });
@@ -360,6 +428,7 @@ function buildMacLauncher(electronBinaryPath) {
     sourceAppBundlePath,
     sourceAppMtimeMs: NodeFS.statSync(sourceAppBundlePath).mtimeMs,
     iconMtimeMs: NodeFS.statSync(iconPath).mtimeMs,
+    assetCatalogMtimeMs: assetCatalogPath ? NodeFS.statSync(assetCatalogPath).mtimeMs : null,
     appBundleId: APP_BUNDLE_ID,
     appProtocolSchemes: APP_PROTOCOL_SCHEMES,
   };
@@ -391,6 +460,7 @@ function buildMacLauncher(electronBinaryPath) {
   patchMainBundleInfoPlist(
     targetAppBundlePath,
     iconPath,
+    assetCatalogPath,
     isDevelopment ? developmentPaths.launcherExecutableName : "Electron",
   );
   patchHelperBundleInfoPlists(targetAppBundlePath);

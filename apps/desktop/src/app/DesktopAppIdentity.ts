@@ -8,7 +8,6 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
-import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopUserData from "./DesktopUserData.ts";
 
@@ -40,7 +39,6 @@ const normalizeCommitHash = (value: string): Option.Option<string> => {
 
 /** @public */
 export const make = Effect.gen(function* () {
-  const assets = yield* DesktopAssets.DesktopAssets;
   const electronApp = yield* ElectronApp.ElectronApp;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -103,15 +101,6 @@ export const make = Effect.gen(function* () {
 
     if (environment.platform === "win32") {
       yield* electronApp.setAppUserModelId(environment.appUserModelId);
-    }
-
-    // Packaged bundles carry their icon in Info.plist; setting it again overwrites the user's custom icon.
-    if (environment.platform === "darwin" && !environment.isPackaged) {
-      const iconPaths = yield* assets.iconPaths;
-      yield* Option.match(iconPaths.png, {
-        onNone: () => Effect.void,
-        onSome: electronApp.setDockIcon,
-      });
     }
   }).pipe(Effect.withSpan("desktop.appIdentity.configure"));
 

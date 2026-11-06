@@ -14,6 +14,8 @@ Exporting requires Icon Composer 2 or newer on macOS. The script selects the new
 
 ## macOS exports
 
+The desktop app ships the Icon Composer project itself: packaged builds pass it to electron-builder and the dev launcher compiles it with `actool` (Xcode 26+), so macOS 26 renders it with Liquid Glass. The PNGs below are only the flat fallback: the dev launcher's `.icns` for older macOS or a missing Xcode, and the packaged `icon.png` used by in-app prompts.
+
 Icon Composer's command-line exporter does not expose the `macOS pre-Tahoe` preset. A plain command-line `macOS` export is full bleed and is not suitable for the desktop app, so the export script intentionally leaves the tracked macOS PNGs unchanged and prints a reminder after every run.
 
 After changing an Icon Composer project, open it in Icon Composer and export the macOS PNG with exactly these settings:

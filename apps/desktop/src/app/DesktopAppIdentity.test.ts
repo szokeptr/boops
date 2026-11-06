@@ -4,14 +4,12 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 
 import type * as Electron from "electron";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
-import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
@@ -33,7 +31,6 @@ type TestEnvironmentInput = Partial<DesktopEnvironment.MakeDesktopEnvironmentInp
 
 interface ElectronAppCalls {
   readonly setAboutPanelOptions: Array<Electron.AboutPanelOptionsOptions>;
-  readonly setDockIcon: string[];
   readonly setName: string[];
 }
 
@@ -60,25 +57,11 @@ const layerElectronApp = (calls: ElectronAppCalls) =>
     getAppMetrics: Effect.succeed([]),
     setAsDefaultProtocolClient: () => Effect.succeed(true),
     setDesktopName: () => Effect.void,
-    setDockIcon: (iconPath) =>
-      Effect.sync(() => {
-        calls.setDockIcon.push(iconPath);
-      }),
     appendCommandLineSwitch: () => Effect.void,
     onBeforeQuitForUpdate: () => Effect.void,
     removeCommandLineSwitch: () => Effect.void,
     on: () => Effect.void,
   } satisfies ElectronApp.ElectronApp["Service"]);
-
-const layerAssets = (png: Option.Option<string>) =>
-  Layer.succeed(DesktopAssets.DesktopAssets, {
-    iconPaths: Effect.succeed({
-      ico: Option.none(),
-      icns: Option.none(),
-      png,
-    }),
-    resolveResourcePath: () => Effect.succeedNone,
-  } satisfies DesktopAssets.DesktopAssets["Service"]);
 
 const layerEnvironment = (overrides: TestEnvironmentInput = {}) => {
   const { env, ...environmentOverrides } = overrides;
@@ -113,12 +96,10 @@ const withIdentity = <A, E, R>(
     readonly legacyPathExists?: boolean;
     readonly legacyPathProbeError?: PlatformError.PlatformError;
     readonly packageJson?: string;
-    readonly pngIconPath?: Option.Option<string>;
   } = {},
 ) => {
   const calls: ElectronAppCalls = input.calls ?? {
     setAboutPanelOptions: [],
-    setDockIcon: [],
     setName: [],
   };
 
@@ -138,7 +119,6 @@ const withIdentity = <A, E, R>(
               Effect.succeed(input.packageJson ?? '{"t3codeCommitHash":"abcdef1234567890"}'),
           }),
         ),
-        Layer.provideMerge(layerAssets(input.pngIconPath ?? Option.none())),
         Layer.provideMerge(layerElectronApp(calls)),
         Layer.provideMerge(layerEnvironment(input.environment)),
       ),
@@ -188,7 +168,6 @@ describe("DesktopAppIdentity", () => {
   ])("uses a valid native User-Agent product name for $stage", ({ stage, environment }) => {
     const calls: ElectronAppCalls = {
       setAboutPanelOptions: [],
-      setDockIcon: [],
       setName: [],
     };
 
