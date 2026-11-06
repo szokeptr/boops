@@ -7,6 +7,8 @@ export interface ChatListAnchoredEndSpace {
 
 export interface ChatListAnchorOptions {
   readonly anchorOffset?: number;
+  /** Pin any message, not only the first: a bot's DM lifts every message you send near the top. */
+  readonly anyMessage?: boolean;
 }
 
 export function resolveChatListAnchoredEndSpace<Item, AnchorId>(
@@ -17,6 +19,13 @@ export function resolveChatListAnchoredEndSpace<Item, AnchorId>(
 ): ChatListAnchoredEndSpace | undefined {
   if (anchorId === null) {
     return undefined;
+  }
+
+  if (options.anyMessage) {
+    const index = items.findLastIndex((item) => getAnchorId(item) === anchorId);
+    return index < 0
+      ? undefined
+      : { anchorIndex: index, anchorOffset: options.anchorOffset ?? CHAT_LIST_ANCHOR_OFFSET };
   }
 
   for (let index = 0; index < items.length; index += 1) {
