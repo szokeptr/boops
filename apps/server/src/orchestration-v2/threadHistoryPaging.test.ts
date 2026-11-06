@@ -217,13 +217,29 @@ describe("threadHistoryPaging", () => {
         persistentOutput: true,
       },
     };
+    const botMessage = {
+      ...work[0]!,
+      sourceItemId: TurnItemId.make("bot-message"),
+      item: {
+        ...work[0]!.item,
+        type: "dynamic_tool" as const,
+        toolName: "mcp__t3-code__message_child_bot",
+        input: { projectId: "child", message: "hi" },
+      },
+    };
     const deferred = deferWorkHistoryRows([
       ...work.slice(0, 30),
       compaction,
       persistent,
+      botMessage,
       ...work.slice(30),
     ]);
-    expect(deferred.map((row) => row.sourceItemId)).toEqual(["item-0", "compaction", "render"]);
+    expect(deferred.map((row) => row.sourceItemId)).toEqual([
+      "item-0",
+      "compaction",
+      "render",
+      "bot-message",
+    ]);
     expect(deferred[0]?.item.deferredWork?.itemCount).toBe(151);
     for (const runStatus of ["running", "failed", "interrupted", "cancelled"]) {
       expect(

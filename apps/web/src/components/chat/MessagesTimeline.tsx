@@ -697,6 +697,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     availableRevertTurnCounts,
     worktreeSetup,
     directMessage,
+    botParentProjectId: directMessage ? (project?.parentBotProjectId ?? null) : null,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
   const matchedApprovalRequestIds = new Set<string>();

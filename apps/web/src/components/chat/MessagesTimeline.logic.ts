@@ -63,7 +63,10 @@ import {
   type TurnItemId,
 } from "@t3tools/contracts";
 import type { ThreadRunSummary } from "@t3tools/client-runtime/state/shell";
-import { resolveT3McpToolDefinition } from "@t3tools/shared/t3McpToolPresentation";
+import {
+  resolveBotMessageToolCall,
+  resolveT3McpToolDefinition,
+} from "@t3tools/shared/t3McpToolPresentation";
 import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import { htmlRenderReferencesEqual, type HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import { mcpAppReferencesEqual, type McpAppReference } from "@t3tools/shared/mcpApp";
@@ -646,8 +649,21 @@ type MessagesTimelineRowContent =
       kind: "bot-exchange";
       id: string;
       createdAt: string;
-      peers: ReadonlyArray<{ readonly name: string; readonly projectId: ProjectId | null }>;
-      messages: ReadonlyArray<ChatMessage>;
+      /** A null name is a bot the client names from its project. */
+      peers: ReadonlyArray<{ readonly name: string | null; readonly projectId: ProjectId | null }>;
+      entries: ReadonlyArray<BotExchangeEntry>;
+    };
+
+export type BotExchangeEntry =
+  | { readonly kind: "message"; readonly message: ChatMessage }
+  | {
+      /** This bot's message to the peer, sent through a tool call the DM otherwise hides. */
+      readonly kind: "sent";
+      readonly id: string;
+      readonly createdAt: string;
+      readonly to: ProjectId | null;
+      readonly text: string;
+      readonly status: "sending" | "sent" | "failed";
     };
 
 export interface StableMessagesTimelineRowsState {
@@ -1418,6 +1434,8 @@ export function deriveMessagesTimelineRows(input: {
   worktreeSetup?: WorktreeSetupSnapshot | null;
   /** A bot's conversation reads like a DM: what was said and what needs you, not the work. */
   directMessage?: boolean;
+  /** Names the bot a DM's report_to_parent call goes to. */
+  botParentProjectId?: ProjectId | null;
 }): MessagesTimelineRow[] {
   const timelineEntries = timelineRowEntries(input.timelineEntries);
   const isPendingApproval = (entry: WorkLogEntry) => {
@@ -2153,7 +2171,7 @@ export function deriveMessagesTimelineRows(input: {
   }
 
   if (input.directMessage) {
-    return directMessageRows(nextRows, {
+    return directMessageRows(nextRows, sentBotMessages(timelineEntries, input.botParentProjectId), {
       typing: input.isWorking && !input.pendingApprovalRequestIds?.size,
       startedAt: input.activeTurnStartedAt ?? null,
     });
@@ -2176,43 +2194,107 @@ export function deriveMessagesTimelineRows(input: {
   });
 }
 
+type SentBotMessage = Extract<BotExchangeEntry, { kind: "sent" }>;
+
+function sentBotMessages(
+  entries: ReadonlyArray<TimelineEntry>,
+  parentProjectId: ProjectId | null | undefined,
+): SentBotMessage[] {
+  return entries.flatMap((entry): SentBotMessage[] => {
+    const item = entry.kind === "work" ? entry.entry.projectedItem?.item : undefined;
+    if (item?.type !== "dynamic_tool") return [];
+    const call = resolveBotMessageToolCall(item.toolName, item.input);
+    if (call === null) return [];
+    return [
+      {
+        kind: "sent",
+        id: entry.id,
+        createdAt: entry.createdAt,
+        to: (call.to ?? parentProjectId ?? null) as ProjectId | null,
+        text: call.text,
+        status:
+          item.status === "completed"
+            ? "sent"
+            : item.status === "failed" ||
+                item.status === "cancelled" ||
+                item.status === "interrupted"
+              ? "failed"
+              : "sending",
+      },
+    ];
+  });
+}
+
 /**
- * A message from the bot's parent or child bot, and the bot's replies until the user writes
- * again, fold into one exchange row at the first message. Other rows keep their places.
+ * Talk with the bot's parent or child bot folds into one exchange row where it starts: a message
+ * from that bot, and this bot's messages to it. The bot's replies fold in only in a turn the other
+ * bot started; elsewhere they stay visible and end the exchange, as does any other user message.
  */
-function foldBotExchanges(rows: ReadonlyArray<MessagesTimelineRow>): MessagesTimelineRow[] {
+function foldBotExchanges(
+  rows: ReadonlyArray<MessagesTimelineRow>,
+  sent: ReadonlyArray<SentBotMessage>,
+): MessagesTimelineRow[] {
   type Exchange = Extract<MessagesTimelineRow, { kind: "bot-exchange" }>;
+  type Peer = Exchange["peers"][number];
+  const units: Array<MessagesTimelineRow | SentBotMessage> = [...rows];
+  for (const message of sent) {
+    const at = units.findIndex((unit) => (unit.createdAt ?? "") > message.createdAt);
+    units.splice(at < 0 ? units.length : at, 0, message);
+  }
   const result: MessagesTimelineRow[] = [];
   let openIndex: number | null = null;
-  for (const row of rows) {
+  let botTurn = false;
+  const add = (unit: BotExchangeEntry, peer: Peer | null, id: string, createdAt: string) => {
     const open = openIndex === null ? null : (result[openIndex] as Exchange);
-    if (row.kind !== "message") {
-      result.push(row);
-    } else if (row.message.role === "assistant") {
-      if (open === null || openIndex === null) result.push(row);
-      else result[openIndex] = { ...open, messages: [...open.messages, row.message] };
+    if (open === null) {
+      openIndex = result.length;
+      result.push({
+        kind: "bot-exchange",
+        id,
+        createdAt,
+        peers: peer ? [peer] : [],
+        entries: [unit],
+      });
+      return;
+    }
+    const known =
+      peer === null ||
+      open.peers.some(
+        (existing) =>
+          (peer.projectId !== null && existing.projectId === peer.projectId) ||
+          (peer.projectId === null && existing.name === peer.name),
+      );
+    result[openIndex as number] = {
+      ...open,
+      peers: known || peer === null ? open.peers : [...open.peers, peer],
+      entries: [...open.entries, unit],
+    };
+  };
+  for (const unit of units) {
+    if (unit.kind === "sent") {
+      add(unit, { name: null, projectId: unit.to }, `bot-exchange:${unit.id}`, unit.createdAt);
+    } else if (unit.kind !== "message") {
+      result.push(unit);
+    } else if (unit.message.role === "assistant") {
+      if (botTurn && openIndex !== null) {
+        add({ kind: "message", message: unit.message }, null, "", "");
+      } else {
+        openIndex = null;
+        result.push(unit);
+      }
     } else {
-      const bot = resolveUserMessagePresentation(row.message).bot;
+      const bot = resolveUserMessagePresentation(unit.message).bot;
+      botTurn = bot !== undefined && !bot.background;
       if (bot === undefined || bot.background) {
         openIndex = null;
-        result.push(row);
-      } else if (open === null || openIndex === null) {
-        openIndex = result.length;
-        result.push({
-          kind: "bot-exchange",
-          id: `bot-exchange:${row.id}`,
-          createdAt: row.createdAt,
-          peers: [{ name: bot.name, projectId: bot.projectId }],
-          messages: [row.message],
-        });
+        result.push(unit);
       } else {
-        result[openIndex] = {
-          ...open,
-          peers: open.peers.some((peer) => peer.name === bot.name)
-            ? open.peers
-            : [...open.peers, { name: bot.name, projectId: bot.projectId }],
-          messages: [...open.messages, row.message],
-        };
+        add(
+          { kind: "message", message: unit.message },
+          { name: bot.name, projectId: bot.projectId },
+          `bot-exchange:${unit.id}`,
+          unit.createdAt,
+        );
       }
     }
   }
@@ -2232,6 +2314,7 @@ const DIRECT_MESSAGE_EVENT_TYPES: ReadonlySet<string> = new Set([
  */
 function directMessageRows(
   rows: ReadonlyArray<MessagesTimelineRow>,
+  sent: ReadonlyArray<SentBotMessage>,
   activity: { readonly typing: boolean; readonly startedAt: string | null },
 ): MessagesTimelineRow[] {
   const kept = rows.filter((row) => {
@@ -2260,7 +2343,7 @@ function directMessageRows(
         : resolveUserMessagePresentation(row.message).attribution === null
           ? "user"
           : null;
-  const folded = foldBotExchanges(kept);
+  const folded = foldBotExchanges(kept, sent);
   const result = folded.map((row, index): MessagesTimelineRow => {
     if (row.kind !== "message") return row;
     const own = side(row);
@@ -2527,8 +2610,14 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       const be = b as typeof a;
       return (
         a.peers.length === be.peers.length &&
-        a.messages.length === be.messages.length &&
-        a.messages.every((message, index) => message === be.messages[index])
+        a.peers.every((peer, index) => peer.projectId === be.peers[index]?.projectId) &&
+        a.entries.length === be.entries.length &&
+        a.entries.every((entry, index) => {
+          const other = be.entries[index];
+          return entry.kind === "message"
+            ? other?.kind === "message" && other.message === entry.message
+            : other?.kind === "sent" && other.status === entry.status && other.text === entry.text;
+        })
       );
     }
 

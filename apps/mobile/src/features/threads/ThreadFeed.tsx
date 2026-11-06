@@ -61,6 +61,7 @@ import {
   type RunId,
   type OrchestrationV2RoutineLabel,
   type ProjectAvatar,
+  type ProjectId,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { renderAssistantCitationsAsText } from "@t3tools/shared/assistantCitations";
@@ -371,6 +372,8 @@ export interface ThreadFeedProps {
     /** Your bubbles wear the bot's colour. */
     readonly ownBubble: { readonly background: string; readonly foreground: string };
     readonly bot: { readonly name: string; readonly avatar: ProjectAvatar | null };
+    /** Names the bot a report_to_parent call goes to. */
+    readonly parentProjectId: ProjectId | null;
   } | null;
   readonly listRef: RefObject<LegendListRef | null>;
   readonly freeze: SharedValue<boolean>;
@@ -2695,7 +2698,11 @@ function useThreadFeedPresentation(
   const [feedCache] = useState(createThreadFeedCache);
   if (props.directMessage) {
     return appendPendingThreadMessages(
-      deriveDirectMessageFeed(props.feed, props.directMessage.typingSince),
+      deriveDirectMessageFeed(
+        props.feed,
+        props.directMessage.typingSince,
+        props.directMessage.parentProjectId,
+      ),
       props.feed,
       props.queuedMessages,
     );

@@ -2734,6 +2734,25 @@ describe("v2 run and attempt history", () => {
         records: [],
       },
     };
+    const askJarvis = {
+      id: "ask-jarvis-entry",
+      kind: "work" as const,
+      createdAt: "2026-01-01T00:02:10Z",
+      entry: {
+        id: "ask-jarvis",
+        createdAt: "2026-01-01T00:02:10Z",
+        label: "Message a bot",
+        tone: "tool" as const,
+        projectedItem: {
+          item: {
+            type: "dynamic_tool",
+            status: "running",
+            toolName: "mcp__t3-code__message_child_bot",
+            input: { projectId: "jarvis", message: "File them please" },
+          },
+        } as never,
+      },
+    };
     const exchangeRows = deriveMessagesTimelineRows({
       timelineEntries: [
         ...timelineEntries,
@@ -2741,23 +2760,36 @@ describe("v2 run and attempt history", () => {
         message("reply-1", "assistant", "2026-01-01T00:01:05Z"),
         message("jarvis-2", "user", "2026-01-01T00:01:10Z", fromJarvis),
         message("again", "user", "2026-01-01T00:02:00Z"),
+        message("on-it", "assistant", "2026-01-01T00:02:05Z"),
+        askJarvis,
+        message("asked", "assistant", "2026-01-01T00:02:20Z"),
       ],
       isWorking: false,
       turnDiffSummaries: [],
       supportsConversationRollback: false,
       directMessage: true,
     });
+    // A message the bot sends inside your turn opens its own pill; its replies to you stay out.
     expect(
       exchangeRows
         .slice(3)
         .map((row) =>
           row.kind === "bot-exchange"
-            ? [row.id, row.peers.map((peer) => peer.name), row.messages.map(({ id }) => id)]
+            ? [
+                row.id,
+                row.peers.map((peer) => peer.projectId),
+                row.entries.map((entry) =>
+                  entry.kind === "message" ? entry.message.id : `${entry.status}:${entry.text}`,
+                ),
+              ]
             : [row.id],
         ),
     ).toEqual([
-      ["bot-exchange:jarvis-1-entry", ["Jarvis"], ["jarvis-1", "reply-1", "jarvis-2"]],
+      ["bot-exchange:jarvis-1-entry", ["jarvis"], ["jarvis-1", "reply-1", "jarvis-2"]],
       ["again-entry"],
+      ["on-it-entry"],
+      ["bot-exchange:ask-jarvis-entry", ["jarvis"], ["sending:File them please"]],
+      ["asked-entry"],
     ]);
   });
   it("collapses only output from a superseded V2 attempt within the active logical run", () => {

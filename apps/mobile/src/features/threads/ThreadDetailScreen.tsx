@@ -73,7 +73,11 @@ import {
   type ProviderSubagentStatus,
 } from "@t3tools/client-runtime/state/thread-execution";
 import { formatModelSlugName, resolveSelectableModel } from "@t3tools/shared/model";
-import { isProviderNativeSubagentThread, type ProjectAvatar } from "@t3tools/contracts";
+import {
+  isProviderNativeSubagentThread,
+  type ProjectAvatar,
+  type ProjectId,
+} from "@t3tools/contracts";
 import { botBubbleColors } from "@t3tools/client-runtime/bot-avatar";
 import { specFor } from "@t3tools/shared/botAvatar";
 import type { QueuedRunEdit } from "../../state/queued-run-edit";
@@ -228,6 +232,8 @@ export interface ThreadDetailScreenProps {
   /** Set in a bot's main conversation, which reads like a DM with the bot. */
   readonly botName?: string | null;
   readonly botAvatar?: ProjectAvatar | null;
+  /** Names the bot a DM's report_to_parent call goes to. */
+  readonly botParentProjectId?: ProjectId | null;
   readonly canOperateThread: boolean;
   readonly selectedThread: EnvironmentThreadShell;
   /** Use this for detail reads; it stays null until queued creation reaches the server. */
@@ -1497,6 +1503,7 @@ function ThreadDetailBody(
                             : props.activeWorkStartedAt,
                         ownBubble: botBubbleColors(props.botAvatar ?? specFor(props.botName ?? "")),
                         bot: { name: props.botName ?? "", avatar: props.botAvatar ?? null },
+                        parentProjectId: props.botParentProjectId ?? null,
                       }
                     : null
                 }

@@ -958,6 +958,12 @@ describe("buildThreadFeed", () => {
         records: [],
       },
     });
+    const reply = (id: string, ordinal: number, at: string) => ({
+      ...assistantMessage(at),
+      id: TurnItemId.make(`item-${id}`),
+      messageId: MessageId.make(id),
+      ordinal,
+    });
     const exchange = deriveDirectMessageFeed(
       buildThreadFeed([
         projected(userMessage(), 0),
@@ -973,19 +979,42 @@ describe("buildThreadFeed", () => {
           },
           4,
         ),
+        projected(reply("on-it", 5, "2026-06-20T00:00:06.000Z"), 5),
+        projected(
+          {
+            ...base("ask-jarvis", "2026-06-20T00:00:07.000Z", 6),
+            type: "dynamic_tool",
+            status: "running",
+            toolName: "mcp__t3-code__message_child_bot",
+            input: { projectId: "jarvis", message: "File them please" },
+            output: null,
+          },
+          6,
+        ),
+        projected(reply("asked", 7, "2026-06-20T00:00:08.000Z"), 7),
       ]),
       null,
     );
+    // A message the bot sends inside your turn opens its own pill; its replies to you stay out.
     expect(
       exchange.map((entry) =>
         entry.type === "bot-exchange"
-          ? [entry.id, entry.peers.map((peer) => peer.name), entry.messages.map(({ id }) => id)]
+          ? [
+              entry.id,
+              entry.peers.map((peer) => peer.projectId),
+              entry.entries.map((item) =>
+                item.kind === "message" ? item.message.id : `${item.status}:${item.text}`,
+              ),
+            ]
           : [entry.id],
       ),
     ).toEqual([
       ["message-user"],
-      ["bot-exchange:jarvis-1", ["Jarvis"], ["jarvis-1", "message-assistant", "jarvis-2"]],
+      ["bot-exchange:jarvis-1", ["jarvis"], ["jarvis-1", "message-assistant", "jarvis-2"]],
       ["again"],
+      ["on-it"],
+      ["bot-exchange:local:thread-1:ask-jarvis", ["jarvis"], ["sending:File them please"]],
+      ["asked"],
     ]);
   });
 
