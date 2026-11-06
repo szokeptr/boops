@@ -781,6 +781,8 @@ describe("EnvironmentRegistry", () => {
             RelayEnvironmentDiscovery.RelayEnvironmentDiscovery.of({
               state: discoveryState,
               refresh: Effect.void,
+              acceptInvite: () => Effect.die("unused"),
+              declineInvite: () => Effect.die("unused"),
             }),
           ),
           Effect.forkScoped,
@@ -914,6 +916,8 @@ describe("EnvironmentRegistry", () => {
                   },
                 ),
               refresh: Effect.void,
+              acceptInvite: () => Effect.die("unused"),
+              declineInvite: () => Effect.die("unused"),
             }),
           ),
           Effect.forkScoped,

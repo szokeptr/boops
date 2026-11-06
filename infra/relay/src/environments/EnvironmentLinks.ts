@@ -16,12 +16,19 @@ import { relayEnvironmentLinks } from "../persistence/schema.ts";
 
 export interface RelayLinkedEnvironmentRecord extends RelayClientEnvironmentRecord {
   readonly environmentPublicKey: string;
+  /** Present on a member's link; absent on the owner's. */
+  readonly member?: {
+    readonly id: string;
+    readonly sharedByUserId: string;
+  };
 }
 
 export interface AgentAwarenessDeliveryUserRecord {
   readonly userId: string;
   readonly notificationsEnabled: boolean;
   readonly liveActivitiesEnabled: boolean;
+  /** Set when this link is a member's: it hears only that member's threads. */
+  readonly memberId?: string;
 }
 
 export class EnvironmentLinkUpsertPersistenceError extends Schema.TaggedError<EnvironmentLinkUpsertPersistenceError>()(
@@ -221,6 +228,9 @@ const make = Effect.gen(function* () {
             revokedAt: null,
             updatedAt: now,
             holdWebhooksWhileOffline: inheritedHoldWebhooks,
+            role: "owner",
+            memberId: null,
+            sharedByUserId: null,
           },
         })
         .pipe(
@@ -245,6 +255,7 @@ const make = Effect.gen(function* () {
           userId: relayEnvironmentLinks.userId,
           notificationsEnabled: relayEnvironmentLinks.notificationsEnabled,
           liveActivitiesEnabled: relayEnvironmentLinks.liveActivitiesEnabled,
+          memberId: relayEnvironmentLinks.memberId,
         })
         .from(relayEnvironmentLinks)
         .where(agentAwarenessDeliveryUserKeyCondition(input))
@@ -254,6 +265,7 @@ const make = Effect.gen(function* () {
               userId: row.userId,
               notificationsEnabled: row.notificationsEnabled,
               liveActivitiesEnabled: row.liveActivitiesEnabled,
+              ...(row.memberId === null ? {} : { memberId: row.memberId }),
             })),
           ),
           Effect.mapError(
@@ -275,6 +287,7 @@ const make = Effect.gen(function* () {
           endpointWsBaseUrl: relayEnvironmentLinks.endpointWsBaseUrl,
           endpointProviderKind: relayEnvironmentLinks.endpointProviderKind,
           createdAt: relayEnvironmentLinks.createdAt,
+          role: relayEnvironmentLinks.role,
         })
         .from(relayEnvironmentLinks)
         .where(
@@ -286,6 +299,7 @@ const make = Effect.gen(function* () {
         .pipe(
           Effect.map((rows) =>
             rows.map((row) => ({
+              role: row.role,
               environmentId: row.environmentId as RelayClientEnvironmentRecord["environmentId"],
               label:
                 row.environmentLabel.trim().length > 0 ? row.environmentLabel : row.environmentId,
@@ -321,6 +335,9 @@ const make = Effect.gen(function* () {
           endpointWsBaseUrl: relayEnvironmentLinks.endpointWsBaseUrl,
           endpointProviderKind: relayEnvironmentLinks.endpointProviderKind,
           createdAt: relayEnvironmentLinks.createdAt,
+          role: relayEnvironmentLinks.role,
+          memberId: relayEnvironmentLinks.memberId,
+          sharedByUserId: relayEnvironmentLinks.sharedByUserId,
         })
         .from(relayEnvironmentLinks)
         .where(
@@ -349,6 +366,10 @@ const make = Effect.gen(function* () {
                   },
                   environmentPublicKey: row.environmentPublicKey,
                   linkedAt: row.createdAt,
+                  role: row.role,
+                  ...(row.memberId !== null && row.sharedByUserId !== null
+                    ? { member: { id: row.memberId, sharedByUserId: row.sharedByUserId } }
+                    : {}),
                 }
               : null;
           }),
@@ -386,6 +407,7 @@ const make = Effect.gen(function* () {
             isNull(relayEnvironmentLinks.revokedAt),
             eq(relayEnvironmentLinks.endpointProviderKind, "cloudflare_tunnel"),
             eq(relayEnvironmentLinks.managedTunnelsEnabled, true),
+            eq(relayEnvironmentLinks.role, "owner"),
             input.userId === undefined ? undefined : eq(relayEnvironmentLinks.userId, input.userId),
             input.environmentPublicKey === undefined
               ? undefined

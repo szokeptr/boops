@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { splitPinnedBots, type BotRow } from "@t3tools/client-runtime/state/bot-list";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import type { ContextMenuItem } from "@t3tools/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { PlusIcon, SearchIcon } from "lucide-react";
 import { useEffect, type MouseEvent, type ReactNode } from "react";
@@ -24,8 +25,16 @@ import {
 import { isTerminalFocused } from "../../lib/terminalFocus";
 import { isModelPickerOpen } from "../../modelPickerVisibility";
 import { useShortcutModifierState } from "../../shortcutModifierState";
-import { useQuietThreadShell } from "../../state/entities";
-import { useEnvironmentMachines } from "../../state/environments";
+import { useProjects, useQuietThreadShell } from "../../state/entities";
+import { useEnvironmentMachines, usePrimaryEnvironmentId } from "../../state/environments";
+import {
+  botSharedWithLabel,
+  memberEnvironment,
+  useIsMemberOnly,
+  useMembers,
+} from "../../state/members";
+import { appAtomRegistry } from "../../rpc/atomRegistry";
+import { openShareBotDialog } from "../members/ShareBotDialog";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { useThreadRouteRef } from "../../hooks/useThreadRouteTarget";
@@ -71,10 +80,14 @@ function useOpenBot() {
   };
 }
 
-/** Right-click on a bot: pin or unpin it, or open its activity. */
+/** Right-click on a bot: pin or unpin it, share it, or open its activity. */
 function useBotContextMenu(onNavigate: (() => void) | undefined) {
   const router = useRouter();
   const { canPinProjectGroup, setProjectGroupPinned } = useProjectPin();
+  const projects = useProjects();
+  // Names for "Shared with Anna"; other machines' bots fall back to a count.
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const primaryMembers = useMembers(primaryEnvironmentId);
   return async (row: BotRow, event: MouseEvent) => {
     const api = readLocalApi();
     if (!api) return;
@@ -85,14 +98,42 @@ function useBotContextMenu(onNavigate: (() => void) | undefined) {
       ],
       pinned: row.pinnedAt !== null,
     };
-    const items: Array<{ id: "pin" | "activity"; label: string; disabled?: boolean }> = [
-      { id: "pin", label: group.pinned ? "Unpin" : "Pin", disabled: !canPinProjectGroup(group) },
-    ];
+    const canShare = appAtomRegistry.get(
+      memberEnvironment.setBotAccess.permissionAtom(row.environmentId),
+    );
+    const sharedWith = canShare
+      ? botSharedWithLabel(
+          projects.find(
+            (project) =>
+              project.environmentId === row.environmentId && project.id === row.projectId,
+          ),
+          row.environmentId === primaryEnvironmentId && primaryMembers.loaded
+            ? primaryMembers.members
+            : null,
+        )
+      : null;
+    const items: Array<ContextMenuItem<"shared-with" | "pin" | "share" | "activity">> = [];
+    // Disabled rather than a header: native menus drop headers, and this reads as a caption.
+    if (sharedWith !== null) items.push({ id: "shared-with", label: sharedWith, disabled: true });
+    items.push({
+      id: "pin",
+      label: group.pinned ? "Unpin" : "Pin",
+      disabled: !canPinProjectGroup(group),
+      separatorBefore: sharedWith !== null,
+    });
+    if (canShare) items.push({ id: "share", label: "Share…", icon: "user-plus" });
     if (row.activityThreadCount > 0) {
       items.push({ id: "activity", label: `Activity (${row.activityThreadCount})` });
     }
     const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
     if (action === "pin") setProjectGroupPinned(group, !group.pinned);
+    if (action === "share") {
+      openShareBotDialog({
+        environmentId: row.environmentId,
+        projectId: row.projectId,
+        name: row.name,
+      });
+    }
     if (action === "activity") {
       onNavigate?.();
       void router.navigate({
@@ -108,6 +149,7 @@ export function BotListPanel({ onNavigate }: { readonly onNavigate?: () => void 
   // Jump shortcuts and next/previous follow the order shown: pins first.
   const rows = [...pinned, ...unpinned];
   const showBotContextMenu = useBotContextMenu(onNavigate);
+  const memberOnly = useIsMemberOnly();
   const activeKey = useActiveBotKey();
   const machineKindById = useEnvironmentMachines();
   const openBot = useOpenBot();
@@ -176,8 +218,14 @@ export function BotListPanel({ onNavigate }: { readonly onNavigate?: () => void 
   if (rows.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
-        <span>No bots yet</span>
-        <AddBotButton />
+        {memberOnly ? (
+          <span>No bots are shared with you yet</span>
+        ) : (
+          <>
+            <span>No bots yet</span>
+            <AddBotButton />
+          </>
+        )}
       </div>
     );
   }
@@ -210,6 +258,7 @@ function AddBotButton() {
 
 export default function BotSidebar() {
   const { isMobile, setOpenMobile } = useSidebar();
+  const memberOnly = useIsMemberOnly();
   return (
     <>
       <SidebarChromeHeader
@@ -219,9 +268,11 @@ export default function BotSidebar() {
             <SidebarHeaderRoundButton label="Search" onClick={() => openCommandPalette()}>
               <SearchIcon />
             </SidebarHeaderRoundButton>
-            <SidebarHeaderRoundButton label="Add bot" onClick={openCreateBotDialog}>
-              <PlusIcon />
-            </SidebarHeaderRoundButton>
+            {memberOnly ? null : (
+              <SidebarHeaderRoundButton label="Add bot" onClick={openCreateBotDialog}>
+                <PlusIcon />
+              </SidebarHeaderRoundButton>
+            )}
           </>
         }
       />

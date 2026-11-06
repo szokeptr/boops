@@ -66,6 +66,7 @@ import * as DpopProofs from "../auth/DpopProofs.ts";
 import * as RelayTokens from "../auth/RelayTokens.ts";
 import * as EnvironmentCredentials from "../environments/EnvironmentCredentials.ts";
 import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
+import * as EnvironmentMembers from "../environments/EnvironmentMembers.ts";
 import * as HeldHooks from "../hooks/HeldHooks.ts";
 import * as HookInbox from "../hooks/HookInbox.ts";
 import * as LiveActivities from "../agentActivity/LiveActivities.ts";
@@ -481,9 +482,11 @@ const revokeEnvironmentLinkRecord = Effect.fn("relay.api.client.revokeEnvironmen
     readonly userId: string;
     readonly environmentId: string;
     readonly environmentPublicKey: string;
+    readonly isOwner: boolean;
   }) {
     const transactions = yield* RelayDb.RelayTransactions;
     const links = yield* EnvironmentLinks.EnvironmentLinks;
+    const members = yield* EnvironmentMembers.EnvironmentMembers;
     const credentials = yield* EnvironmentCredentials.EnvironmentCredentials;
     return yield* transactions.withTransaction(
       Effect.gen(function* () {
@@ -491,6 +494,14 @@ const revokeEnvironmentLinkRecord = Effect.fn("relay.api.client.revokeEnvironmen
           userId: input.userId,
           environmentId: input.environmentId,
         });
+        if (revoked && input.isOwner) {
+          // Before credentials: a surviving member link would keep the environment credential alive.
+          yield* members.removeForOwner({
+            environmentId: input.environmentId,
+            environmentPublicKey: input.environmentPublicKey,
+            ownerUserId: input.userId,
+          });
+        }
         if (revoked) {
           yield* credentials.revokeForEnvironmentPublicKey({
             environmentId: input.environmentId,
@@ -526,6 +537,7 @@ export const unlinkEnvironmentRecord = Effect.fn("relay.api.client.unlinkEnviron
             userId: input.userId,
             environmentId: link.environmentId,
             environmentPublicKey: link.environmentPublicKey,
+            isOwner: link.member === undefined,
           });
     // Deprovision after revocation commits; retry even if already revoked to finish failed Cloudflare cleanup.
     const deprovisioned = yield* managedEndpointProvider.deprovision({
@@ -634,6 +646,7 @@ export const registerEnvironmentTunnelRecovery = Effect.fn(
   });
   if (
     link === null ||
+    link.member !== undefined ||
     link.environmentPublicKey !== input.environmentPublicKey ||
     link.endpoint.providerKind !== "cloudflare_tunnel"
   ) {
@@ -672,6 +685,7 @@ export const recoverEnvironmentTunnelRecord = Effect.fn(
   });
   if (
     link === null ||
+    link.member !== undefined ||
     link.environmentPublicKey !== input.environmentPublicKey ||
     link.endpoint.providerKind !== "cloudflare_tunnel"
   ) {
@@ -810,6 +824,7 @@ export const layerClientApi = HttpApiBuilder.group(
     const relayTokens = yield* RelayTokens.RelayTokens;
     const linker = yield* EnvironmentLinker.EnvironmentLinker;
     const links = yield* EnvironmentLinks.EnvironmentLinks;
+    const members = yield* EnvironmentMembers.EnvironmentMembers;
     const managedEndpointProvider = yield* ManagedEndpointProvider.ManagedEndpointProvider;
     const devices = yield* Devices.Devices;
     const t3Chat = yield* T3ChatAccounts.T3ChatAccounts;
@@ -819,8 +834,42 @@ export const layerClientApi = HttpApiBuilder.group(
         "listEnvironments",
         Effect.fn("relay.api.client.listEnvironments")(function* () {
           const { userId } = yield* RelayClientPrincipal;
-          const environments = yield* links.listForUser({ userId });
-          return { environments };
+          const { environments, invites } = yield* Effect.all(
+            {
+              environments: links.listForUser({ userId }),
+              invites: members.listInvites({ userId }),
+            },
+            { concurrency: 2 },
+          );
+          const linked = new Set(environments.map((environment) => environment.environmentId));
+          return {
+            environments,
+            invites: invites.filter((invite) => !linked.has(invite.environmentId)),
+          };
+        }, mapRelayCommonApiErrors("not_authorized")),
+      )
+      .handle(
+        "acceptEnvironmentInvite",
+        Effect.fn("relay.api.client.acceptEnvironmentInvite")(function* ({ params }) {
+          const { userId } = yield* RelayClientPrincipal;
+          return yield* members.accept({ userId, inviteId: params.inviteId }).pipe(
+            Effect.catchTags({
+              EnvironmentInviteNotFound: () => Effect.fail(new HttpApiError.Unauthorized({})),
+              ClerkEmailLookupFailed: () => relayInternalErrorResponse("upstream_unavailable"),
+            }),
+          );
+        }, mapRelayCommonApiErrors("not_authorized")),
+      )
+      .handle(
+        "declineEnvironmentInvite",
+        Effect.fn("relay.api.client.declineEnvironmentInvite")(function* ({ params }) {
+          const { userId } = yield* RelayClientPrincipal;
+          const declined = yield* members.decline({ userId, inviteId: params.inviteId }).pipe(
+            Effect.catchTags({
+              ClerkEmailLookupFailed: () => relayInternalErrorResponse("upstream_unavailable"),
+            }),
+          );
+          return { ok: declined };
         }, mapRelayCommonApiErrors("not_authorized")),
       )
       .handle(
@@ -1199,6 +1248,7 @@ export const layerServerApi = HttpApiBuilder.group(
     const publisher = yield* AgentActivityPublisher.AgentActivityPublisher;
     const publishSignatures = yield* EnvironmentPublishSignatures.EnvironmentPublishSignatures;
     const heldHooks = yield* HeldHooks.HeldHooks;
+    const members = yield* EnvironmentMembers.EnvironmentMembers;
     const requireOwnEnvironment =
       /* Request instrumentation already owns the span; keep this helper in that context. */
       Effect.fnUntraced(function* (environmentId: string) {
@@ -1427,6 +1477,33 @@ export const layerServerApi = HttpApiBuilder.group(
         }, mapRelayCommonApiErrors("not_authorized")),
       )
       .handle(
+        "putMemberInvite",
+        Effect.fn("relay.api.server.putMemberInvite")(function* ({ params, payload }) {
+          yield* requireOwnEnvironment(params.environmentId);
+          const principal = yield* RelayEnvironmentPrincipal;
+          yield* members.putInvite({
+            environmentId: params.environmentId,
+            environmentPublicKey: principal.environmentPublicKey,
+            memberId: params.memberId,
+            request: payload,
+          });
+          return { ok: true };
+        }, mapRelayCommonApiErrors("not_authorized")),
+      )
+      .handle(
+        "removeMember",
+        Effect.fn("relay.api.server.removeMember")(function* ({ params }) {
+          yield* requireOwnEnvironment(params.environmentId);
+          const principal = yield* RelayEnvironmentPrincipal;
+          yield* members.removeMember({
+            environmentId: params.environmentId,
+            environmentPublicKey: principal.environmentPublicKey,
+            memberId: params.memberId,
+          });
+          return { ok: true };
+        }, mapRelayCommonApiErrors("not_authorized")),
+      )
+      .handle(
         "wakeHeldHooks",
         Effect.fn("relay.api.server.wakeHeldHooks")(function* ({ params }) {
           yield* requireOwnEnvironment(params.environmentId);
@@ -1480,6 +1557,7 @@ const RelayCommonPersistenceError = Schema.Union([
   LiveActivities.LiveActivityDeliveryMarkPersistenceError,
   DeliveryAttempts.DeliveryAttemptRecordPersistenceError,
   EnvironmentLinks.EnvironmentLinkEnvironmentLookupPersistenceError,
+  EnvironmentMembers.EnvironmentMemberPersistenceError,
   HookInbox.HookInboxError,
 ]);
 type RelayCommonPersistenceError = typeof RelayCommonPersistenceError.Type;

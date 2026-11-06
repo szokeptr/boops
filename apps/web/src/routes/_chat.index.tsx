@@ -13,6 +13,7 @@ import { useBotRows } from "../hooks/useBotRows";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { useAllEnvironmentShellsBootstrapped } from "../state/entities";
 import { useEnvironments } from "../state/environments";
+import { useIsMemberOnly } from "../state/members";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
@@ -30,6 +31,8 @@ function ChatIndexRouteView() {
 function BotHome() {
   const { isMobile } = useSidebar();
   const hasBots = useBotRows().length > 0;
+  // A member can't create bots; theirs are the ones shared with them.
+  const canAddBot = !useIsMemberOnly();
   // A pending environment cannot prove there are no bots.
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const contentArea = workspaceAreaProps("home", 1, "Home");
@@ -44,7 +47,7 @@ function BotHome() {
           <>
             <h1 className="min-w-0 flex-1 truncate text-sm font-medium">Bots</h1>
             {/* With no bots, the empty state below offers it. */}
-            {hasBots ? (
+            {hasBots && canAddBot ? (
               <Button size="sm" variant="outline" onClick={openCreateBotDialog}>
                 <PlusIcon className="size-4" />
                 Add bot
@@ -64,9 +67,11 @@ function BotHome() {
             <EmptyDescription>
               {hasBots
                 ? "Choose a bot from the list to continue its conversation."
-                : "Add a bot to start talking to it from any of your devices."}
+                : canAddBot
+                  ? "Add a bot to start talking to it from any of your devices."
+                  : "Bots shared with you show up here."}
             </EmptyDescription>
-            {hasBots ? null : (
+            {hasBots || !canAddBot ? null : (
               <div className="mt-5 flex justify-center">
                 <Button size="sm" onClick={openCreateBotDialog}>
                   <PlusIcon className="size-4" />

@@ -92,6 +92,7 @@ const pairingCreateCommand = Command.make("create", {
   scopes: authScopesFlag(AuthStandardClientScopes),
   ttl: ttlFlag,
   label: labelFlag,
+  subject: subjectFlag,
   baseUrl: baseUrlFlag,
   json: jsonFlag,
 }).pipe(
@@ -103,7 +104,7 @@ const pairingCreateCommand = Command.make("create", {
         Effect.gen(function* () {
           const issued = yield* environmentAuth.createPairingLink({
             scopes: flags.scopes,
-            subject: "one-time-token",
+            subject: Option.getOrElse(flags.subject, () => "one-time-token"),
             ...(Option.isSome(flags.ttl) ? { ttl: flags.ttl.value } : {}),
             ...(Option.isSome(flags.label) ? { label: flags.label.value } : {}),
           });

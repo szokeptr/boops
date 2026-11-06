@@ -61,11 +61,13 @@ function resetRegistry() {
 function createClient(overrides?: Partial<ManagedRelay.ManagedRelayClient["Service"]>) {
   return ManagedRelay.ManagedRelayClient.of({
     relayUrl: "https://relay.example.test",
-    listEnvironments: () => Effect.succeed([environment]),
+    listEnvironments: () => Effect.succeed({ environments: [environment], invites: [] }),
     listDevices: () => Effect.succeed([device]),
     createEnvironmentLinkChallenge: () => Effect.die("unused"),
     linkEnvironment: () => Effect.die("unused"),
     unlinkEnvironment: () => Effect.die("unused"),
+    acceptEnvironmentInvite: () => Effect.die("unused"),
+    declineEnvironmentInvite: () => Effect.die("unused"),
     getT3ChatLink: () => Effect.die("unused"),
     createT3ChatLinkRequest: () => Effect.die("unused"),
     unlinkT3Chat: () => Effect.die("unused"),

@@ -645,6 +645,48 @@ describe("EnvironmentConnector", () => {
     }).pipe(Effect.provide(layerConnectorTest(execute)));
   });
 
+  it.effect("mints a member's credential through the owner's endpoint allocation", () => {
+    const seenProofs: Array<RelayCloudMintCredentialProofPayload> = [];
+    const allocationOwners: Array<string> = [];
+    const ownerAllocations = makeAllocations();
+    const execute = (request: HttpClientRequest.HttpClientRequest) =>
+      Effect.sync(() => {
+        const mintRequest = decodeMintRequestBody(requestBodyText(request));
+        seenProofs.push(decodeRequestProof(mintRequest.proof));
+        return HttpClientResponse.fromWeb(
+          request,
+          Response.json(signMintResponse(mintRequest), { status: 200 }),
+        );
+      });
+
+    return Effect.gen(function* () {
+      const connector = yield* EnvironmentConnector.EnvironmentConnector;
+      yield* connector.connect({
+        userId: "member_user",
+        environmentId: "env-connector-test",
+        clientProofKeyThumbprint: "client-proof-key-thumbprint",
+      });
+
+      expect(allocationOwners).toEqual(["member_user", "user_123"]);
+      expect(seenProofs[0]).toMatchObject({ sub: "member_user", memberId: "member-1" });
+    }).pipe(
+      Effect.provide(
+        layerConnectorTest(execute, {
+          links: makeLinks({ member: { id: "member-1", sharedByUserId: "user_123" } }),
+          allocations: {
+            ...ownerAllocations,
+            get: (input) => {
+              allocationOwners.push(input.userId);
+              return input.userId === "user_123"
+                ? ownerAllocations.get(input)
+                : Effect.succeed(null);
+            },
+          },
+        }),
+      ),
+    );
+  });
+
   it.effect("only accepts mint responses signed by the user's linked environment key", () => {
     const execute = (request: HttpClientRequest.HttpClientRequest) =>
       Effect.sync(() => {

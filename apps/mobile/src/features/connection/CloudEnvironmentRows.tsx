@@ -27,6 +27,7 @@ import { serverEnvironment } from "../../state/server";
 import { environmentPresentations } from "../../state/presentation";
 import { availableCloudEnvironmentPresentation } from "../cloud/cloudEnvironmentPresentation";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { EnvironmentInviteCardList } from "../members/EnvironmentInviteCards";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 import { useConnectionDiagnosis } from "./ConnectionDiagnosisDetails";
 import { environmentStatusText } from "./environmentStatusText";
@@ -104,6 +105,8 @@ function CloudEnvironmentRowsContent(
         </View>
       ) : null}
 
+      {discoveryAvailable ? <EnvironmentInviteCardList controller={controller} /> : null}
+
       {hasCloudRows ? (
         <View collapsable={false} className="overflow-hidden rounded-[24px] bg-grouped-card">
           {props.connectedCloudEnvironments.map((environment) => (
@@ -142,7 +145,7 @@ function CloudEnvironmentRowsContent(
             Loading linked cloud environments.
           </Text>
         </View>
-      ) : controller.relayDiscovery.error ? null : (
+      ) : controller.relayDiscovery.error || controller.invites.length > 0 ? null : (
         <View collapsable={false} className="rounded-[24px] bg-grouped-card p-5">
           <Text className="text-sm leading-normal text-foreground-muted">
             No additional linked cloud environments.

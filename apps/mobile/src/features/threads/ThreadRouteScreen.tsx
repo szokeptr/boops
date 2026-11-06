@@ -49,6 +49,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
+import { useIsMemberEnvironment } from "../../state/members";
 import { useSelectedThreadDetailState } from "../../state/use-thread-detail";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { buildTerminalMenuSessions, nextOpenTerminalId } from "../terminal/terminalMenu";
@@ -342,7 +343,10 @@ function ThreadRouteContent(
   );
   const selectedThreadDetailState = props.selectedThreadDetailState;
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
-  const { selectedThreadCwd } = useSelectedThreadWorktree();
+  // A member chats with a shared bot; its checkout, terminals and previews stay the owner's.
+  const member = useIsMemberEnvironment(selectedThread?.environmentId ?? null);
+  const { selectedThreadCwd: worktreeCwd } = useSelectedThreadWorktree();
+  const selectedThreadCwd = member ? null : worktreeCwd;
   const composer = useThreadComposerState();
   const requests = useSelectedThreadRequests();
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, "thread interrupt");
@@ -402,7 +406,7 @@ function ThreadRouteContent(
   // The chosen mode survives thread switches; "route" only applies while the route
   // supplies an inspector, which is also the default whenever it does.
   const [chosenInspectorMode, setChosenInspectorMode] = useState<ThreadInspectorMode | null>(null);
-  const previewTarget = props.inspectorPresentation ? undefined : params.inspector;
+  const previewTarget = props.inspectorPresentation || member ? undefined : params.inspector;
   const inspectorMode = (() => {
     if (previewTarget) return "preview";
     const mode =
@@ -664,7 +668,8 @@ function ThreadRouteContent(
     canOpenTerminal:
       Boolean(selectedThreadProject?.workspaceRoot) && (canReadTerminal || canOperateTerminal),
     canOperateTerminal,
-    canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
+    canOpenFiles: !member && Boolean(selectedThreadProject?.workspaceRoot),
+    member,
     terminalSessions: terminalMenuSessions,
     showDirectFileControl: layout.usesSplitView,
     onOpenTerminal: handleOpenTerminal,
@@ -825,7 +830,7 @@ function ThreadRouteContent(
                 usesNativeHeaderGlass={usesNativeHeaderGlass}
                 controls={threadHeaderControls}
                 hasThreadCwd={selectedThreadCwd !== null}
-                hasWorkspaceRoot={Boolean(selectedThreadProject?.workspaceRoot)}
+                hasWorkspaceRoot={!member && Boolean(selectedThreadProject?.workspaceRoot)}
                 fileInspectorSupported={fileInspector.supported}
                 inspectorMode={inspectorMode}
                 onToggleInspector={handleToggleInspector}

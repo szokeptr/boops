@@ -17,6 +17,7 @@ import {
   EnvironmentScopeRequiredError,
   EnvironmentAuthenticatedAuth,
   EnvironmentAuthenticatedPrincipal,
+  memberIdFromSessionSubject,
 } from "@t3tools/contracts";
 import type { AuthEnvironmentScope, DpopFailureReason } from "@t3tools/contracts";
 import { parseOAuthScope } from "@t3tools/shared/oauthScope";
@@ -179,11 +180,33 @@ export const authenticateMediaRequest =
         }),
       ),
     );
-    if (!session.scopes.includes(requiredScope)) {
+    if (!session.scopes.includes(requiredScope) || isMemberSession(session)) {
       return yield* failEnvironmentScopeRequired(requiredScope);
     }
     return session;
   });
+
+/**
+ * An invited member's session reaches only what her chat needs over HTTP: socket tickets and the
+ * orchestration reads, which show her only her threads. Raw and media routes refuse her outright.
+ */
+const MEMBER_HTTP_ENDPOINTS: ReadonlySet<string> = new Set([
+  "auth.webSocketTicket",
+  "auth.webSocketTicketFor",
+  "orchestration.shellSnapshot",
+  "orchestration.threadSnapshot",
+  "orchestration.threadTranscript",
+  "orchestration.threadBoundedSnapshot",
+  "orchestration.threadHistoryPage",
+]);
+
+export const isMemberSession = (session: { readonly subject: string }) =>
+  memberIdFromSessionSubject(session.subject) !== undefined;
+
+export const memberMayCallHttpEndpoint = (
+  group: { readonly identifier: string },
+  endpoint: { readonly identifier: string },
+) => MEMBER_HTTP_ENDPOINTS.has(`${group.identifier}.${endpoint.identifier}`);
 
 export const failEnvironmentInternal =
   /* Request instrumentation already owns the span; keep this helper in that context. */
@@ -230,7 +253,7 @@ export const layerAuthenticatedAuth = Layer.effect(
   EnvironmentAuthenticatedAuth,
   Effect.gen(function* () {
     const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-    return (httpEffect) =>
+    return (httpEffect, { endpoint, group }) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
         const startTime = yield* Clock.currentTimeNanos;
@@ -245,6 +268,9 @@ export const layerAuthenticatedAuth = Layer.effect(
             failEnvironmentInternal("internal_error", error),
           ),
         );
+        if (isMemberSession(session) && !memberMayCallHttpEndpoint(group, endpoint)) {
+          return yield* failEnvironmentScopeRequired(AuthAccessWriteScope);
+        }
         const endTime = yield* Clock.currentTimeNanos;
         const handler = httpEffect.pipe(
           Effect.provideService(EnvironmentAuthenticatedPrincipal, {

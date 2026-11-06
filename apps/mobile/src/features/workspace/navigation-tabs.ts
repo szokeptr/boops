@@ -9,6 +9,7 @@ import {
 } from "./navigation-tab-order";
 import type { AppSymbolName } from "../../components/ui/AppSymbol";
 import { mobilePreferencesAtom } from "../../state/preferences";
+import { useMemberOnly } from "../../state/members";
 import { resolveWorkspaceTabOrder } from "./workspace-tabs-state";
 
 export const WORKSPACE_TAB_LABELS = NAVIGATION_TAB_LABELS;
@@ -31,7 +32,10 @@ export function useHiddenNavigationTabs() {
   const saved = AsyncResult.isSuccess(preferences)
     ? preferences.value.hiddenNavigationTabs
     : undefined;
-  return navigationCustomizationAvailable() ? resolveHiddenNavigationTabs(saved) : [];
+  const memberOnly = useMemberOnly();
+  const hidden = navigationCustomizationAvailable() ? resolveHiddenNavigationTabs(saved) : [];
+  // Usage reports the owner's provider accounts; a member's device has none of its own.
+  return memberOnly && !hidden.includes("usage") ? [...hidden, "usage" as const] : hidden;
 }
 
 export function useEnabledNavigationTabs() {

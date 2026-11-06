@@ -22,6 +22,7 @@ import {
   DpopFailureReason,
   type DpopFailureReason as DpopFailureReasonType,
   mcpClientScopes,
+  memberIdFromSessionSubject,
 } from "@t3tools/contracts";
 import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
 import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
@@ -45,6 +46,7 @@ import * as SessionStore from "./SessionStore.ts";
 import { REUSABLE_DEV_SESSION_EXPIRES_AT, resolveReusableDevAuth } from "./ReusableDevAuth.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
 import { DESKTOP_RENDERER_ORIGINS } from "../httpCors.ts";
+import * as EnvironmentMembers from "../persistence/EnvironmentMembers.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
@@ -334,6 +336,17 @@ export class ServerAuthCloudMintJwtSigningError extends Schema.TaggedError<Serve
   }
 }
 
+export class ServerAuthMemberReadError extends Schema.TaggedError<ServerAuthMemberReadError>()(
+  "ServerAuthMemberReadError",
+  {
+    ...serverAuthInternalErrorContext,
+  },
+) {
+  override get message(): string {
+    return "Failed to read the session's member.";
+  }
+}
+
 export const ServerAuthInternalError = Schema.Union([
   ServerAuthBootstrapCredentialValidationError,
   ServerAuthSessionCredentialValidationError,
@@ -357,6 +370,7 @@ export const ServerAuthInternalError = Schema.Union([
   ServerAuthCloudRelayIssuerMissingError,
   ServerAuthCloudHealthJwtSigningError,
   ServerAuthCloudMintJwtSigningError,
+  ServerAuthMemberReadError,
 ]);
 export type ServerAuthInternalError = typeof ServerAuthInternalError.Type;
 export const isServerAuthInternalError = Schema.is(ServerAuthInternalError);
@@ -713,6 +727,7 @@ export const make = Effect.gen(function* () {
   const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
   const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
   const sessions = yield* SessionStore.SessionStore;
+  const members = yield* EnvironmentMembers.EnvironmentMemberRepository;
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
   const digest = yield* Digest.Digest;
   const descriptor = yield* policy.getDescriptor();
@@ -823,17 +838,41 @@ export const make = Effect.gen(function* () {
     );
   };
 
+  // Undefined for the owner's sessions; null for a member who has since been removed.
+  const sessionMember = (
+    subject: string,
+  ): Effect.Effect<
+    EnvironmentMembers.EnvironmentMemberRecord | null | undefined,
+    ServerAuthMemberReadError
+  > => {
+    const memberId = memberIdFromSessionSubject(subject);
+    return memberId === undefined
+      ? Effect.succeed(undefined)
+      : members.getById(memberId).pipe(
+          Effect.map(Option.getOrNull),
+          Effect.mapError((cause) => new ServerAuthMemberReadError({ cause })),
+        );
+  };
+
   const getSessionState: EnvironmentAuth["Service"]["getSessionState"] = (request) =>
     authenticateRequest(request).pipe(
-      Effect.map(
-        (session) =>
-          ({
-            authenticated: true,
-            auth: descriptor,
-            ...authScopeResponse(session.scopes),
-            sessionMethod: session.method,
-            ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
-          }) satisfies AuthSessionState,
+      Effect.flatMap((session) =>
+        sessionMember(session.subject).pipe(
+          Effect.map((member) =>
+            member === null
+              ? ({ authenticated: false, auth: descriptor } satisfies AuthSessionState)
+              : ({
+                  authenticated: true,
+                  auth: descriptor,
+                  ...authScopeResponse(session.scopes),
+                  sessionMethod: session.method,
+                  ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
+                  ...(member === undefined
+                    ? {}
+                    : { member: { id: member.id, label: member.label } }),
+                } satisfies AuthSessionState),
+          ),
+        ),
       ),
       Effect.catchIf(isServerAuthCredentialError, () =>
         Effect.succeed({
@@ -1431,9 +1470,12 @@ const revokePairedClientsThePolicyDisallows = Effect.fn(
   if (!remoteAllowed) disallowed.add(LINK_PAIRED_SUBJECTS.link);
   if (!ManagedLimits.allowsConnect(policy)) disallowed.add(LINK_PAIRED_SUBJECTS.connect);
   if (disallowed.size === 0) return;
+  const connectAllowed = ManagedLimits.allowsConnect(policy);
   const sessions = (yield* stores.sessions.listActive()).filter(
     (session) =>
       disallowed.has(session.subject) ||
+      // Members only arrive through Connect.
+      (!connectAllowed && memberIdFromSessionSubject(session.subject) !== undefined) ||
       // The startup link also pairs browsers on this machine; only a device elsewhere goes.
       (!remoteAllowed &&
         session.subject === INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT &&
@@ -1456,6 +1498,7 @@ const revokePairedClientsThePolicyDisallows = Effect.fn(
 });
 
 export const layer = Layer.effect(EnvironmentAuth, make).pipe(
+  Layer.provideMerge(EnvironmentMembers.layer),
   Layer.provideMerge(PairingGrantStore.layer),
   Layer.provideMerge(SessionStore.layer),
   Layer.provideMerge(EnvironmentAuthPolicy.layer),

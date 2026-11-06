@@ -93,6 +93,8 @@ function makeHarness(
               canCreateBotsWithoutAsking: false,
               personaReady: false,
               connectionIds: [],
+              memberIds: [],
+              memberConnectionIds: [],
               createdAt: "2026-06-20T00:00:00.000Z",
               updatedAt: "2026-06-20T00:00:00.000Z",
               deletedAt: null,

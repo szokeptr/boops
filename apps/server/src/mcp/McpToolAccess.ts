@@ -21,9 +21,16 @@ import {
   type DispatchModeRefusal,
 } from "../orchestration-v2/DispatchModeLimit.ts";
 import { assertBotsMayTalk, type BotFamilyError } from "../bots/botFamily.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as ProjectService from "../project/ProjectService.ts";
-import { assertNotLinked, assertSameLink, callerLinkOrigin } from "./linkOrigin.ts";
+import {
+  assertMayRead,
+  assertNotLinked,
+  assertSameLink,
+  callerLinkOrigin,
+  isMemberCaller,
+} from "./linkOrigin.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
 import {
@@ -123,6 +130,29 @@ const requireThreadCaller = McpInvocationContext.McpInvocationContext.pipe(
 export const reads = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare(
     (params: P) => handle(params),
+    () => Effect.void,
+  );
+
+/** Reads the threads `threads` names; an invited member's work may read only her own. */
+export const readsThreads = <P, A, E, R>(
+  threads: (params: P) => ReadonlyArray<ThreadId | undefined>,
+  handle: (params: P) => Effect.Effect<A, E, R>,
+) =>
+  declare(
+    (params: P) =>
+      Effect.gen(function* () {
+        const caller = yield* loadCaller();
+        if (isMemberCaller(caller)) {
+          for (const threadId of threads(params)) {
+            if (threadId === undefined || threadId === caller.caller?.id) continue;
+            const target = yield* caller.threads
+              .getThreadShell(threadId)
+              .pipe(Effect.mapError(unavailable));
+            if (target !== null) yield* assertMayRead(caller, target);
+          }
+        }
+        return yield* handle(params);
+      }),
     () => Effect.void,
   );
 
@@ -380,6 +410,62 @@ const takesLinkedEnvironment = (tool: Tool.Any) => {
   );
 };
 
+const always = () => true;
+
+/** A task handed to a linked environment would leave the member's fence behind. */
+const staysHere = (params: object) =>
+  !(
+    Predicate.hasProperty(params, "target") &&
+    Predicate.hasProperty(params.target, "environmentId") &&
+    params.target.environmentId !== undefined
+  );
+
+/**
+ * The tools a conversation with an invited member may call: chatting, its own subagents and
+ * threads, and attachments. Every other tool, a new one included, is refused there until listed;
+ * the declarations still fence what the listed ones reach.
+ */
+const MEMBER_CALLER_TOOLS: ReadonlyMap<string, (params: object) => boolean> = new Map([
+  ["delegate_task", staysHere],
+  ...[
+    "orchestrator_capabilities",
+    "task_status",
+    "task_cancel",
+    "t3_background_wait",
+    "t3_workflow_stop",
+    "request_user_action",
+    "create_threads",
+    "t3_thread_read",
+    "t3_thread_wait",
+    "t3_thread_update",
+    "t3_thread_send",
+    "t3_thread_interrupt",
+    "start_fresh_session",
+    "t3_attachment_prepare_upload",
+    "t3_attachment_discard",
+    "t3_thread_send_attachments",
+    "html_preview",
+    "html_render",
+  ].map((tool) => [tool, always] as const),
+]);
+
+/** Refuses a call from a member's conversation, at the cost of one shell read for thread callers. */
+const refuseMemberCaller = Effect.fn("McpToolAccess.refuseMemberCaller")(function* (tool: string) {
+  const scope = yield* McpInvocationContext.McpInvocationContext;
+  if (scope.thread === undefined) return;
+  // Optional so tool tests build without it; the server always has it.
+  const threads = yield* Effect.serviceOption(ThreadManagement.ThreadManagementService);
+  if (Option.isNone(threads)) return;
+  const caller = yield* threads.value
+    .getThreadShell(scope.thread.threadId)
+    .pipe(Effect.mapError(unavailable));
+  if (caller?.linkOrigin?.memberId === undefined) return;
+  return yield* new OrchestratorMcpFailure({
+    code: "capability_denied",
+    message: `${tool} is not available in a conversation with ${caller.linkOrigin.label}, whom the owner invited to chat with this bot.`,
+  });
+});
+
 const linksUnavailable = new OrchestratorMcpFailure({
   code: "orchestration_error",
   message: "This environment cannot reach linked environments.",
@@ -401,21 +487,30 @@ const routed = Effect.fn("McpToolAccess.routed")(function* <Tools extends Record
   const handlers: Record<string, unknown> = { ...checked };
   for (const [name, declaration] of Object.entries<Declaration<unknown>>(declarations)) {
     const tool = toolkit.tools[name];
-    if (tool === undefined || !takesLinkedEnvironment(tool)) continue;
+    if (tool === undefined) continue;
+    const local = handlers[name] as (
+      params: object,
+    ) => Effect.Effect<unknown, Tool.Failure<Tools[keyof Tools]>>;
+    const memberMay = MEMBER_CALLER_TOOLS.get(name);
+    const here = (params: object) =>
+      memberMay?.(params) === true
+        ? local(params)
+        : Effect.andThen(refuseMemberCaller(name), local(params));
+    handlers[name] = here;
+    if (!takesLinkedEnvironment(tool)) continue;
     const remote = remoteCheckOf(declaration);
     if (remote === undefined)
       return yield* Effect.die(
         `${name} takes a linked environment, but it acts as its calling thread, which is here.`,
       );
-    const here = handlers[name] as (
-      params: object,
-    ) => Effect.Effect<unknown, Tool.Failure<Tools[keyof Tools]>>;
     handlers[name] = ({ environmentId, ...params }: { readonly environmentId?: EnvironmentId }) =>
       Effect.gen(function* () {
         const scope = yield* McpInvocationContext.McpInvocationContext;
         const target = PeerForwarding.remoteTarget(scope, environmentId);
         if (target === undefined) return yield* here(params);
         if (scope.linkedEnvironments === false) return yield* PeerForwarding.linkedEnvironmentsOff;
+        // A member's conversation never reaches this environment's links.
+        yield* refuseMemberCaller(name);
         yield* (remote as RemoteCheck<typeof params>)(params);
         if (Option.isNone(forwarding)) return yield* linksUnavailable;
         return yield* forwarding.value.call(scope, tool, target, { ...params, environmentId });

@@ -3,6 +3,7 @@ import {
   type ConnectorConnectionId,
   DEFAULT_BOT_AUTONOMY,
   type CommandId,
+  type EnvironmentMemberId,
   type EventId,
   MAX_SCRIPT_ID_LENGTH,
   type ModelSelection,
@@ -52,6 +53,8 @@ export interface ProjectMetaUpdateCommand {
   readonly canCreateBotsWithoutAsking?: boolean;
   readonly personaReady?: boolean;
   readonly connectionIds?: ReadonlyArray<ConnectorConnectionId>;
+  readonly memberIds?: ReadonlyArray<EnvironmentMemberId>;
+  readonly memberConnectionIds?: ReadonlyArray<ConnectorConnectionId>;
 }
 
 export interface ProjectDeleteCommand {
@@ -243,6 +246,10 @@ export function planProjectCommand(input: {
             : { canCreateBotsWithoutAsking: command.canCreateBotsWithoutAsking }),
           ...(command.personaReady === undefined ? {} : { personaReady: command.personaReady }),
           ...(command.connectionIds === undefined ? {} : { connectionIds: command.connectionIds }),
+          ...(command.memberIds === undefined ? {} : { memberIds: command.memberIds }),
+          ...(command.memberConnectionIds === undefined
+            ? {}
+            : { memberConnectionIds: command.memberConnectionIds }),
           updatedAt: occurredAt,
         },
       });

@@ -127,6 +127,8 @@ export const RelayAgentActivityState = Schema.Struct({
   modelTitle: TrimmedNonEmptyString,
   updatedAt: TrimmedNonEmptyString,
   deepLink: TrimmedNonEmptyString,
+  /** A member's thread: only that member's link hears it. Absent means only owner links do. */
+  memberId: Schema.optional(TrimmedNonEmptyString),
 });
 export type RelayAgentActivityState = typeof RelayAgentActivityState.Type;
 
@@ -712,16 +714,37 @@ export class RelayDpopClientAuth extends HttpApiMiddleware.Service<
   security: { relayDpop: RelayDpopAuthorization },
 }) {}
 
+export const RelayEnvironmentLinkRole = Schema.Literals(["owner", "member"]);
+export type RelayEnvironmentLinkRole = typeof RelayEnvironmentLinkRole.Type;
+
 export const RelayClientEnvironmentRecord = Schema.Struct({
   environmentId: EnvironmentId,
   label: TrimmedNonEmptyString,
   endpoint: RelayManagedEndpoint,
   linkedAt: TrimmedNonEmptyString,
+  /** Absent from older relays, which only had owners. */
+  role: Schema.optional(RelayEnvironmentLinkRole),
 });
 export type RelayClientEnvironmentRecord = typeof RelayClientEnvironmentRecord.Type;
 
+/** Someone invited the signed-in user's verified email to chat with bots on their environment. */
+export const RelayEnvironmentInvite = Schema.Struct({
+  inviteId: TrimmedNonEmptyString,
+  environmentId: EnvironmentId,
+  environmentLabel: TrimmedNonEmptyString,
+  /** What the owner calls the invitee. */
+  memberLabel: TrimmedNonEmptyString,
+  createdAt: TrimmedNonEmptyString,
+});
+export type RelayEnvironmentInvite = typeof RelayEnvironmentInvite.Type;
+
+export const RelayEnvironmentInviteParams = Schema.Struct({ inviteId: TrimmedNonEmptyString });
+export type RelayEnvironmentInviteParams = typeof RelayEnvironmentInviteParams.Type;
+
 export const RelayListEnvironmentsResponse = Schema.Struct({
   environments: Schema.Array(RelayClientEnvironmentRecord),
+  /** Pending invites; absent from older relays. */
+  invites: Schema.optional(Schema.Array(RelayEnvironmentInvite)),
 });
 export type RelayListEnvironmentsResponse = typeof RelayListEnvironmentsResponse.Type;
 
@@ -862,6 +885,8 @@ export const RelayCloudMintCredentialProofPayload = Schema.Struct({
     jkt: TrimmedNonEmptyString,
   }),
   deviceId: Schema.optional(TrimmedNonEmptyString),
+  /** Set for a member's link: the environment issues that member's session, not the owner's. */
+  memberId: Schema.optional(TrimmedNonEmptyString),
   nonce: TrimmedNonEmptyString,
   scope: Schema.Array(Schema.Literal("environment:connect")),
 });
@@ -1135,6 +1160,22 @@ const RelayClientGroup = HttpApiGroup.make("client")
         OpenApi.Description,
         "Deletes the provisioned Cloudflare tunnel while keeping the environment link and its hostname reservation, so a later link re-provisions the tunnel under the same URL. Environments call this when they shut down; Cloudflare bills per provisioned tunnel, so idle tunnels should not outlive their environment.",
       ),
+    HttpApiEndpoint.post(
+      "acceptEnvironmentInvite",
+      "/v1/client/environment-invites/:inviteId/accept",
+      {
+        headers: RelayBearerRequestHeaders,
+        params: RelayEnvironmentInviteParams,
+        success: RelayClientEnvironmentRecord,
+        error: RelayAuthAndInternalErrors,
+      },
+    ).annotate(OpenApi.Summary, "Accept an invite to another user's environment"),
+    HttpApiEndpoint.delete("declineEnvironmentInvite", "/v1/client/environment-invites/:inviteId", {
+      headers: RelayBearerRequestHeaders,
+      params: RelayEnvironmentInviteParams,
+      success: RelayOkResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "Decline an invite"),
     HttpApiEndpoint.get("getT3ChatLink", "/v1/client/t3chat-link", {
       headers: RelayBearerRequestHeaders,
       success: RelayT3ChatLinkResponse,
@@ -1212,6 +1253,14 @@ export const RelayEnvironmentLinkPreferencesRequest = Schema.Struct({
 export type RelayEnvironmentLinkPreferencesRequest =
   typeof RelayEnvironmentLinkPreferencesRequest.Type;
 
+export const RelayMemberInviteRequest = Schema.Struct({
+  /** Matched against the invitee's verified Clerk primary email. */
+  email: TrimmedNonEmptyString,
+  memberLabel: TrimmedNonEmptyString,
+  environmentLabel: TrimmedNonEmptyString,
+});
+export type RelayMemberInviteRequest = typeof RelayMemberInviteRequest.Type;
+
 export const RelayWakeHeldHooksResponse = Schema.Struct({
   pending: Schema.Boolean,
 });
@@ -1262,6 +1311,17 @@ const RelayServerGroup = HttpApiGroup.make("server")
         error: RelayAuthAndInternalErrors,
       },
     ).annotate(OpenApi.Summary, "Update an environment's link preferences"),
+    HttpApiEndpoint.put("putMemberInvite", "/v1/environments/:environmentId/members/:memberId", {
+      params: Schema.Struct({ environmentId: EnvironmentId, memberId: TrimmedNonEmptyString }),
+      payload: RelayMemberInviteRequest,
+      success: RelayOkResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "Invite an email to this environment as a member"),
+    HttpApiEndpoint.delete("removeMember", "/v1/environments/:environmentId/members/:memberId", {
+      params: Schema.Struct({ environmentId: EnvironmentId, memberId: TrimmedNonEmptyString }),
+      success: RelayOkResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "Withdraw a member's invite and link"),
     HttpApiEndpoint.post("wakeHeldHooks", "/v1/environments/:environmentId/hooks/wake", {
       params: Schema.Struct({ environmentId: EnvironmentId }),
       success: RelayWakeHeldHooksResponse,

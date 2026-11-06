@@ -35,6 +35,8 @@ import {
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import { filterSettingsSections } from "./settings-search";
+import { useMemberEnvironments, useMemberOnly } from "../../state/members";
+import { useLeaveEnvironment } from "../members/useLeaveEnvironment";
 import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 
 export function SettingsRouteScreen() {
@@ -109,6 +111,7 @@ function ConfiguredSettingsRouteScreen() {
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   const { savedConnectionsById } = useSavedRemoteConnections();
+  const memberOnly = useMemberOnly();
   const accountLabel = !isLoaded
     ? "Checking"
     : !isSignedIn
@@ -126,7 +129,7 @@ function ConfiguredSettingsRouteScreen() {
           disabled: !isLoaded,
           onPress: () => navigation.navigate("SettingsAuth"),
         },
-        environmentsRow(Object.keys(savedConnectionsById).length),
+        ...(memberOnly ? [] : [environmentsRow(Object.keys(savedConnectionsById).length)]),
         {
           id: "SettingsNotifications",
           icon: "bell.badge",
@@ -166,8 +169,15 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
   const query = workspace?.state.tabs.settings.query ?? "";
   const overflowRows = useOverflowRows();
   const indexSections = useSettingsIndexSections();
+  const memberOnly = useMemberOnly();
+  const leaveSection = useLeaveSection();
   const sections = filterSettingsSections(
-    [{ rows: overflowRows }, { title: "Connections", rows: props.connections }, ...indexSections],
+    [
+      { rows: overflowRows },
+      { title: "Connections", rows: props.connections },
+      ...(memberOnly ? memberOnlySections(indexSections) : indexSections),
+      ...leaveSection,
+    ],
     query,
   );
 
@@ -264,6 +274,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
           "Bots",
           selectedProjectKey !== null ? { value: projectLabel } : undefined,
         ),
+        serverPage("SettingsMembers", "person.2", "Members"),
       ],
     },
     {
@@ -273,6 +284,33 @@ function useSettingsIndexSections(): SettingsListSection[] {
         page("SettingsAbout", "info.circle", "About"),
         page("SettingsArchive", "archivebox", "Archive"),
       ],
+    },
+  ];
+}
+
+/** A member's device keeps only what is its own: how the app looks and what it was told. */
+const MEMBER_SETTINGS_PAGES = new Set<string>(["SettingsAppearance", "SettingsAbout"]);
+
+function memberOnlySections(sections: SettingsListSection[]): SettingsListSection[] {
+  return sections.flatMap((section) => {
+    const rows = section.rows.filter((row) => MEMBER_SETTINGS_PAGES.has(row.id));
+    return rows.length > 0 ? [{ ...section, rows }] : [];
+  });
+}
+
+function useLeaveSection(): SettingsListSection[] {
+  const environments = useMemberEnvironments();
+  const leave = useLeaveEnvironment();
+  if (environments.length === 0) return [];
+  return [
+    {
+      title: "Shared with you",
+      rows: environments.map((environment) => ({
+        id: `leave:${environment.environmentId}`,
+        icon: "arrow.right.circle",
+        label: `Leave ${environment.environmentLabel}`,
+        onPress: () => leave(environment),
+      })),
     },
   ];
 }

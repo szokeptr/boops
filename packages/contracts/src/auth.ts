@@ -122,6 +122,7 @@ export interface SessionGrantInput {
   readonly scopes?: ReadonlyArray<AuthEnvironmentScope> | undefined;
   readonly permissions?: ReadonlyArray<AuthEnvironmentScope> | undefined;
   readonly auth?: { readonly serverUpdateScope?: string | undefined } | undefined;
+  readonly member?: unknown;
 }
 
 export function sessionGrantsScope(
@@ -138,8 +139,10 @@ export function sessionGrantsScope(
 
 export function sessionHasLegacyPermissions(session: SessionGrantInput): boolean {
   const permissions = session.permissions;
+  // A member's narrow grant is deliberate, not a credential from before scopes split.
   return (
     session.authenticated &&
+    session.member === undefined &&
     permissions !== undefined &&
     permissions.every((scope) => legacyScopes.has(scope)) &&
     Object.values(legacyParents).some((parent) => permissions.includes(parent))
@@ -397,6 +400,10 @@ export const AuthSessionState = Schema.Struct({
   permissions: authScopeResponseFields.permissions,
   sessionMethod: Schema.optionalKey(ServerAuthSessionMethod),
   expiresAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /** Present when this session belongs to an invited member, not the owner. */
+  member: Schema.optionalKey(
+    Schema.Struct({ id: TrimmedNonEmptyString, label: TrimmedNonEmptyString }),
+  ),
 });
 export type AuthSessionState = typeof AuthSessionState.Type;
 

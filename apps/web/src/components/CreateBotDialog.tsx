@@ -23,6 +23,7 @@ import { getCustomModelOptionsByInstance } from "../modelSelection";
 import { providerInstanceEntriesFor } from "../providerInstances";
 import { useProjects, waitForThreadShell } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import { useMemberEnvironmentIds } from "../state/members";
 import { projectEnvironment } from "../state/projects";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../state/server";
 import { useEnvironmentsWithScope } from "../state/session";
@@ -75,10 +76,15 @@ function useBotEnvironments(): readonly BotEnvironment[] {
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const canOperate = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope);
+  // A member operates threads on someone else's machine but never creates bots there.
+  const memberEnvironmentIds = useMemberEnvironmentIds(
+    environments.map((environment) => environment.environmentId),
+  );
   return environments
     .filter(
       (environment) =>
         canOperate.has(environment.environmentId) &&
+        !memberEnvironmentIds.has(environment.environmentId) &&
         canCreateProjectInEnvironment(environment.connection.phase) &&
         environment.serverConfig !== null,
     )

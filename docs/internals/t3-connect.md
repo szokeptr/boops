@@ -51,8 +51,11 @@ session token, and possessing the bootstrap credential alone does not permit
 redeeming it without the client's private key.
 
 Both sides authenticate this exchange. The environment accepts only bounded,
-replay-guarded relay proofs for its own identity, linked user, and requested
-operation. Signed environment responses bind the result to the request nonce;
+replay-guarded relay proofs for its own identity, its linked user or one of its
+[members](./members.md), and the requested operation. A member reaches the
+environment through their own link, created when they accept the owner's invite;
+its mint proofs name the member, and the environment, not the relay, decides
+whether that member still exists and which Connect user they are. Signed environment responses bind the result to the request nonce;
 mint responses also bind the credential to the client proof key. The relay
 verifies those bindings before returning a credential. This prevents a different
 process behind the tunnel from impersonating the linked environment. The checks

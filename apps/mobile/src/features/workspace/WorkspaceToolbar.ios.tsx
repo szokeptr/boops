@@ -26,7 +26,7 @@ const SEARCH_LABELS = {
 } as const;
 
 export function WorkspaceToolbar(props: {
-  readonly onAddBot: () => void;
+  readonly onAddBot: (() => void) | undefined;
   readonly sidebar?: boolean;
 }) {
   const workspace = useWorkspaceTabs()!;
@@ -38,6 +38,7 @@ export function WorkspaceToolbar(props: {
   const bottomSearch = duoSearch && sidebarTabs !== "picker";
   // On the Duo, compose belongs to the threads tab, in the detail column's bar when unfolded.
   const nativeToolbarCompose =
+    props.onAddBot !== undefined &&
     Platform.OS === "ios" &&
     deviceType === "duo-folded" &&
     !workspace.settingsOpen &&
@@ -187,7 +188,8 @@ export function WorkspaceToolbar(props: {
           {searchButton}
           {nativeToolbarCompose && foldedSearch ? <Toolbar.Spacer width={8} /> : null}
           {composeButton}
-          {selectedTab !== "threads" ||
+          {!props.onAddBot ||
+          selectedTab !== "threads" ||
           isDuoDevice(deviceType) ||
           (deviceType === "pad" && layout.usesSplitView) ||
           sidebarTabs === "picker" ||

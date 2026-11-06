@@ -57,7 +57,7 @@ export function useThreadHeaderOptions(props: {
         ]
       : []),
     ...(sidebarHeaderItem ? [sidebarHeaderItem] : []),
-    ...(!usesDuoHeader && !props.draft
+    ...(!usesDuoHeader && !props.draft && addBot
       ? [
           withNativeGlassHeaderItem({
             accessibilityLabel: "Add bot",

@@ -22,6 +22,8 @@ export type ThreadHeaderControlsProps = {
   readonly canOpenTerminal: boolean;
   readonly canOperateTerminal: boolean;
   readonly canOpenFiles: boolean;
+  /** A member's chat with a shared bot has no files or terminals to offer. */
+  readonly member?: boolean;
   readonly terminalSessions: ReadonlyArray<TerminalMenuSession>;
   readonly showActionControls?: boolean;
   readonly showDirectFileControl?: boolean;
@@ -106,6 +108,7 @@ function useThreadHeaderActionItems(props: ThreadHeaderControlsProps) {
 /** One "…" menu for phones, where the conversation keeps the bar to itself. */
 export function useThreadOverflowHeaderItems(props: ThreadHeaderControlsProps): HeaderItems {
   const { files, terminal } = useThreadHeaderActionItems(props);
+  if (props.member) return [];
   return [
     {
       accessibilityLabel: "More",
@@ -141,13 +144,13 @@ export function useThreadOverflowHeaderItems(props: ThreadHeaderControlsProps): 
 
 export function useThreadCenterHeaderItems(props: ThreadHeaderControlsProps): HeaderItems {
   const actionItems = useThreadHeaderActionItems(props);
-  return [actionItems.files, actionItems.terminal];
+  return props.member ? [] : [actionItems.files, actionItems.terminal];
 }
 
 export function ThreadHeaderControls(props: ThreadHeaderControlsProps) {
   const openFiles = useOpenFiles(props);
 
-  if (!(props.showActionControls ?? true)) {
+  if (props.member || !(props.showActionControls ?? true)) {
     return null;
   }
 

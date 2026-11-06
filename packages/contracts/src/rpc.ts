@@ -421,6 +421,16 @@ import {
   SourceControlSignInResult,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
+import {
+  EnvironmentMember,
+  MembersError,
+  MembersInviteInput,
+  MembersRemoveInput,
+  MembersSetBotAccessInput,
+  MembersSetBotConnectionAccessInput,
+  MembersSnapshot,
+  MembersUpdateInput,
+} from "./members.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
 import {
   BotArchiveInput,
@@ -555,6 +565,13 @@ export const WS_METHODS = {
   connectorsTest: "connectors.test",
   connectorsSetBotConnection: "connectors.setBotConnection",
   connectorsAnswerRequest: "connectors.answerRequest",
+  membersSubscribe: "members.subscribe",
+  membersInvite: "members.invite",
+  membersUpdate: "members.update",
+  membersRemove: "members.remove",
+  membersSetBotAccess: "members.setBotAccess",
+  membersSetBotConnectionAccess: "members.setBotConnectionAccess",
+  membersLeave: "members.leave",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverSearchAcpRegistry: "server.searchAcpRegistry",
@@ -874,6 +891,40 @@ const WsConnectorsListRpc = Rpc.make(WS_METHODS.connectorsList, {
   payload: Schema.Struct({}),
   success: ConnectorsSnapshot,
   error: ConnectorRpcError,
+});
+/** The owner's members, then the list again after every change. */
+const WsMembersSubscribeRpc = Rpc.make(WS_METHODS.membersSubscribe, {
+  payload: Schema.Struct({}),
+  success: MembersSnapshot,
+  stream: true,
+  error: Schema.Union([MembersError, EnvironmentAuthorizationError]),
+});
+const WsMembersInviteRpc = Rpc.make(WS_METHODS.membersInvite, {
+  payload: MembersInviteInput,
+  success: EnvironmentMember,
+  error: Schema.Union([MembersError, EnvironmentAuthorizationError]),
+});
+const WsMembersUpdateRpc = Rpc.make(WS_METHODS.membersUpdate, {
+  payload: MembersUpdateInput,
+  success: EnvironmentMember,
+  error: Schema.Union([MembersError, EnvironmentAuthorizationError]),
+});
+const WsMembersRemoveRpc = Rpc.make(WS_METHODS.membersRemove, {
+  payload: MembersRemoveInput,
+  error: Schema.Union([MembersError, EnvironmentAuthorizationError]),
+});
+const WsMembersSetBotAccessRpc = Rpc.make(WS_METHODS.membersSetBotAccess, {
+  payload: MembersSetBotAccessInput,
+  error: Schema.Union([MembersError, EnvironmentAuthorizationError]),
+});
+const WsMembersSetBotConnectionAccessRpc = Rpc.make(WS_METHODS.membersSetBotConnectionAccess, {
+  payload: MembersSetBotConnectionAccessInput,
+  error: Schema.Union([MembersError, EnvironmentAuthorizationError]),
+});
+/** A member leaving on their own; the owner's way out is `members.remove`. */
+const WsMembersLeaveRpc = Rpc.make(WS_METHODS.membersLeave, {
+  payload: Schema.Struct({}),
+  error: Schema.Union([MembersError, EnvironmentAuthorizationError]),
 });
 /** The current connections, then the list again after every change. */
 const WsConnectorsSubscribeRpc = Rpc.make(WS_METHODS.connectorsSubscribe, {
@@ -2262,6 +2313,13 @@ export const WsRpcGroup = RpcGroup.make(
   WsBotsArchiveRpc,
   WsBotsUnarchiveRpc,
   WsBotsDeleteRpc,
+  WsMembersSubscribeRpc,
+  WsMembersInviteRpc,
+  WsMembersUpdateRpc,
+  WsMembersRemoveRpc,
+  WsMembersSetBotAccessRpc,
+  WsMembersSetBotConnectionAccessRpc,
+  WsMembersLeaveRpc,
   WsProjectsCreateFromThreadRpc,
   WsProjectsWriteFileRpc,
   WsProjectsMutateRpc,

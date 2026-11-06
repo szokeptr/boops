@@ -16,7 +16,8 @@ interface AdaptiveWorkspaceContextValue {
   readonly panes: WorkspacePaneLayout;
   readonly fileInspector: FileInspectorPaneLayout;
   readonly primarySidebarSearchQuery: string;
-  readonly addBot: () => void;
+  /** Absent when every environment is someone else's: members cannot create bots. */
+  readonly addBot: (() => void) | undefined;
   /** Use `useSelectWorkspaceDetail`, which also works outside the layout. */
   readonly selectDetail?: (detail: WorkspaceDetail) => void;
   readonly registerWorkspaceInspector: (

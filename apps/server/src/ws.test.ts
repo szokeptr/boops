@@ -5,6 +5,7 @@ import { assert, it } from "@effect/vitest";
 import {
   AuthSessionId,
   EnvironmentId,
+  EnvironmentMemberId,
   ProjectId,
   ThreadId,
   ProviderDriverKind,
@@ -136,6 +137,7 @@ import {
   withLateConfigDiscovery,
 } from "./ws.ts";
 import * as Connectors from "./connectors/Connectors.ts";
+import * as Members from "./members/Members.ts";
 
 const snapshotConfig = (fields: Partial<ServerConfig>) =>
   ({ availableEditors: [], settings: {}, ...fields }) as unknown as ServerConfig;
@@ -656,6 +658,107 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
   }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
 );
 
+it.effect("a member's shell holds only her threads in bots shared with her; the owner's none", () =>
+  Effect.gen(function* () {
+    const anna = EnvironmentMemberId.make("anna");
+    const shared = ProjectId.make("project:shared");
+    const unshared = ProjectId.make("project:unshared");
+    const shell = (id: string, projectId: ProjectId, memberId?: EnvironmentMemberId) =>
+      ({
+        id: ThreadId.make(id),
+        projectId,
+        archivedAt: null,
+        createdAt: DateTime.makeUnsafe(0),
+        status: "completed",
+        activityRunStatus: null,
+        pendingRuntimeRequest: null,
+        pendingBackgroundTasks: [],
+        settledOverride: null,
+        settledAt: null,
+        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: id },
+        ...(memberId === undefined
+          ? {}
+          : { linkOrigin: { sessionId: `member:${memberId}`, label: "Anna", memberId } }),
+      }) as unknown as OrchestrationV2ThreadShell;
+    const threads = [
+      shell("owner", shared),
+      shell("anna", shared, anna),
+      shell("anna-unshared", unshared, anna),
+    ];
+    const project = (id: ProjectId, memberIds: ReadonlyArray<EnvironmentMemberId>) =>
+      ({
+        id,
+        title: id,
+        workspaceRoot: `/home/user/${id}`,
+        defaultModelSelection: null,
+        scripts: [],
+        mainThreadId: ThreadId.make("owner"),
+        memberIds,
+        createdAt: "2026-11-06T00:00:00.000Z",
+        updatedAt: "2026-11-06T00:00:00.000Z",
+      }) satisfies OrchestrationProjectShell;
+    const firstSnapshot = (viewer: EnvironmentMemberId | undefined) =>
+      subscribeOrchestrationV2Shell({}, viewer).pipe(
+        Effect.flatMap((stream) => stream.pipe(Stream.take(1), Stream.runCollect)),
+        Effect.map(([item]) => (item?.kind === "snapshot" ? item.snapshot : null)),
+        Effect.provideService(ThreadManagement.ThreadManagementService, {
+          listActiveShellIndex: () => Effect.succeed([]),
+          readShellSnapshot: () =>
+            Effect.succeed(
+              Effect.succeed({
+                schemaVersion: 1,
+                snapshotSequence: 0,
+                threads,
+                archivedThreads: [],
+              }),
+            ),
+        } as unknown as ThreadManagement.ThreadManagementService["Service"]),
+        Effect.provideService(ProjectStore.ProjectStoreV2, {
+          listShells: () => Effect.succeed([project(shared, [anna]), project(unshared, [])]),
+        } as unknown as ProjectStore.ProjectStoreV2["Service"]),
+        Effect.provideService(ProjectService.ProjectService, {
+          getShell: () => Effect.succeedNone,
+        } as unknown as ProjectService.ProjectService["Service"]),
+        Effect.provideServiceEffect(
+          ProjectEnrichment.ProjectEnrichmentService,
+          PubSub.unbounded().pipe(
+            Effect.map(
+              (changes) =>
+                ({
+                  subscribeChanges: PubSub.subscribe(changes),
+                  getAvailable: () =>
+                    Effect.succeed({
+                      repositoryIdentity: null,
+                      faviconPath: null,
+                      repositoryIdentityResolved: false,
+                    }),
+                }) as unknown as ProjectEnrichment.ProjectEnrichmentService["Service"],
+            ),
+          ),
+        ),
+      );
+
+    const owner = yield* firstSnapshot(undefined);
+    assert.deepEqual(
+      owner?.threads.map((thread) => thread.id),
+      [ThreadId.make("owner")],
+    );
+    assert.deepEqual(
+      owner?.projects.map((entry) => entry.id),
+      [shared, unshared],
+    );
+    const member = yield* firstSnapshot(anna);
+    assert.deepEqual(
+      member?.threads.map((thread) => thread.id),
+      [ThreadId.make("anna")],
+    );
+    assert.deepEqual(
+      member?.projects.map((entry) => [entry.id, entry.mainThreadId, entry.memberIds]),
+      [[shared, ThreadId.make("anna"), [anna]]],
+    );
+  }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
+);
+
 // Build the production RPC layer; unrelated capabilities fail if this test calls them.
 const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(DocumentText.DocumentText)({}),
@@ -689,6 +792,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(PeerLinks.PeerLinks)({}),
   Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
   Layer.mock(Connectors.Connectors)({ catalog: [] }),
+  Layer.mock(Members.Members)({}),
   Layer.mock(PortScanner.PortDiscovery)({ trackAgent: () => () => undefined }),
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({}),

@@ -62,6 +62,7 @@ import * as EnvironmentCredentials from "../environments/EnvironmentCredentials.
 import * as HeldHooks from "../hooks/HeldHooks.ts";
 import * as HookInbox from "../hooks/HookInbox.ts";
 import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
+import * as EnvironmentMembers from "../environments/EnvironmentMembers.ts";
 import * as ManagedEndpointAllocations from "../environments/ManagedEndpointAllocations.ts";
 import * as ManagedEndpointProvider from "../environments/ManagedEndpointProvider.ts";
 import * as ManagedTunnelLimits from "../environments/ManagedTunnelLimits.ts";
@@ -107,6 +108,7 @@ describe("managed endpoint provisioning errors", () => {
           Layer.mock(ManagedEndpointProvider.ManagedEndpointProvider, {}),
           Layer.mock(RelayDb.RelayTransactions, {}),
           Layer.mock(HookInbox.HookInbox, {}),
+          Layer.mock(EnvironmentMembers.EnvironmentMembers, {}),
         ),
       ),
       Layer.provide(
@@ -132,6 +134,7 @@ describe("managed endpoint provisioning errors", () => {
           Layer.mock(Devices.Devices, {}),
           Layer.mock(T3ChatAccounts.T3ChatAccounts, { available: false }),
           Layer.mock(ManagedTunnelLimits.ManagedTunnelLimits, {}),
+          Layer.mock(EnvironmentMembers.EnvironmentMembers, {}),
         ),
       ),
       Layer.provideMerge(
@@ -226,6 +229,7 @@ describe("device listing compatibility", () => {
           Layer.mock(ManagedEndpointProvider.ManagedEndpointProvider, {}),
           Layer.mock(RelayDb.RelayTransactions, {}),
           Layer.mock(HookInbox.HookInbox, {}),
+          Layer.mock(EnvironmentMembers.EnvironmentMembers, {}),
         ),
       ),
       Layer.provide(
@@ -244,6 +248,7 @@ describe("device listing compatibility", () => {
           }),
           Layer.mock(T3ChatAccounts.T3ChatAccounts, { available: false }),
           Layer.mock(ManagedTunnelLimits.ManagedTunnelLimits, {}),
+          Layer.mock(EnvironmentMembers.EnvironmentMembers, {}),
         ),
       ),
       Layer.provideMerge(
@@ -313,6 +318,7 @@ describe("Cloudflare rate-limit retry hint", () => {
           Layer.mock(ManagedEndpointProvider.ManagedEndpointProvider, {}),
           Layer.mock(RelayDb.RelayTransactions, {}),
           Layer.mock(HookInbox.HookInbox, {}),
+          Layer.mock(EnvironmentMembers.EnvironmentMembers, {}),
         ),
       ),
       Layer.provide(
@@ -326,6 +332,7 @@ describe("Cloudflare rate-limit retry hint", () => {
           Layer.mock(Devices.Devices, {}),
           Layer.mock(T3ChatAccounts.T3ChatAccounts, { available: false }),
           Layer.mock(ManagedTunnelLimits.ManagedTunnelLimits, {}),
+          Layer.mock(EnvironmentMembers.EnvironmentMembers, {}),
         ),
       ),
       Layer.provideMerge(
@@ -514,6 +521,7 @@ function layerRelayUnlinkTest(input?: {
   readonly getForUser?: EnvironmentLinks.EnvironmentLinks["Service"]["getForUser"];
   readonly revokeForUser?: EnvironmentLinks.EnvironmentLinks["Service"]["revokeForUser"];
   readonly revokeCredential?: EnvironmentCredentials.EnvironmentCredentials["Service"]["revokeForEnvironmentPublicKey"];
+  readonly removeMembersForOwner?: EnvironmentMembers.EnvironmentMembers["Service"]["removeForOwner"];
   readonly prepareDeprovision?: ManagedEndpointProvider.ManagedEndpointProvider["Service"]["prepareDeprovision"];
   readonly deprovision?: ManagedEndpointProvider.ManagedEndpointProvider["Service"]["deprovision"];
   readonly provision?: ManagedEndpointProvider.ManagedEndpointProvider["Service"]["provision"];
@@ -524,6 +532,9 @@ function layerRelayUnlinkTest(input?: {
   return Layer.mergeAll(
     Layer.mock(HookInbox.HookInbox, {
       clear: input?.clearInbox ?? (() => Effect.void),
+    }),
+    Layer.mock(EnvironmentMembers.EnvironmentMembers, {
+      removeForOwner: input?.removeMembersForOwner ?? (() => Effect.void),
     }),
     Layer.succeed(
       RelayDb.RelayTransactions,
@@ -1155,6 +1166,7 @@ describe("relay environment unlink", () => {
         "lookup",
         "transaction",
         "link",
+        "members",
         "credential",
         "deprovision",
       ]);
@@ -1174,6 +1186,15 @@ describe("relay environment unlink", () => {
             Effect.sync(() => {
               calls.push("link");
               return true;
+            }),
+          removeMembersForOwner: (request) =>
+            Effect.sync(() => {
+              expect(request).toEqual({
+                environmentId: "environment-1",
+                environmentPublicKey: "public-key",
+                ownerUserId: "user-1",
+              });
+              calls.push("members");
             }),
           revokeCredential: () =>
             Effect.sync(() => {
@@ -1422,7 +1443,12 @@ describe("relay routing fallback", () => {
                 Layer.mock(ManagedEndpointProvider.ManagedEndpointProvider, {}),
               ),
             ),
-            Layer.provide([layerPublisher, layerSignatures, Layer.mock(HeldHooks.HeldHooks, {})]),
+            Layer.provide([
+              layerPublisher,
+              layerSignatures,
+              Layer.mock(HeldHooks.HeldHooks, {}),
+              Layer.mock(EnvironmentMembers.EnvironmentMembers, {}),
+            ]),
           ),
         ),
         Layer.provide(layerAuth),

@@ -28,6 +28,7 @@ import {
   traceRelayHttpRequestWith,
   withoutCapturedParentSpan,
 } from "./http/Api.ts";
+import * as ClerkUsers from "./auth/ClerkUsers.ts";
 import * as CloudMintSigner from "./auth/CloudMintSigner.ts";
 import * as RelayHttpApi from "./http/Api.ts";
 import { ManagedEndpointZone, RelayApiZone, RelayDeploymentConfig } from "./zone.ts";
@@ -40,6 +41,7 @@ import * as DpopProofs from "./auth/DpopProofs.ts";
 import * as RelayTokens from "./auth/RelayTokens.ts";
 import * as EnvironmentCredentials from "./environments/EnvironmentCredentials.ts";
 import * as EnvironmentLinks from "./environments/EnvironmentLinks.ts";
+import * as EnvironmentMembers from "./environments/EnvironmentMembers.ts";
 import * as ManagedEndpointAllocations from "./environments/ManagedEndpointAllocations.ts";
 import * as LiveActivities from "./agentActivity/LiveActivities.ts";
 import * as RelayDb from "./db.ts";
@@ -335,11 +337,14 @@ export const layer = Api.make(
         Layer.mergeAll(
           CloudflareApiPause.layer,
           EnvironmentLinks.layer,
+          EnvironmentMembers.layer,
           ManagedEndpointAllocations.layer,
           ManagedTunnelLimits.layer,
         ),
       ),
-      Layer.provideMerge(Layer.mergeAll(LiveActivities.layer, T3ChatAccounts.layer)),
+      Layer.provideMerge(
+        Layer.mergeAll(LiveActivities.layer, T3ChatAccounts.layer, ClerkUsers.layer),
+      ),
       Layer.provideMerge(DeliveryAttempts.layer),
       Layer.provideMerge(RelayTokens.layer.pipe(Layer.provideMerge(CloudMintSigner.layer))),
       Layer.provideMerge(

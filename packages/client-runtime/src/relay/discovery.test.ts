@@ -1,6 +1,7 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import type {
   RelayClientEnvironmentRecord,
+  RelayEnvironmentInvite,
   RelayEnvironmentStatusResponse,
 } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
@@ -46,6 +47,14 @@ const environments = [
   },
 ] satisfies ReadonlyArray<RelayClientEnvironmentRecord>;
 
+const invite = {
+  inviteId: "invite-1",
+  environmentId: EnvironmentId.make("environment-shared"),
+  environmentLabel: "Peter's Boops",
+  memberLabel: "Anna",
+  createdAt: "2026-06-01T00:00:00.000Z",
+} satisfies RelayEnvironmentInvite;
+
 function status(
   environment: RelayClientEnvironmentRecord,
   value: "online" | "offline",
@@ -64,6 +73,7 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
   const listedEnvironments =
     yield* Ref.make<ReadonlyArray<RelayClientEnvironmentRecord>>(environments);
   const listFailure = yield* Ref.make<ManagedRelay.ManagedRelayClientError | null>(null);
+  const listedInvites = yield* Ref.make<ReadonlyArray<RelayEnvironmentInvite>>([]);
   const secondListCall = yield* Deferred.make<void>();
   const clerkToken = yield* Ref.make<string | null>("clerk-token");
   const sessionIdentity = { accountId: "account-1" };
@@ -104,7 +114,10 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
         if (failure) {
           return yield* failure;
         }
-        return yield* Ref.get(listedEnvironments);
+        return {
+          environments: yield* Ref.get(listedEnvironments),
+          invites: yield* Ref.get(listedInvites),
+        };
       }),
     getEnvironmentStatus: ({ environmentId }) =>
       Ref.get(statusRequests).pipe(
@@ -114,6 +127,12 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
     createEnvironmentLinkChallenge: () => Effect.die("unused"),
     linkEnvironment: () => Effect.die("unused"),
     unlinkEnvironment: () => Effect.die("unused"),
+    // The relay consumes an invite when it is accepted.
+    acceptEnvironmentInvite: ({ inviteId }) =>
+      Ref.update(listedInvites, (current) =>
+        current.filter((entry) => entry.inviteId !== inviteId),
+      ).pipe(Effect.as({ ...environments[0]!, role: "member" as const })),
+    declineEnvironmentInvite: () => Effect.die("unused"),
     getT3ChatLink: () => Effect.die("unused"),
     createT3ChatLinkRequest: () => Effect.die("unused"),
     unlinkT3Chat: () => Effect.die("unused"),
@@ -170,6 +189,7 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
     layer,
     listCalls,
     listedEnvironments,
+    listedInvites,
     listFailure,
     clerkToken,
     networkStatus,
@@ -310,6 +330,32 @@ describe("RelayEnvironmentDiscovery", () => {
     }),
   );
 
+  it.effect("lists pending invites and forgets one once it is accepted", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* Effect.gen(function* () {
+        const discovery = yield* RelayEnvironmentDiscovery.RelayEnvironmentDiscovery;
+        const requests = yield* Ref.get(harness.statusRequests);
+        for (const environment of environments) {
+          yield* Deferred.succeed(
+            requests.get(environment.environmentId)!,
+            status(environment, "online"),
+          );
+        }
+        yield* Ref.set(harness.listedInvites, [invite]);
+        yield* discovery.refresh;
+        expect((yield* SubscriptionRef.get(discovery.state)).invites).toEqual([invite]);
+
+        const linked = yield* discovery.acceptInvite(invite.inviteId);
+        expect(linked).toMatchObject({
+          environmentId: environments[0]!.environmentId,
+          role: "member",
+        });
+        expect((yield* SubscriptionRef.get(discovery.state)).invites).toEqual([]);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
   it.effect(
     "preserves discovered rows while offline and refreshes after connectivity returns",
     () =>
@@ -360,6 +406,8 @@ describe("RelayEnvironmentDiscovery", () => {
         createEnvironmentLinkChallenge: () => Effect.die("unused"),
         linkEnvironment: () => Effect.die("unused"),
         unlinkEnvironment: () => Effect.die("unused"),
+        acceptEnvironmentInvite: () => Effect.die("unused"),
+        declineEnvironmentInvite: () => Effect.die("unused"),
         getT3ChatLink: () => Effect.die("unused"),
         createT3ChatLinkRequest: () => Effect.die("unused"),
         unlinkT3Chat: () => Effect.die("unused"),

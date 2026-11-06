@@ -79,6 +79,7 @@ import { startOpeningDetail } from "../workspace/useSelectWorkspaceDetail";
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 import { HomeListOptionsProvider } from "../home/home-list-options";
 import { openAddBot } from "../bots/add-bot";
+import { useMemberOnly } from "../../state/members";
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
 import { PaneContext } from "../../components/ui/Pane";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
@@ -604,11 +605,12 @@ function AdaptiveWorkspaceLayoutContent(
   }
   const compactAndroidSettings =
     Platform.OS === "android" && androidSettingsOpen && !layout.usesSplitView;
-  const handleAddBot = () => openAddBot(navigation);
+  const memberOnly = useMemberOnly();
+  const handleAddBot = memberOnly ? undefined : () => openAddBot(navigation);
 
   useHardwareKeyboardCommand("newTask", () => {
-    handleAddBot();
-    return true;
+    handleAddBot?.();
+    return handleAddBot !== undefined;
   });
 
   const inspectorColumnTargetWidth = panes.auxiliaryPaneVisible

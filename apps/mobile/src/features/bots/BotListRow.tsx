@@ -1,5 +1,6 @@
 import type { BotRow, BotStatus } from "@t3tools/client-runtime/state/bot-list";
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import type { ReactNode } from "react";
 import { Platform, Pressable, View, type ViewStyle } from "react-native";
 
@@ -9,6 +10,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Menu } from "../../components/ui/Menu";
 import { cn } from "../../lib/cn";
+import { memberEnvironment, useIsMemberEnvironment } from "../../state/members";
 import { BotAvatarSlot } from "./BotAvatarSlot";
 
 const STATUS_PRESENTATION = {
@@ -72,9 +74,10 @@ export interface BotEntryActions {
   readonly onOpen: (row: BotRow) => void;
   readonly onOpenActivity: (row: BotRow) => void;
   readonly onSetPinned: (row: BotRow, pinned: boolean) => void;
+  readonly onShare?: (row: BotRow) => void;
 }
 
-/** Long-press on a bot: pin or unpin it, or open its activity. */
+/** Long-press on a bot: pin or unpin it, share it, or open its activity. */
 function BotEntryMenu(
   props: BotEntryActions & {
     readonly row: BotRow;
@@ -84,10 +87,24 @@ function BotEntryMenu(
 ) {
   const { row } = props;
   const pinned = row.pinnedAt !== null;
+  // A member's device chats with someone else's bot: pinning and sharing stay with the owner.
+  const member = useIsMemberEnvironment(row.environmentId);
+  const canShare = useAtomValue(memberEnvironment.setBotAccess.permissionAtom(row.environmentId));
   const actions = [
-    pinned
-      ? { id: "unpin", title: "Unpin", image: Platform.OS === "ios" ? "pin.slash" : "keep_off" }
-      : { id: "pin", title: "Pin", image: Platform.OS === "ios" ? "pin" : "keep" },
+    ...(member
+      ? []
+      : [
+          pinned
+            ? {
+                id: "unpin",
+                title: "Unpin",
+                image: Platform.OS === "ios" ? "pin.slash" : "keep_off",
+              }
+            : { id: "pin", title: "Pin", image: Platform.OS === "ios" ? "pin" : "keep" },
+        ]),
+    ...(props.onShare && canShare && !member
+      ? [{ id: "share", title: "Share…", image: Platform.OS === "ios" ? "person.2" : "group" }]
+      : []),
     ...(row.activityThreadCount > 0
       ? [
           {
@@ -108,6 +125,7 @@ function BotEntryMenu(
           props.onSetPinned(row, !pinned);
         }
         if (nativeEvent.event === "activity") props.onOpenActivity(row);
+        if (nativeEvent.event === "share") props.onShare?.(row);
       }}
     >
       {props.children}

@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { splitPinnedBots, type BotRow } from "@t3tools/client-runtime/state/bot-list";
 import type { LegendListRef } from "@legendapp/list/react-native";
 import { LegendList } from "@legendapp/list/react-native";
@@ -34,16 +35,23 @@ import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspace
 import { nativeHeaderScrollEdgeEffects } from "../../native/scrollEdgeEffects";
 import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 import type { WorkspaceState } from "../../state/workspaceModel";
+import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useFabScroll } from "../home/FabScrollContext";
+import { EnvironmentInviteCards } from "../members/EnvironmentInviteCards";
 import { useSearchScrollRestoration } from "../workspace/useSearchScrollRestoration";
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
+import { useBotShareSheet } from "../members/BotShareSheet";
 import { BotListRow, PinnedBotTiles } from "./BotListRow";
 import { useBotNavigation, useSelectedBotKey } from "./useBotNavigation";
 import { useBotRows } from "./useBotRows";
 
 const ESTIMATED_BOT_ROW_HEIGHT = 64;
 
-function deriveEmptyState(catalogState: WorkspaceState, projectCount: number) {
+function deriveEmptyState(
+  catalogState: WorkspaceState,
+  projectCount: number,
+  canCreateBots: boolean,
+) {
   if (catalogState.isLoadingConnections) {
     return {
       title: "Loading environments",
@@ -85,6 +93,13 @@ function deriveEmptyState(catalogState: WorkspaceState, projectCount: number) {
       title: "Connecting to environment",
       detail: "Loading bots from the saved environment.",
       loading: true,
+    };
+  }
+  if (!canCreateBots) {
+    return {
+      title: "No bots shared with you",
+      detail: "When someone shares a bot with you, it shows up here.",
+      loading: false,
     };
   }
   return {
@@ -147,10 +162,15 @@ export function BotListScreen(props: {
   readonly catalogState: WorkspaceState;
   readonly projectCount: number;
   readonly onAddConnection: () => void;
-  readonly onAddBot: () => void;
+  readonly onAddBot: (() => void) | undefined;
 }) {
   const { rows, threads, machineByEnvironmentId, showMachineBadges } = useBotRows(props.visible);
-  const botActions = useBotNavigation();
+  const inviteCount = useAtomValue(
+    relayEnvironmentDiscovery.stateValueAtom,
+    (state) => state.invites.length,
+  );
+  const share = useBotShareSheet();
+  const botActions = { ...useBotNavigation(), onShare: share.onShare };
   const selectedKey = useSelectedBotKey(rows, threads);
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const workspace = useWorkspaceTabs();
@@ -203,10 +223,17 @@ export function BotListScreen(props: {
   };
 
   if (rows.length === 0) {
-    const empty = deriveEmptyState(props.catalogState, props.projectCount);
+    const empty = deriveEmptyState(
+      props.catalogState,
+      props.projectCount,
+      props.onAddBot !== undefined,
+    );
+    // Someone who only has an invite answers it here instead of adding an environment.
+    const invitesInstead = inviteCount > 0 && !props.catalogState.hasConnections;
     const canAddBot = props.catalogState.hasReadyEnvironment;
     const actionLabel = canAddBot ? "Add bot" : "Add environment";
     const onAction = canAddBot ? props.onAddBot : props.onAddConnection;
+    const action = empty.loading ? undefined : onAction;
     return (
       <View className={containerClassName}>
         <ScreenContent surface={sidebarSurface ? "drawer" : "screen"}>
@@ -224,27 +251,30 @@ export function BotListScreen(props: {
             }}
           >
             <View className="w-full max-w-[430px]">
-              <EmptyState
-                title={empty.title}
-                detail={empty.detail}
-                variant="plain"
-                {...(empty.loading
-                  ? {}
-                  : Platform.OS === "android"
-                    ? {
-                        action: (
-                          <FloatingActionButton
-                            label={actionLabel}
-                            icon="plus"
-                            variant="extended"
-                            tone="primary"
-                            onPress={onAction}
-                          />
-                        ),
-                      }
-                    : { actionLabel, onAction })}
-              />
-              {empty.loading ? (
+              {inviteCount > 0 ? <EnvironmentInviteCards /> : null}
+              {invitesInstead ? null : (
+                <EmptyState
+                  title={empty.title}
+                  detail={empty.detail}
+                  variant="plain"
+                  {...(action === undefined
+                    ? {}
+                    : Platform.OS === "android"
+                      ? {
+                          action: (
+                            <FloatingActionButton
+                              label={actionLabel}
+                              icon="plus"
+                              variant="extended"
+                              tone="primary"
+                              onPress={action}
+                            />
+                          ),
+                        }
+                      : { actionLabel, onAction: action })}
+                />
+              )}
+              {empty.loading && !invitesInstead ? (
                 <View className="mt-4 items-center">
                   <AppActivityIndicator colorClassName="accent-icon-muted" />
                 </View>
@@ -325,6 +355,7 @@ export function BotListScreen(props: {
           />
         </View>
       </ScreenContent>
+      {share.sheet}
     </View>
   );
 }

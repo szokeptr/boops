@@ -39,6 +39,12 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.botsArchive]: AuthOrchestrationOperateScope,
   [WS_METHODS.botsUnarchive]: AuthOrchestrationOperateScope,
   [WS_METHODS.botsDelete]: AuthOrchestrationOperateScope,
+  // Inviting someone hands them access to this environment, like a pairing link.
+  [WS_METHODS.membersInvite]: AuthAccessWriteScope,
+  [WS_METHODS.membersUpdate]: AuthAccessWriteScope,
+  [WS_METHODS.membersRemove]: AuthAccessWriteScope,
+  [WS_METHODS.membersSetBotAccess]: AuthAccessWriteScope,
+  [WS_METHODS.membersSetBotConnectionAccess]: AuthAccessWriteScope,
   [WS_METHODS.sourceControlCloneRepository]: AuthSourceControlWriteScope,
   [WS_METHODS.sourceControlPublishRepository]: AuthSourceControlWriteScope,
   [WS_METHODS.sourceControlStar]: AuthSourceControlWriteScope,

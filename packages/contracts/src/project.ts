@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
+import { EnvironmentMemberId } from "./members.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import {
   ConnectorConnectionId,
@@ -227,6 +228,8 @@ export const Project = Schema.Struct({
   /** Server-kept: the bot's home folder has a PERSONA.md, so it has hatched. Absent from older servers. */
   personaReady: Schema.optional(Schema.Boolean),
   connectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
+  memberIds: Schema.optional(Schema.Array(EnvironmentMemberId)),
+  memberConnectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),

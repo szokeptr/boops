@@ -381,6 +381,24 @@ const make = Effect.gen(function* () {
     makeEnvironmentHttpApiClient(httpBaseUrl).pipe(
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
+  // Allocations are keyed by the owner, so a member's link resolves through whoever shared it.
+  // Owners keep the concurrent lookup; only members pay a second read.
+  const findLinkAndAllocation = Effect.fn("relay.environment_connector.find_link_and_allocation")(
+    function* (input: { readonly userId: string; readonly environmentId: string }) {
+      const found = yield* Effect.all(
+        { link: links.getForUser(input), allocation: allocations.get(input) },
+        { concurrency: 2 },
+      );
+      if (!found.link?.member) return found;
+      return {
+        link: found.link,
+        allocation: yield* allocations.get({
+          userId: found.link.member.sharedByUserId,
+          environmentId: input.environmentId,
+        }),
+      };
+    },
+  );
   const resolveManagedEndpoint = Effect.fn("relay.environment_connector.resolve_managed_endpoint")(
     function* (input: {
       readonly operation: "connect" | "status";
@@ -412,13 +430,7 @@ const make = Effect.gen(function* () {
         "relay.environment_id": input.environmentId,
         "relay.operation": "status",
       });
-      const { link, allocation } = yield* Effect.all(
-        {
-          link: links.getForUser(input),
-          allocation: allocations.get(input),
-        },
-        { concurrency: 2 },
-      );
+      const { link, allocation } = yield* findLinkAndAllocation(input);
       if (!link) {
         return yield* new EnvironmentConnectNotAuthorized({
           environmentId: input.environmentId,
@@ -575,13 +587,7 @@ const make = Effect.gen(function* () {
           reason: "client_proof_key_thumbprint_missing",
         });
       }
-      const { link, allocation } = yield* Effect.all(
-        {
-          link: links.getForUser(input),
-          allocation: allocations.get(input),
-        },
-        { concurrency: 2 },
-      );
+      const { link, allocation } = yield* findLinkAndAllocation(input);
       if (!link) {
         return yield* new EnvironmentConnectNotAuthorized({
           environmentId: input.environmentId,
@@ -626,6 +632,7 @@ const make = Effect.gen(function* () {
         clientProofKeyThumbprint: input.clientProofKeyThumbprint,
         cnf: { jkt: input.clientProofKeyThumbprint },
         ...(input.deviceId ? { deviceId: input.deviceId } : {}),
+        ...(link.member ? { memberId: link.member.id } : {}),
         nonce,
         scope: ["environment:connect"],
       } satisfies RelayCloudMintCredentialProofPayload;

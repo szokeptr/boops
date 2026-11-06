@@ -1,5 +1,8 @@
 import {
+  AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
   AuthStandardClientScopes,
+  memberSessionSubject,
   EnvironmentAuthenticatedPrincipal,
   type EnvironmentCloudLinkStateResult,
   type EnvironmentCloudPreferencesRequest,
@@ -67,6 +70,7 @@ import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as Members from "../members/Members.ts";
 import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import { makeRelayEnvironmentClient } from "../relay/relayEnvironmentClient.ts";
 import { loopbackUrlHostForAddress } from "../startupAccess.ts";
@@ -529,6 +533,7 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const managedPolicy = yield* ManagedPolicy.ManagedPolicy;
+  const members = yield* Members.Members;
 
   const withSecrets = Effect.provideService(ServerSecretStore.ServerSecretStore, secrets);
   const withRuntimeFiles = <A, E>(
@@ -1555,10 +1560,12 @@ const make = Effect.gen(function* () {
         issuer: normalizeRelayIssuer(relayIssuer),
         audience: `t3-env:${environmentId}`,
       }).pipe(Effect.provideService(Signature.Signature, signature), Effect.option);
+      const isOwner = Option.isSome(proofOption) && proofOption.value.sub === linkedCloudUserId;
       if (
         Option.isNone(proofOption) ||
         proofOption.value.environmentId !== environmentId ||
-        proofOption.value.sub !== linkedCloudUserId ||
+        // Anyone else is a member, named by the relay from their own link.
+        (!isOwner && proofOption.value.memberId === undefined) ||
         proofOption.value.cnf.jkt !== proofOption.value.clientProofKeyThumbprint ||
         !hasBoundedCloudProofLifetime({ ...proofOption.value, nowSeconds }) ||
         !hasExactScope({ scopes: proofOption.value.scope, expected: "environment:connect" })
@@ -1578,13 +1585,33 @@ const make = Effect.gen(function* () {
         return yield* new CloudLinkProofReplayedError({ request: "mint" });
       }
 
-      const issued = yield* environmentAuth.createPairingLink({
-        scopes: AuthStandardClientScopes,
-        subject: "cloud-connect",
-        ttl: Duration.minutes(2),
-        label: "Boops Connect connect",
-        proofKeyThumbprint: proof.clientProofKeyThumbprint,
-      });
+      const member =
+        isOwner || proof.memberId === undefined
+          ? Option.none()
+          : yield* members
+              .authorizeMint({ cloudUserId: proof.sub, memberId: proof.memberId })
+              .pipe(Effect.catch(internalError("issue-credential")));
+      if (!isOwner && Option.isNone(member)) {
+        return yield* new CloudLinkProofRejectedError({ request: "mint" });
+      }
+      const issued = yield* environmentAuth.createPairingLink(
+        Option.match(member, {
+          onNone: () => ({
+            scopes: AuthStandardClientScopes,
+            subject: "cloud-connect",
+            ttl: Duration.minutes(2),
+            label: "Boops Connect connect",
+            proofKeyThumbprint: proof.clientProofKeyThumbprint,
+          }),
+          onSome: ({ id, label }) => ({
+            scopes: [AuthOrchestrationReadScope, AuthOrchestrationOperateScope],
+            subject: memberSessionSubject(id),
+            ttl: Duration.minutes(2),
+            label: `${label}'s phone`,
+            proofKeyThumbprint: proof.clientProofKeyThumbprint,
+          }),
+        }),
+      );
       const responsePayload = {
         iss: `t3-env:${environmentId}`,
         aud: normalizeRelayIssuer(relayIssuer),

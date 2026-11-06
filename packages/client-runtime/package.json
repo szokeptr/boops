@@ -187,6 +187,10 @@
       "types": "./src/state/connectors.ts",
       "default": "./src/state/connectors.ts"
     },
+    "./state/members": {
+      "types": "./src/state/members.ts",
+      "default": "./src/state/members.ts"
+    },
     "./state/connections": {
       "types": "./src/state/connections.ts",
       "default": "./src/state/connections.ts"

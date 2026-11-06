@@ -44,6 +44,8 @@ import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
 import { BotAvatar } from "../bots/BotAvatar";
 import { BotConversationTabs } from "../bots/BotConversationTabs";
+import { openShareBotDialog } from "../members/ShareBotDialog";
+import { useCanManageMembers } from "../../state/members";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -203,12 +205,23 @@ export const ChatHeader = memo(function ChatHeader({
       }
     });
   };
+  const canShareBot = useCanManageMembers(activeThreadEnvironmentId);
+  const shareBot =
+    isBotConversation && activeProject && canShareBot
+      ? () =>
+          openShareBotDialog({
+            environmentId: activeProject.environmentId,
+            projectId: activeProject.id,
+            name: activeProject.title,
+          })
+      : undefined;
   const { openMenu, closeMenu } = useThreadActionMenu({
     threadRef: isServerThread ? activeThreadRef : null,
     projectCwd: activeProjectCwd,
     onStartRename: startRename,
     onFind: onFindInThread,
     canShareWithGuest,
+    onShareBot: shareBot,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
   const titleMenuTimerRef = useRef<number | null>(null);

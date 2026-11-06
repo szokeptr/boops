@@ -419,6 +419,41 @@ describe("ManagedRelayClient", () => {
     }).pipe(Effect.provide(layerManagedRelayTest(fetchFn)));
   });
 
+  it.effect(
+    "reads pending invites from the listing, and none from relays that predate them",
+    () => {
+      const environment = {
+        environmentId: "environment-1",
+        label: "Peter's Boops",
+        endpoint: {
+          httpBaseUrl: "https://one.example.test",
+          wsBaseUrl: "wss://one.example.test",
+          providerKind: "cloudflare_tunnel",
+        },
+        linkedAt: "2026-06-01T00:00:00.000Z",
+      };
+      const invite = {
+        inviteId: "invite-1",
+        environmentId: "environment-2",
+        environmentLabel: "Sam's Boops",
+        memberLabel: "Anna",
+        createdAt: "2026-06-01T00:00:00.000Z",
+      };
+      const responses = [{ environments: [environment], invites: [invite] }, { environments: [] }];
+      const fetchFn = (() =>
+        Promise.resolve(Response.json(responses.shift()))) satisfies typeof globalThis.fetch;
+
+      return Effect.gen(function* () {
+        const relayClient = yield* ManagedRelay.ManagedRelayClient;
+        const current = yield* relayClient.listEnvironments({ clerkToken: "clerk-token" });
+        expect(current.environments.map((entry) => entry.environmentId)).toEqual(["environment-1"]);
+        expect(current.invites).toEqual([invite]);
+        const older = yield* relayClient.listEnvironments({ clerkToken: "clerk-token" });
+        expect(older.invites).toEqual([]);
+      }).pipe(Effect.provide(layerManagedRelayTest(fetchFn)));
+    },
+  );
+
   it.effect("accepts generic DPoP errors from relays without the optional reason", () => {
     const fetchFn = (() =>
       Promise.resolve(

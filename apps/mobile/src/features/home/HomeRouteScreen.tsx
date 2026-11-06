@@ -62,7 +62,7 @@ export function HomeRouteScreen() {
                 }
           }
         />
-        {Platform.OS === "ios" ? (
+        {Platform.OS === "ios" && addBot ? (
           <Toolbar placement="left">
             <Toolbar.Button accessibilityLabel="Add bot" icon="plus" onPress={addBot} />
           </Toolbar>

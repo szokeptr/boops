@@ -51,7 +51,7 @@ export function WorkspaceSectionToolbar({
   onAddBot,
   showCompose = true,
 }: {
-  readonly onAddBot: () => void;
+  readonly onAddBot: (() => void) | undefined;
   readonly showCompose?: boolean;
 }) {
   const sidebarTabs = useSidebarWorkspaceTabs();
@@ -59,7 +59,11 @@ export function WorkspaceSectionToolbar({
   const deviceType = useDeviceType();
   return (
     <>
-      {showCompose && sidebarTabs !== "picker" && deviceType !== "duo-unfolded" && !compactTabs ? (
+      {onAddBot &&
+      showCompose &&
+      sidebarTabs !== "picker" &&
+      deviceType !== "duo-unfolded" &&
+      !compactTabs ? (
         <Toolbar placement="right">
           <Toolbar.Button accessibilityLabel="Add bot" icon="plus" onPress={onAddBot} />
         </Toolbar>

@@ -1,7 +1,10 @@
 import {
   AuthOrchestrationReadScope,
+  type EnvironmentMemberId,
   EnvironmentHttpApi,
+  memberIdFromSessionSubject,
   type OrchestrationProjectShell,
+  type ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
@@ -18,6 +21,7 @@ import {
   requireEnvironmentScope,
 } from "../auth/http.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import { isThreadVisibleTo, makeShellAudience, readMemberThreads } from "../members/memberFence.ts";
 import { traceLocalHandlerWork } from "../cloud/traceRelayRequest.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
@@ -74,27 +78,31 @@ export const layer = HttpApiBuilder.group(
         ),
     );
 
-    const loadShellSnapshot = Effect.fn("http.orchestration.loadShellSnapshot")(
-      function* (options: {
+    const loadShellSnapshot = Effect.fn("http.orchestration.loadShellSnapshot")(function* (
+      options: {
         readonly omitIdleSubagents: boolean;
         readonly omitOlderSettled: boolean;
-      }) {
-        const { snapshot } = yield* loadSubscriberShellSnapshot({
-          sql,
-          listShellIndex: threadManagement.listActiveShellIndex(),
-          readThreads: (threadIds) =>
-            threadManagement.readShellSnapshot({
-              location: "active",
-              ...(threadIds === undefined ? {} : { threadIds }),
-            }),
-          listProjects: projectStore.listShells(),
-          latestSequence: applicationEvents.latestApplicationSequence,
-          options,
-        });
-        const projects = yield* enrichProjectShells(snapshot.projects);
-        return { ...snapshot, projects };
       },
-    );
+      viewer: EnvironmentMemberId | undefined,
+    ) {
+      const audience = makeShellAudience(viewer, yield* readMemberThreads(sql));
+      const { snapshot: unfiltered } = yield* loadSubscriberShellSnapshot({
+        sql,
+        listShellIndex: threadManagement.listActiveShellIndex(),
+        readThreads: (threadIds) =>
+          threadManagement.readShellSnapshot({
+            location: "active",
+            ...(threadIds === undefined ? {} : { threadIds }),
+          }),
+        listProjects: projectStore.listShells(),
+        latestSequence: applicationEvents.latestApplicationSequence,
+        options,
+        readable: audience.mayRead,
+      });
+      const snapshot = audience.viewSnapshot(unfiltered);
+      const projects = yield* enrichProjectShells(snapshot.projects);
+      return { ...snapshot, projects };
+    });
 
     const loadThreadSnapshot = Effect.fn("http.orchestration.loadThreadSnapshot")(function* (
       threadId: Parameters<typeof threadManagement.getThreadSnapshot>[0],
@@ -158,16 +166,38 @@ export const layer = HttpApiBuilder.group(
       },
     );
 
+    /** A member reads only her own threads; to her, the rest do not exist. */
+    const requireViewerThread = Effect.fnUntraced(function* (
+      session: { readonly subject: string },
+      threadId: ThreadId,
+    ) {
+      const memberId = memberIdFromSessionSubject(session.subject);
+      if (memberId === undefined) return;
+      const shell = yield* threadManagement
+        .getThreadShell(threadId)
+        .pipe(
+          Effect.catch((cause) =>
+            failEnvironmentInternal("orchestration_thread_snapshot_failed", cause),
+          ),
+        );
+      if (shell === null || !isThreadVisibleTo(memberId, shell)) {
+        return yield* failEnvironmentNotFound("thread_not_found");
+      }
+    });
+
     return handlers
       .handle(
         "shellSnapshot",
         Effect.fn("environment.orchestration.shellSnapshot")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
-          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
-          return yield* loadShellSnapshot({
-            omitIdleSubagents: args.query.omitIdleSubagents === "1",
-            omitOlderSettled: args.query.omitOlderSettled === "1",
-          }).pipe(
+          const session = yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          return yield* loadShellSnapshot(
+            {
+              omitIdleSubagents: args.query.omitIdleSubagents === "1",
+              omitOlderSettled: args.query.omitOlderSettled === "1",
+            },
+            memberIdFromSessionSubject(session.subject),
+          ).pipe(
             traceLocalHandlerWork,
             Effect.catch((cause) =>
               failEnvironmentInternal("orchestration_snapshot_failed", cause),
@@ -179,7 +209,10 @@ export const layer = HttpApiBuilder.group(
         "threadSnapshot",
         Effect.fn("environment.orchestration.threadSnapshot")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
-          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          yield* requireViewerThread(
+            yield* requireEnvironmentScope(AuthOrchestrationReadScope),
+            args.params.threadId,
+          );
           const snapshot = yield* loadThreadSnapshot(
             args.params.threadId,
             "orchestration_thread_snapshot_failed",
@@ -194,7 +227,10 @@ export const layer = HttpApiBuilder.group(
         "threadTranscript",
         Effect.fn("environment.orchestration.threadTranscript")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
-          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          yield* requireViewerThread(
+            yield* requireEnvironmentScope(AuthOrchestrationReadScope),
+            args.params.threadId,
+          );
           return yield* threadManagement.getThreadTranscript(args.params.threadId).pipe(
             Effect.provideService(ServerEnvironment.ServerEnvironmentIdentity, environment),
             traceLocalHandlerWork,
@@ -219,7 +255,10 @@ export const layer = HttpApiBuilder.group(
         "threadBoundedSnapshot",
         Effect.fn("environment.orchestration.threadBoundedSnapshot")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
-          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          yield* requireViewerThread(
+            yield* requireEnvironmentScope(AuthOrchestrationReadScope),
+            args.params.threadId,
+          );
           const snapshot = yield* loadThreadSnapshotWindow(
             args.params.threadId,
             undefined,
@@ -245,7 +284,10 @@ export const layer = HttpApiBuilder.group(
         "threadHistoryPage",
         Effect.fn("environment.orchestration.threadHistoryPage")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
-          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          yield* requireViewerThread(
+            yield* requireEnvironmentScope(AuthOrchestrationReadScope),
+            args.params.threadId,
+          );
           const decoded = yield* Effect.try(() =>
             decodeThreadHistoryCursor(args.query.cursor),
           ).pipe(Effect.result);

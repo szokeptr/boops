@@ -43,6 +43,7 @@ import {
   TurnItemId,
 } from "./baseSchemas.ts";
 import { AuthMcpClientAccess } from "./auth.ts";
+import { EnvironmentMemberId } from "./members.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
@@ -117,6 +118,8 @@ export const OrchestrationV2LinkOrigin = Schema.Struct({
   sessionId: TrimmedNonEmptyString,
   label: Schema.String,
   access: Schema.optional(AuthMcpClientAccess),
+  /** An invited member's work: fenced by member rather than session, reads included. */
+  memberId: Schema.optional(EnvironmentMemberId),
 });
 export type OrchestrationV2LinkOrigin = typeof OrchestrationV2LinkOrigin.Type;
 

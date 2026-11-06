@@ -1,0 +1,294 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "a4a1f93a-5fe3-4cb9-901a-bdbe2d78edab",
+  "prevIds": ["4413755a-63f1-4f93-bdc9-d1357283c23e"],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "public", "relay_environment_invites"],
+      "writes": [
+        "s|tbl|public.relay_environment_invites",
+        "n|tbl|public.relay_environment_invites",
+        "e|tbl|public.relay_environment_invites",
+        "n|rel|public.relay_environment_invites",
+        "n|type|public.relay_environment_invites",
+        "n|rel|public.relay_environment_invites_pkey"
+      ],
+      "reads": ["n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "relay_environment_links", "role"],
+      "writes": [
+        "s|col|public.relay_environment_links.role",
+        "n|col|public.relay_environment_links.role",
+        "e|col|public.relay_environment_links.role"
+      ],
+      "reads": ["n|tbl|public.relay_environment_links", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "relay_environment_links", "member_id"],
+      "writes": [
+        "s|col|public.relay_environment_links.member_id",
+        "n|col|public.relay_environment_links.member_id",
+        "e|col|public.relay_environment_links.member_id"
+      ],
+      "reads": ["n|tbl|public.relay_environment_links", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "relay_environment_links", "shared_by_user_id"],
+      "writes": [
+        "s|col|public.relay_environment_links.shared_by_user_id",
+        "n|col|public.relay_environment_links.shared_by_user_id",
+        "e|col|public.relay_environment_links.shared_by_user_id"
+      ],
+      "reads": ["n|tbl|public.relay_environment_links", "n|sch|public"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "relay_environment_invites",
+        "idx_relay_environment_invites_email"
+      ],
+      "writes": [
+        "s|idx|public.idx_relay_environment_invites_email",
+        "n|idx|public.idx_relay_environment_invites_email",
+        "e|idx|public.idx_relay_environment_invites_email",
+        "n|rel|public.idx_relay_environment_invites_email"
+      ],
+      "reads": [
+        "n|tbl|public.relay_environment_invites",
+        "n|sch|public",
+        "n|col|public.relay_environment_invites.email"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "relay_environment_invites",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_invites",
+        "name": "environment_id",
+        "type": "varchar(191)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_invites",
+        "name": "member_id",
+        "type": "varchar(191)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_invites",
+        "name": "environment_public_key",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_invites",
+        "name": "email",
+        "type": "varchar(320)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_invites",
+        "name": "member_label",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_invites",
+        "name": "environment_label",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_invites",
+        "name": "created_at",
+        "type": "varchar(64)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_invites",
+        "name": "updated_at",
+        "type": "varchar(64)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_links",
+        "name": "role",
+        "type": "varchar(16)",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'owner'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_links",
+        "name": "member_id",
+        "type": "varchar(191)",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_links",
+        "name": "shared_by_user_id",
+        "type": "varchar(191)",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_invites",
+        "name": "idx_relay_environment_invites_email",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "email",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "relay_environment_invites",
+        "name": "relay_environment_invites_pkey",
+        "columns": ["environment_id", "member_id"],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    }
+  ]
+}
