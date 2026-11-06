@@ -2,13 +2,13 @@ import { describe, expect, it } from "vite-plus/test";
 
 import "~/index.css";
 import { render } from "../../../test/render";
-import { BotAvatar, type BotAvatarSize } from "./BotAvatar";
+import { BotAvatar } from "./BotAvatar";
 
 const avatar = { hue: "teal", accessory: "crown", glow: "mint" } as const;
 const statuses = ["idle", "working", "needs-you", "dozing"] as const;
 
 describe("BotAvatar", () => {
-  it("lays the ticking dashes over sprite row 10, cols 4–11, only while working", async () => {
+  it("lays the scan loop exactly over the visor, only while working", async () => {
     for (const status of statuses) {
       await using screen = await render(
         <BotAvatar avatar={avatar} name="Juniper" status={status} size={48} />,
@@ -17,40 +17,37 @@ describe("BotAvatar", () => {
           router: false,
         },
       );
-      const dashes = screen.container.querySelector<HTMLImageElement>(
-        '[data-slot="bot-avatar-dashes"]',
+      const scan = screen.container.querySelector<HTMLImageElement>(
+        '[data-slot="bot-avatar-scan"]',
       );
       if (status !== "working") {
-        expect(dashes).toBeNull();
+        expect(scan).toBeNull();
         continue;
       }
       const sprite = screen.getByRole("img", { name: "Juniper, working" }).element();
       const box = sprite.getBoundingClientRect();
-      const strip = dashes!.getBoundingClientRect();
+      const overlay = scan!.getBoundingClientRect();
+      // The visor is x 13, y 26, 38 × 22 on the 64-unit canvas.
       expect({
-        left: strip.left - box.left,
-        top: strip.top - box.top,
-        width: strip.width,
-        height: strip.height,
-      }).toEqual({ left: 12, top: 30, width: 24, height: 3 });
-      expect(dashes!.src).toMatch(/^data:image\/png;base64,/);
+        left: overlay.left - box.left,
+        top: overlay.top - box.top,
+        width: overlay.width,
+        height: overlay.height,
+      }).toEqual({ left: 9.75, top: 19.5, width: 28.5, height: 16.5 });
+      expect(scan!.src).toMatch(/^data:image\/png;base64,/);
     }
   });
 
-  it("shows a status dot below 32px and a speech bubble from 32px", async () => {
-    const cases: ReadonlyArray<
-      readonly [BotAvatarSize, (typeof statuses)[number], "dot" | "bubble" | null]
-    > = [
-      [16, "needs-you", "dot"],
-      [16, "working", "dot"],
-      [16, "dozing", null],
-      [16, "idle", null],
-      [32, "needs-you", "bubble"],
-      [32, "dozing", "bubble"],
-      [32, "working", null],
-      [64, "needs-you", "bubble"],
-    ];
-    for (const [size, status, mark] of cases) {
+  it("shows a status dot only below 24px", async () => {
+    const cases = [
+      [16, "needs-you", true],
+      [16, "working", true],
+      [16, "dozing", false],
+      [16, "idle", false],
+      [32, "needs-you", false],
+      [32, "working", false],
+    ] as const;
+    for (const [size, status, dot] of cases) {
       await using screen = await render(
         <BotAvatar avatar={null} name="Juniper" status={status} size={size} />,
         {
@@ -58,14 +55,8 @@ describe("BotAvatar", () => {
           router: false,
         },
       );
-      const found = (slot: string) =>
-        screen.container.querySelector(`[data-slot="bot-avatar-${slot}"]`) !== null;
-      expect({ size, status, dot: found("dot"), bubble: found("bubble") }).toEqual({
-        size,
-        status,
-        dot: mark === "dot",
-        bubble: mark === "bubble",
-      });
+      const found = screen.container.querySelector('[data-slot="bot-avatar-dot"]') !== null;
+      expect({ size, status, dot: found }).toEqual({ size, status, dot });
     }
   });
 });

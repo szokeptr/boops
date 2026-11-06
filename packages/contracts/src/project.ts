@@ -176,7 +176,7 @@ export const BOT_AVATAR_ACCESSORIES = [
 ] as const;
 export const BOT_AVATAR_GLOWS = ["mint", "cyan", "white"] as const;
 
-/** A bot's resolved Screenie look, stored so a rename keeps it. */
+/** A bot's resolved avatar look, stored so a rename keeps it. */
 /**
  * How far a bot reaches on its machine. `full` acts as the user anywhere; `home-folder` keeps
  * writes and commands inside the bot's home folder. Applies from the bot's next session.
