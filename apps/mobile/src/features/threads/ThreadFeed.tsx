@@ -1491,7 +1491,7 @@ function OpenSenderThreadButton(props: {
   );
 }
 
-/** Routine prompts are long, repeated runbooks; a folded bubble keeps them out of the way. */
+/** A routine wake is an event in the thread, not a turn by anyone; it reads as a faded status line. */
 function ThreadAutomationMessageRow(props: {
   readonly environmentId: EnvironmentId;
   readonly text: string;
@@ -1500,7 +1500,6 @@ function ThreadAutomationMessageRow(props: {
   readonly timestampLabel: string;
   readonly expanded: boolean;
   readonly onToggle: () => void;
-  readonly bubbleColor: ColorValue;
   readonly bubbleMaxWidth: number | "85%";
   readonly contentMaxWidth: number;
   readonly iconSubtleColor: ColorValue;
@@ -1517,64 +1516,53 @@ function ThreadAutomationMessageRow(props: {
       : routineLabelText(props.routine);
 
   return (
-    <View className="mb-5 items-end">
-      <View
-        className="min-w-0 rounded-[20px]"
-        style={{
-          backgroundColor: props.bubbleColor,
-          maxWidth: props.bubbleMaxWidth,
-          ...(props.expanded ? { width: props.bubbleMaxWidth } : null),
+    <View className="mb-5 items-center">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Routine: ${summary}, ${props.timestampLabel}`}
+        accessibilityHint={`Double tap to ${props.expanded ? "hide" : "show"} the prompt.`}
+        accessibilityState={{ expanded: props.expanded }}
+        hitSlop={8}
+        className="max-w-full flex-row items-center gap-1 px-2 py-1 opacity-70"
+        onPress={() => {
+          void Haptics.selectionAsync();
+          props.onToggle();
         }}
       >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Routine: ${summary}`}
-          accessibilityHint={`Double tap to ${props.expanded ? "hide" : "show"} the prompt.`}
-          accessibilityState={{ expanded: props.expanded }}
-          hitSlop={4}
-          className="min-h-10 flex-row items-center gap-1.5 px-3.5 py-2"
-          onPress={() => {
-            void Haptics.selectionAsync();
-            props.onToggle();
-          }}
-        >
-          <SymbolView
-            name="calendar.badge.clock"
-            size={14}
-            weight="medium"
-            tintColorClassName="accent-user-bubble-foreground-muted"
-            type="monochrome"
-          />
-          <Text className="font-t3-medium text-sm text-user-bubble-foreground-muted">Routine</Text>
-          <Text numberOfLines={1} className="min-w-0 shrink text-sm text-user-bubble-foreground">
-            {summary}
-          </Text>
-          <ThreadDisclosureChevron
-            expanded={props.expanded}
-            collapsedDirection="down"
-            size={11}
-            tintColor={props.iconSubtleColor}
-          />
-        </Pressable>
-        {props.expanded ? (
-          <View className="px-3.5 pb-2.5">
-            <MarkdownImageAvailableWidthContext value={props.contentMaxWidth}>
-              <UserMessageContent
-                text={renderAssistantCitationsAsText(props.text)}
-                environmentId={props.environmentId}
-                context={props.context}
-                markdownStyles={props.markdownStyles}
-                reviewCommentColors={props.reviewCommentColors}
-                skills={props.skills}
-                linkHandlers={props.linkHandlers}
-                renderImage={props.renderImage}
-              />
-            </MarkdownImageAvailableWidthContext>
-          </View>
-        ) : null}
-      </View>
+        <SymbolView
+          name="calendar.badge.clock"
+          size={11}
+          tintColor={props.iconSubtleColor}
+          type="monochrome"
+        />
+        <Text numberOfLines={1} className="min-w-0 shrink text-xs text-foreground-muted">
+          {summary}
+        </Text>
+        <Text className="text-xs tabular-nums text-foreground-muted">
+          {` · ${props.timestampLabel}`}
+        </Text>
+      </Pressable>
       {props.expanded ? (
-        <View className="mt-1 flex-row items-center justify-end gap-2 pr-0.5">
+        <View
+          className="mt-1.5 min-w-0 rounded-2xl border border-separator px-3.5 py-2.5"
+          style={{ width: props.bubbleMaxWidth }}
+        >
+          <MarkdownImageAvailableWidthContext value={props.contentMaxWidth}>
+            <UserMessageContent
+              text={renderAssistantCitationsAsText(props.text)}
+              environmentId={props.environmentId}
+              context={props.context}
+              markdownStyles={props.markdownStyles}
+              reviewCommentColors={props.reviewCommentColors}
+              skills={props.skills}
+              linkHandlers={props.linkHandlers}
+              renderImage={props.renderImage}
+            />
+          </MarkdownImageAvailableWidthContext>
+        </View>
+      ) : null}
+      {props.expanded ? (
+        <View className="mt-1 flex-row items-center justify-center gap-3">
           {props.routine ? (
             <Pressable
               accessibilityRole="link"
@@ -1584,9 +1572,6 @@ function ThreadAutomationMessageRow(props: {
               <Text className="font-t3-medium text-xs text-foreground-secondary">Open routine</Text>
             </Pressable>
           ) : null}
-          <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
-            {props.timestampLabel}
-          </Text>
           <UserMessageCopyButton
             text={props.text}
             onCopy={undefined}
@@ -2013,11 +1998,10 @@ function renderFeedEntry(
           timestampLabel={timestampLabel}
           expanded={props.expandedWorkRows[rowId] ?? false}
           onToggle={() => props.onToggleWorkRow(rowId, entry.id)}
-          bubbleColor={userBubbleColor}
           bubbleMaxWidth={props.duoColumns ? "85%" : props.userBubbleMaxWidth}
           contentMaxWidth={props.userBubbleMaxWidth - USER_BUBBLE_HORIZONTAL_PADDING * 2}
           iconSubtleColor={iconSubtleColor}
-          markdownStyles={markdownStyles.user}
+          markdownStyles={markdownStyles.assistant}
           reviewCommentColors={props.reviewCommentColors}
           skills={props.skills}
           linkHandlers={props.markdownLinkHandlers}

@@ -78,6 +78,7 @@ import {
   IDLE_COMPACTION_TITLES,
   IDLE_COMPACTING_LABELS,
   resolveUserMessagePresentation,
+  withoutSilentRoutineWakes,
 } from "@t3tools/client-runtime/user-message";
 import { getQuestionAnswerExchange } from "@t3tools/client-runtime/work-log/user-input";
 
@@ -1700,7 +1701,10 @@ export function deriveDirectMessageFeed(
   const folded = foldBotExchanges(kept, sentBotMessages(feed, parentProjectId));
   const last = folded.at(-1);
   const replying = last?.type === "message" && last.message.streaming;
-  return typingSince === null || replying ? folded : [...folded, thinkingRow(typingSince, null)];
+  return withoutSilentRoutineWakes(
+    typingSince === null || replying ? folded : [...folded, thinkingRow(typingSince, null)],
+    (entry) => (entry.type === "message" && entry.message.role === "user" ? entry.message : null),
+  );
 }
 
 /**

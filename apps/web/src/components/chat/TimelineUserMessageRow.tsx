@@ -84,11 +84,7 @@ import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import { WorkflowOpeningBlock } from "./WorkflowOpeningBlock";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
-import {
-  MESSAGE_HEADING_LEVEL,
-  MessageAuthorHeading,
-  TimelineRowTimestamp,
-} from "./TimelineRowParts";
+import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
 import { UserMessageContextReferenceChip } from "./UserMessageContextChips";
 import {
   resolvePreviewAnnotationImage,
@@ -301,7 +297,7 @@ function SystemMessageRow({ text }: { text: string }) {
   );
 }
 
-/** Automation prompts are long, repeated runbooks; a folded bubble keeps them out of the way. */
+/** A routine wake is an event in the thread, not a turn by anyone; it reads as a faded status line. */
 function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const [expanded, setExpanded] = useState(false);
@@ -316,41 +312,47 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   const bodyMounted = expanded || ctx.findActive;
 
   return (
-    <div className="group flex flex-col items-end gap-1" data-user-message-attribution="automation">
-      {row.message.inputIntent === "steer" ||
-      row.message.inputIntent === "promoted_queued_to_steer" ? (
-        <UserMessageIntentMarker intent={row.message.inputIntent} />
-      ) : null}
-      <div
-        className={cn(
-          "min-w-0 max-w-[80%] rounded-2xl bg-message text-message-foreground",
-          BUBBLE_CHIP_CLASS_NAME,
-          expanded && "w-full",
-        )}
+    <div
+      className="mx-auto flex w-full max-w-(--chat-content-max-width) flex-col items-center gap-1.5"
+      data-user-message-attribution="automation"
+    >
+      <MessageAuthorHeading>Routine</MessageAuthorHeading>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-label={`Routine: ${summary}. ${expanded ? "Hide" : "Show"} prompt`}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground/70 text-xs transition-colors hover:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
       >
-        <MessageAuthorHeading>Routine</MessageAuthorHeading>
-        <FoldedMessageHeader
-          icon={CalendarClockIcon}
-          label="Routine"
-          summary={summary}
-          expanded={expanded}
-          onToggle={() => setExpanded((value) => !value)}
+        <CalendarClockIcon aria-hidden="true" className="size-3 shrink-0" />
+        <span className="truncate">{summary}</span>
+        <span aria-hidden="true">·</span>
+        <span className="shrink-0 tabular-nums">
+          {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
+        </span>
+        <ChevronDownIcon
+          aria-hidden="true"
+          className={cn("size-3 shrink-0 transition-transform", expanded && "rotate-180")}
         />
-        {bodyMounted ? (
-          // `beforematch` does not bubble, so the reveal listener sits on the hidden fold itself.
-          <div
-            ref={revealRef}
-            hidden={!expanded}
-            className={cn("px-3 pb-3", !ctx.findActive && "max-h-96 overflow-auto")}
-            data-thread-find-text="true"
-          >
-            <UserMessageBody text={text} skills={ctx.skills} markdownCwd={ctx.markdownCwd} />
-          </div>
-        ) : null}
-      </div>
+      </button>
+      {bodyMounted ? (
+        // `beforematch` does not bubble, so the reveal listener sits on the hidden fold itself.
+        <div
+          ref={revealRef}
+          hidden={!expanded}
+          className={cn(
+            "w-full max-w-[80%] rounded-xl border border-border/70 px-3 py-2 text-muted-foreground text-sm",
+            BUBBLE_CHIP_CLASS_NAME,
+            !ctx.findActive && "max-h-96 overflow-auto",
+          )}
+          data-thread-find-text="true"
+        >
+          <UserMessageBody text={text} skills={ctx.skills} markdownCwd={ctx.markdownCwd} />
+        </div>
+      ) : null}
       <UserMessageProjectedStatus row={row} />
       {expanded ? (
-        <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
+        <div className="flex w-full max-w-[80%] items-center justify-center text-xs">
           <div className="flex shrink-0 items-center gap-2">
             {routine ? (
               <Link
@@ -361,11 +363,6 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
                 Open routine
               </Link>
             ) : null}
-            <TimelineRowTimestamp
-              createdAt={row.message.createdAt}
-              timestampFormat={ctx.timestampFormat}
-              alwaysVisible
-            />
             <div className="flex items-center gap-0.5">
               {typeof revertTurnCount === "number" && (
                 <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />

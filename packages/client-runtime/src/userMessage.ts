@@ -170,6 +170,24 @@ export function resolveUserMessagePresentation(message: {
   };
 }
 
+/**
+ * A routine that ran and had nothing to say leaves no trace in a bot's chat. Its wake stays while
+ * something from the run (a reply, a card, the typing row) follows it.
+ */
+export function withoutSilentRoutineWakes<Row>(
+  rows: ReadonlyArray<Row>,
+  userMessageOf: (row: Row) => Parameters<typeof resolveUserMessagePresentation>[0] | null,
+): Row[] {
+  return rows.filter((row, index) => {
+    const message = userMessageOf(row);
+    if (message === null || resolveUserMessagePresentation(message).attribution !== "automation") {
+      return true;
+    }
+    const next = rows[index + 1];
+    return next !== undefined && userMessageOf(next) === null;
+  });
+}
+
 type GroupableUserMessage = Parameters<typeof resolveUserMessagePresentation>[0] & {
   readonly inputIntent?: OrchestrationV2UserMessageInputIntent;
 };

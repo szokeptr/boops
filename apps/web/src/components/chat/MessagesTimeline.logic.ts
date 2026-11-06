@@ -1,5 +1,8 @@
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
-import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+import {
+  resolveUserMessagePresentation,
+  withoutSilentRoutineWakes,
+} from "@t3tools/client-runtime/user-message";
 import { getQuestionAnswerExchange } from "@t3tools/client-runtime/work-log/user-input";
 import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
 import * as DateTime from "effect/DateTime";
@@ -2399,8 +2402,16 @@ function directMessageRows(
         : resolveUserMessagePresentation(row.message).attribution === null
           ? "user"
           : null;
-  const folded = foldBotExchanges(kept, sent);
-  const result = folded.map((row, index): MessagesTimelineRow => {
+  const exchanged = foldBotExchanges(kept, sent);
+  const last = exchanged.at(-1);
+  const replying = last?.kind === "message" && last.message.streaming === true;
+  if (activity.typing && !replying) {
+    exchanged.push({ kind: "working", id: "working-indicator-row", createdAt: activity.startedAt });
+  }
+  const folded = withoutSilentRoutineWakes(exchanged, (row) =>
+    row.kind === "message" && row.message.role === "user" ? row.message : null,
+  );
+  return folded.map((row, index): MessagesTimelineRow => {
     if (row.kind !== "message") return row;
     const own = side(row);
     return {
@@ -2411,12 +2422,6 @@ function directMessageRows(
       continuesSteer: false,
     };
   });
-  const last = result.at(-1);
-  const replying = last?.kind === "message" && last.message.streaming === true;
-  if (activity.typing && !replying) {
-    result.push({ kind: "working", id: "working-indicator-row", createdAt: activity.startedAt });
-  }
-  return result;
 }
 
 function timelineRowIsOwnUserMessage(

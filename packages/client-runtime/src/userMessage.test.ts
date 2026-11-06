@@ -8,6 +8,7 @@ import {
   resolveUserMessageGrouping,
   resolveUserMessagePresentation,
   routineLabelText,
+  withoutSilentRoutineWakes,
 } from "./userMessage.ts";
 
 describe("resolveUserMessageGrouping", () => {
@@ -317,5 +318,34 @@ describe("resolveUserMessagePresentation", () => {
         routine: undefined,
       });
     }
+  });
+});
+
+describe("withoutSilentRoutineWakes", () => {
+  const wake = {
+    role: "user",
+    text: "Check your notes.",
+    routine: {
+      taskId: ScheduledTaskId.make("task:check"),
+      name: "Check",
+      trigger: "interval",
+    },
+  } as const;
+  const reply = { role: "assistant", text: "Done." };
+  const own = { role: "user", text: "hi" };
+  const typing = { role: "typing", text: "" };
+  const userMessageOf = (row: { readonly role: string; readonly text: string }) =>
+    row.role === "user" ? row : null;
+
+  it("drops wakes nothing followed, and keeps ones that led to a reply or are still running", () => {
+    const rows = [wake, wake, own, wake, reply, wake, wake, typing];
+    expect(withoutSilentRoutineWakes(rows, userMessageOf)).toEqual([
+      own,
+      wake,
+      reply,
+      wake,
+      typing,
+    ]);
+    expect(withoutSilentRoutineWakes([reply, wake], userMessageOf)).toEqual([reply]);
   });
 });
