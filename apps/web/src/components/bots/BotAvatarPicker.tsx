@@ -1,5 +1,10 @@
-import { type BotHatchStage, visorColors } from "@t3tools/client-runtime/bot-avatar";
-import { BOT_AVATAR_ACCESSORIES, BOT_AVATAR_HUES, type ProjectAvatar } from "@t3tools/contracts";
+import { avatarColors, type BotHatchStage } from "@t3tools/client-runtime/bot-avatar";
+import {
+  BOT_AVATAR_ACCESSORIES,
+  BOT_AVATAR_HUES,
+  BOT_AVATAR_SHAPES,
+  type ProjectAvatar,
+} from "@t3tools/contracts";
 import { familySpec, rerollSpec } from "@t3tools/shared/botAvatar";
 import { DicesIcon } from "lucide-react";
 
@@ -48,9 +53,28 @@ export function BotAvatarPicker({
             aria-label={label(hue)}
             aria-pressed={current.hue === hue}
             className={cn(OPTION, "size-6")}
-            style={{ backgroundColor: visorColors({ ...current, hue }).body }}
+            style={{ backgroundColor: avatarColors({ ...current, hue }).body }}
             onClick={() => onChange({ ...current, hue })}
           />
+        ))}
+      </div>
+      <div role="group" aria-label="Shape" className="flex flex-wrap gap-1.5">
+        {BOT_AVATAR_SHAPES.map((shape) => (
+          <button
+            key={shape}
+            type="button"
+            aria-label={label(shape)}
+            aria-pressed={current.shape === shape}
+            className={cn(OPTION, "p-1")}
+            onClick={() => onChange({ ...current, shape })}
+          >
+            <BotAvatar
+              avatar={{ ...current, shape, accessory: "none" }}
+              name={name}
+              status="idle"
+              size={32}
+            />
+          </button>
         ))}
       </div>
       <div role="group" aria-label="Accessory" className="flex flex-wrap gap-1.5">

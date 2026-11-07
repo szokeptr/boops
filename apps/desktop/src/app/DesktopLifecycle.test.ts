@@ -46,6 +46,8 @@ function layerElectronApp(
     relaunch,
     setPath: () => Effect.void,
     setName: () => Effect.void,
+    userAgentFallback: Effect.succeed(""),
+    setUserAgentFallback: () => Effect.void,
     setAboutPanelOptions: () => Effect.void,
     setAppUserModelId: () => Effect.void,
     getAppMetrics: Effect.succeed([]),

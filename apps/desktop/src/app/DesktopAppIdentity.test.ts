@@ -32,7 +32,11 @@ type TestEnvironmentInput = Partial<DesktopEnvironment.MakeDesktopEnvironmentInp
 interface ElectronAppCalls {
   readonly setAboutPanelOptions: Array<Electron.AboutPanelOptionsOptions>;
   readonly setName: string[];
+  readonly setUserAgentFallback: string[];
 }
+
+const NATIVE_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) BoopsDev/44.10.1 Chrome/152.0.7977.169 Electron/44.10.1 Safari/537.36";
 
 const layerElectronApp = (calls: ElectronAppCalls) =>
   Layer.succeed(ElectronApp.ElectronApp, {
@@ -48,6 +52,11 @@ const layerElectronApp = (calls: ElectronAppCalls) =>
     setName: (name) =>
       Effect.sync(() => {
         calls.setName.push(name);
+      }),
+    userAgentFallback: Effect.sync(() => calls.setUserAgentFallback.at(-1) ?? NATIVE_USER_AGENT),
+    setUserAgentFallback: (userAgent) =>
+      Effect.sync(() => {
+        calls.setUserAgentFallback.push(userAgent);
       }),
     setAboutPanelOptions: (options) =>
       Effect.sync(() => {
@@ -101,6 +110,7 @@ const withIdentity = <A, E, R>(
   const calls: ElectronAppCalls = input.calls ?? {
     setAboutPanelOptions: [],
     setName: [],
+    setUserAgentFallback: [],
   };
 
   return effect.pipe(
@@ -169,6 +179,7 @@ describe("DesktopAppIdentity", () => {
     const calls: ElectronAppCalls = {
       setAboutPanelOptions: [],
       setName: [],
+      setUserAgentFallback: [],
     };
 
     return withIdentity(
@@ -184,5 +195,30 @@ describe("DesktopAppIdentity", () => {
       }),
       { calls, environment },
     );
+  });
+
+  it.effect("presents a plain Chrome User-Agent, stably across both configure passes", () => {
+    const calls: ElectronAppCalls = {
+      setAboutPanelOptions: [],
+      setName: [],
+      setUserAgentFallback: [],
+    };
+
+    return withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        yield* identity.configure;
+        yield* identity.configure;
+
+        const chrome =
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36";
+        assert.deepStrictEqual(calls.setUserAgentFallback, [chrome, chrome]);
+      }),
+      { calls },
+    );
+  });
+
+  it("leaves an unrecognized User-Agent unchanged", () => {
+    assert.equal(DesktopAppIdentity.chromeUserAgent("Custom/1.0"), "Custom/1.0");
   });
 });

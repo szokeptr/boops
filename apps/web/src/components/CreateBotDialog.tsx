@@ -13,7 +13,7 @@ import {
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import type { ProjectAvatar } from "@t3tools/contracts";
-import { specFor } from "@t3tools/shared/botAvatar";
+import { lookFor } from "@t3tools/shared/botAvatar";
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { create } from "zustand";
@@ -181,7 +181,7 @@ function CreateBotForm({
   const [avatar, setAvatar] = useState<ProjectAvatar | null>(null);
   const siblings = useProjects()
     .filter((project) => project.environmentId === environmentId && !project.isScratch)
-    .map((project) => project.avatar ?? specFor(project.title));
+    .map((project) => lookFor(project.avatar, project.title));
 
   const submit = async () => {
     const trimmed = name.trim();

@@ -2,6 +2,8 @@ import {
   BOT_AVATAR_ACCESSORIES,
   BOT_AVATAR_GLOWS,
   BOT_AVATAR_HUES,
+  BOT_AVATAR_SHAPES,
+  type BotAvatarShape,
   type ProjectAvatar,
 } from "@t3tools/contracts";
 
@@ -29,15 +31,42 @@ export function specFor(name: string): ProjectAvatar {
     hue: pick(BOT_AVATAR_HUES, name, "hue"),
     accessory: pick(BOT_AVATAR_ACCESSORIES, name, "acc"),
     glow: pick(BOT_AVATAR_GLOWS, name, "glow"),
+    shape: pick(BOT_AVATAR_SHAPES, name, "shape"),
   };
 }
 
-// Strides coprime with 12 and 8, so stepping visits every hue and accessory.
+/** A stored look with its shape filled in; looks saved before shapes take the one the name seeds. */
+export function lookFor(avatar: ProjectAvatar | null | undefined, name: string): ProjectAvatar {
+  if (!avatar) return specFor(name);
+  return avatar.shape ? avatar : { ...avatar, shape: specFor(name).shape };
+}
+
+// Strides coprime with 12 and 8, so stepping visits every hue, accessory, and shape.
 const HUE_STRIDE = 5;
 const ACCESSORY_STRIDE = 3;
+const SHAPE_STRIDE = 5;
+
+/** Steps to the nearest shape no sibling wears; shape is what tells bots apart in small lists. */
+function settleShape(
+  shape: BotAvatarShape | undefined,
+  siblings: ReadonlyArray<ProjectAvatar>,
+): BotAvatarShape {
+  const taken = new Set(siblings.map((sibling) => sibling.shape));
+  let at = BOT_AVATAR_SHAPES.indexOf(shape ?? BOT_AVATAR_SHAPES[0]);
+  if (BOT_AVATAR_SHAPES.every((candidate) => taken.has(candidate))) return BOT_AVATAR_SHAPES[at]!;
+  while (taken.has(BOT_AVATAR_SHAPES[at]!)) at = (at + SHAPE_STRIDE) % BOT_AVATAR_SHAPES.length;
+  return BOT_AVATAR_SHAPES[at]!;
+}
+
+function settle(spec: ProjectAvatar, siblings: ReadonlyArray<ProjectAvatar>): ProjectAvatar {
+  return { ...settleHueAndAccessory(spec, siblings), shape: settleShape(spec.shape, siblings) };
+}
 
 /** Steps to the nearest hue and accessory no sibling uses, then to a free pair once those run out. */
-function settle(spec: ProjectAvatar, siblings: ReadonlyArray<ProjectAvatar>): ProjectAvatar {
+function settleHueAndAccessory(
+  spec: ProjectAvatar,
+  siblings: ReadonlyArray<ProjectAvatar>,
+): ProjectAvatar {
   const hueCount = BOT_AVATAR_HUES.length;
   const accessoryCount = BOT_AVATAR_ACCESSORIES.length;
   const hues = new Set(siblings.map((sibling) => sibling.hue));
@@ -88,13 +117,15 @@ export function rerollSpec(
         hue: any(BOT_AVATAR_HUES),
         accessory: any(BOT_AVATAR_ACCESSORIES),
         glow: any(BOT_AVATAR_GLOWS),
+        shape: any(BOT_AVATAR_SHAPES),
       },
       siblings,
     );
     if (
       next.hue !== current.hue ||
       next.accessory !== current.accessory ||
-      next.glow !== current.glow
+      next.glow !== current.glow ||
+      next.shape !== current.shape
     ) {
       return next;
     }

@@ -19,7 +19,7 @@ import {
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
-import { familySpec, specFor } from "@t3tools/shared/botAvatar";
+import { familySpec, lookFor } from "@t3tools/shared/botAvatar";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { newProjectFolderName } from "@t3tools/shared/path";
 import * as Context from "effect/Context";
@@ -337,7 +337,7 @@ const make = Effect.gen(function* () {
                     input.name,
                     shells
                       .filter((shell) => shell.id !== project.id)
-                      .map((shell) => shell.avatar ?? specFor(shell.title)),
+                      .map((shell) => lookFor(shell.avatar, shell.title)),
                   ),
                 ),
               )

@@ -176,6 +176,17 @@ export const BOT_AVATAR_ACCESSORIES = [
   "crown",
 ] as const;
 export const BOT_AVATAR_GLOWS = ["mint", "cyan", "white"] as const;
+export const BOT_AVATAR_SHAPES = [
+  "gumdrop",
+  "round",
+  "box",
+  "onigiri",
+  "bean",
+  "mochi",
+  "ghost",
+  "drop",
+] as const;
+export type BotAvatarShape = (typeof BOT_AVATAR_SHAPES)[number];
 
 /** A bot's resolved avatar look, stored so a rename keeps it. */
 /**
@@ -190,6 +201,8 @@ export const ProjectAvatar = Schema.Struct({
   hue: Schema.Literals(BOT_AVATAR_HUES),
   accessory: Schema.Literals(BOT_AVATAR_ACCESSORIES),
   glow: Schema.Literals(BOT_AVATAR_GLOWS),
+  /** Absent on looks saved before shapes; clients seed one from the name. */
+  shape: Schema.optional(Schema.Literals(BOT_AVATAR_SHAPES)),
 });
 export type ProjectAvatar = typeof ProjectAvatar.Type;
 
