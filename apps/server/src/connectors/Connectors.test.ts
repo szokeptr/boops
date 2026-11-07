@@ -577,7 +577,7 @@ it.effect("refreshes a token near expiry, and a failed refresh means needs_auth"
       const { connection } = yield* connectAcme(harness);
       const upstream = harness.connectors.upstream({ threadId, serverName: connection.serverName });
       // Off for this bot: the proxy refuses it.
-      expect((yield* upstream.pipe(Effect.flip)).reason).toBe("not_connected");
+      expect((yield* upstream.pipe(Effect.flip)).reason).toBe("not_enabled");
       yield* harness.connectors.setBotConnection({
         projectId: botId,
         connectionId: connection.id,
@@ -603,6 +603,44 @@ it.effect("refreshes a token near expiry, and a failed refresh means needs_auth"
         harness.approve(again.authorizationUrl!),
       );
       expect(reconnected).toMatchObject({ id: connection.id, status: "connected" });
+    }),
+  ),
+);
+
+it.effect("a connection whose credentials are gone needs sign-in and gets a card", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const harness = yield* makeHarness;
+      yield* seedThread(harness);
+      // Two connections to one server: one found by the proxy, one by request_connection.
+      const proxied = (yield* connectAcme(harness)).connection;
+      const requested = (yield* connectAcme(harness)).connection;
+      for (const connection of [proxied, requested]) {
+        yield* harness.connectors.setBotConnection({
+          projectId: botId,
+          connectionId: connection.id,
+          enabled: true,
+        });
+        harness.secrets.delete(`connector-${connection.id}`);
+      }
+      const upstream = harness.connectors.upstream({ threadId, serverName: proxied.serverName });
+      expect((yield* upstream.pipe(Effect.flip)).reason).toBe("credential_missing");
+      expect((yield* upstream.pipe(Effect.flip)).reason).toBe("not_connected");
+      const statusOf = (id: string) =>
+        harness.connectors.list.pipe(
+          Effect.map(({ connections }) => connections.find((row) => row.id === id)?.status),
+        );
+      expect(yield* statusOf(proxied.id)).toBe("needs_auth");
+      expect(yield* statusOf(requested.id)).toBe("connected");
+      const asked = yield* harness.connectors.requestConnection(scope, {
+        url: ACME,
+        reason: "To file issues.",
+      });
+      expect(asked.status).toBe("card_shown");
+      expect(yield* statusOf(requested.id)).toBe("needs_auth");
+      expect(
+        (yield* harness.connectors.listForCaller(scope)).connections.map((row) => row.status),
+      ).toEqual(["needs_auth", "needs_auth"]);
     }),
   ),
 );
