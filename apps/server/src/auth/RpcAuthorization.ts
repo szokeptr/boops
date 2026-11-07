@@ -277,6 +277,9 @@ const MEMBER_RPC_POLICY = {
   [WS_METHODS.botsArchive]: "deny",
   [WS_METHODS.botsUnarchive]: "deny",
   [WS_METHODS.botsDelete]: "deny",
+  // A call's voice reads the bot's persona, notes and conversation, which stay the owner's.
+  [WS_METHODS.botsCallStart]: "deny",
+  [WS_METHODS.botsCallEnd]: "deny",
   [WS_METHODS.membersInvite]: "deny",
   [WS_METHODS.membersUpdate]: "deny",
   [WS_METHODS.membersRemove]: "deny",

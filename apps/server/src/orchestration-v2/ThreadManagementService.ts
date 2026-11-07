@@ -9,6 +9,7 @@ import type {
   ShellSnapshotOptions,
 } from "./ProjectionStore.ts";
 import {
+  type BotCallMessageOrigin,
   type BotMessageOrigin,
   type ChatAttachment,
   CommandId,
@@ -146,6 +147,8 @@ export interface ThreadManagementSendInput {
   readonly senderThreadId?: ThreadId;
   /** Set when the message is one bot's to its parent or child bot. */
   readonly bot?: BotMessageOrigin;
+  /** Set when a voice call put the message in the conversation. */
+  readonly call?: BotCallMessageOrigin;
   /** Ends the provider session when this message's run ends. */
   readonly sessionRollover?: OrchestrationV2SessionRollover;
   readonly text: string;
@@ -857,9 +860,16 @@ const make = Effect.gen(function* () {
       ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
       ...(input.sessionRollover === undefined ? {} : { sessionRollover: input.sessionRollover }),
       text: input.text,
-      ...(input.bot === undefined
+      ...(input.bot === undefined && input.call === undefined
         ? {}
-        : { context: { version: 1 as const, records: [], bot: input.bot } }),
+        : {
+            context: {
+              version: 1 as const,
+              records: [],
+              ...(input.bot === undefined ? {} : { bot: input.bot }),
+              ...(input.call === undefined ? {} : { call: input.call }),
+            },
+          }),
       attachments: input.attachments,
       ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
       dispatchMode,

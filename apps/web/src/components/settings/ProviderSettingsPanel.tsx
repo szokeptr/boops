@@ -97,6 +97,7 @@ import { IntervalSecondsField } from "./IntervalSecondsField";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { useSecretSources } from "./SecretSourceInput";
 import { UsageProviderSettings } from "./UsageProviderSettings";
+import { VoiceCallSettings } from "./VoiceCallSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
 import { CodexSetupSection, CodexManagedRuntimeFields } from "./CodexSetupSection";
@@ -1106,6 +1107,13 @@ export function EnvironmentProviderSettings({
         environmentLabel={environmentLabel}
         sources={settings.usageLimitSources}
         cursorKeychainUsageEnabled={settings.cursorKeychainUsageEnabled}
+        readOnly={readOnly}
+      />
+
+      <VoiceCallSettings
+        key={`voice-${environmentId}`}
+        environmentId={environmentId}
+        savedKey={settings.voiceCalls.openaiApiKey}
         readOnly={readOnly}
       />
 

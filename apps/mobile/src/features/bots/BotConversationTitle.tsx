@@ -12,6 +12,11 @@ import { uuidv4 } from "../../lib/uuid";
 import { useProject } from "../../state/entities";
 import { environmentThreadShells } from "../../state/threads";
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useBotCall } from "../bot-call/BotCallProvider";
+import { formatCallDuration } from "../bot-call/botCallPresentation";
+import { useCallClock } from "../bot-call/callClock";
+import { CALL_LIVE_GREEN } from "../bot-call/callColors";
+import { isOnCallWith } from "../bot-call/useBotCallHeaderAction";
 import { BotAvatarSlot } from "./BotAvatarSlot";
 
 export interface ConversationBot {
@@ -37,6 +42,15 @@ export function BotConversationTitle(props: { readonly bot: ConversationHeaderBo
   const project = useProject(scopeProjectRef(bot.environmentId, bot.projectId));
   const threads = useAtomValue(environmentThreadShells.quietThreadShellsAtom);
   const selectDetail = useSelectWorkspaceDetail();
+  const { call } = useBotCall();
+  const onCall = isOnCallWith(call, bot) ? call : null;
+  const now = useCallClock(onCall?.state.phase === "live");
+  const callLine =
+    onCall === null
+      ? null
+      : onCall.state.phase === "live"
+        ? `On a call · ${formatCallDuration((now - (onCall.state.connectedAt ?? now)) / 1000)}`
+        : "Calling…";
   const conversations = project === null ? [] : deriveBotConversations({ project, threads });
   const open = conversations.find((conversation) => conversation.threadId === bot.threadId);
   const subtitle =
@@ -91,7 +105,11 @@ export function BotConversationTitle(props: { readonly bot: ConversationHeaderBo
       <View
         accessible
         accessibilityRole="button"
-        accessibilityLabel={[`${bot.name} conversations`, subtitle, attention?.label]
+        accessibilityLabel={[
+          `${bot.name} conversations`,
+          onCall === null ? subtitle : "On a call",
+          attention?.label,
+        ]
           .filter(Boolean)
           .join(", ")}
         className="flex-row items-center gap-2"
@@ -116,7 +134,15 @@ export function BotConversationTitle(props: { readonly bot: ConversationHeaderBo
               type="monochrome"
             />
           </View>
-          {subtitle === null ? null : (
+          {callLine !== null ? (
+            <Text
+              className="text-xs tabular-nums"
+              numberOfLines={1}
+              style={{ color: CALL_LIVE_GREEN }}
+            >
+              {callLine}
+            </Text>
+          ) : subtitle === null ? null : (
             <Text className="text-xs text-foreground-muted" numberOfLines={1}>
               {subtitle}
             </Text>

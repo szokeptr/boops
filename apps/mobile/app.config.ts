@@ -277,7 +277,8 @@ const config: ExpoConfig = {
         "Allow Boops to connect to Boops servers on your local network or tailnet.",
       NSPhotoLibraryAddUsageDescription: "Allow Boops to save images to your photo library.",
       // System picture in picture needs background audio to start and survive outside the app.
-      UIBackgroundModes: ["audio"],
+      // CallKit keeps a bot call going with the app in the background or the phone locked.
+      UIBackgroundModes: ["audio", "voip"],
       ITSAppUsesNonExemptEncryption: false,
       // Capture builds disable multitasking because iPadOS otherwise ignores orientation requests.
       ...(process.env.T3_SHOWCASE_CAPTURE_BUILD === "1"
@@ -308,6 +309,8 @@ const config: ExpoConfig = {
     },
     // JS back dispatch needs RN's Android 16 shim and withAndroidPredictiveBackCompat on Android 13-15.
     predictiveBackGestureEnabled: true,
+    // WebRTC routes a bot call's audio between the earpiece, speaker and headsets.
+    permissions: ["android.permission.MODIFY_AUDIO_SETTINGS"],
     // expo-sensors declares this for its pedometer, which the app does not use.
     blockedPermissions: ["android.permission.ACTIVITY_RECOGNITION"],
     intentFilters: [
@@ -384,7 +387,7 @@ const config: ExpoConfig = {
     [
       "expo-audio",
       {
-        microphonePermission: "Allow Boops to use your microphone for voice input.",
+        microphonePermission: "Allow Boops to use your microphone for voice input and calls.",
         recordAudioAndroid: true,
         enableBackgroundPlayback: false,
         enableBackgroundRecording: false,
@@ -404,7 +407,7 @@ const config: ExpoConfig = {
       {
         photosPermission: false,
         // `false` makes this plugin add RECORD_AUDIO to blockedPermissions, breaking Android dictation.
-        microphonePermission: "Allow Boops to use your microphone for voice input.",
+        microphonePermission: "Allow Boops to use your microphone for voice input and calls.",
       },
     ],
     [
@@ -448,6 +451,7 @@ const config: ExpoConfig = {
       },
     ],
     "./plugins/withIosCocoaPodsUuidCache.cjs",
+    "./plugins/withIosCallKit.cjs",
     // Compile out the unused pedometer to avoid an iOS motion purpose string.
     ["expo-sensors", { motionPermission: false }],
     // Mods run in reverse order; expo-widgets must create and wipe the target before assets are added.

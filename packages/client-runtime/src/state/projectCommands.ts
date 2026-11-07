@@ -225,6 +225,15 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: projectScheduler,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
+    // Calls skip the project scheduler: a hang-up must never wait behind a bot being created.
+    startBotCall: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:start-bot-call",
+      tag: WS_METHODS.botsCallStart,
+    }),
+    endBotCall: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:end-bot-call",
+      tag: WS_METHODS.botsCallEnd,
+    }),
     createFromThread: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:create-from-thread",
       tag: WS_METHODS.projectsCreateFromThread,

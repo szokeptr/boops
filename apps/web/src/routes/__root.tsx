@@ -19,6 +19,7 @@ import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachine
 import { CreateBotDialogHost } from "../components/CreateBotDialog";
 import { ArchiveBotDialogHost, DeleteBotDialogHost } from "../components/bots/BotLifecycle";
 import { ShareBotDialogHost } from "../components/members/ShareBotDialog";
+import { BotCallHost } from "../components/bots/BotCallPanel";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
@@ -204,6 +205,7 @@ function RootRouteBranch() {
         <ArchiveBotDialogHost />
         <DeleteBotDialogHost />
         <ShareBotDialogHost />
+        <BotCallHost />
         {import.meta.env.DEV && primaryEnvironmentAuthenticated ? <DevReplayHost /> : null}
         {appShell}
         {/* Keep the theme editor above the router so drafts survive navigation. */}

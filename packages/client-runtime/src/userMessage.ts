@@ -1,4 +1,5 @@
 import {
+  type BotCallMessageOrigin,
   type BotMessageOrigin,
   type ChatAttachment,
   type ChatFileAttachment,
@@ -87,12 +88,24 @@ export function resolveUserMessagePresentation(message: {
     | {
         readonly guest?: GuestMessageAttribution | undefined;
         readonly bot?: BotMessageOrigin | undefined;
+        readonly call?: BotCallMessageOrigin | undefined;
       }
     | undefined;
 }): {
   readonly text: string;
-  /** "system" is a server event such as a bot's hatching kickoff; it renders as a divider. */
-  readonly attribution: "automation" | "agent" | "t3code" | "guest" | "bot" | "system" | null;
+  /**
+   * "system" is a server event such as a bot's hatching kickoff; it renders as a divider. "call" is
+   * a finished voice call's transcript.
+   */
+  readonly attribution:
+    | "automation"
+    | "agent"
+    | "t3code"
+    | "guest"
+    | "bot"
+    | "system"
+    | "call"
+    | null;
   readonly routine: OrchestrationV2RoutineLabel | undefined;
   /** Set when `attribution` is "guest". */
   readonly guestName?: string;
@@ -104,9 +117,20 @@ export function resolveUserMessagePresentation(message: {
     /** Sent by one of the receiving bot's own background threads, such as its heartbeat. */
     readonly background: boolean;
   };
+  /** Set for a request said on a voice call (an own message) and for a call's transcript. */
+  readonly call?: BotCallMessageOrigin;
 } {
   if (message.role !== "user") {
     return { text: message.text, attribution: null, routine: undefined };
+  }
+  const call = message.context?.call;
+  if (call !== undefined) {
+    return {
+      text: message.text,
+      attribution: call.kind === "recap" ? "call" : null,
+      routine: undefined,
+      call,
+    };
   }
   // The stored text names the guest for the agent; people see the guest's own words.
   const guest = message.context?.guest;

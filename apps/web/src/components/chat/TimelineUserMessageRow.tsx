@@ -37,6 +37,7 @@ import {
   MessagesSquareIcon,
   Redo2Icon,
   PencilIcon,
+  PhoneIcon,
   SparklesIcon,
 } from "lucide-react";
 import { Link as LinkIconNode } from "lucide";
@@ -273,6 +274,8 @@ function UserMessageContent({ row }: { row: Extract<TimelineRow, { kind: "messag
     <AutomationMessageRow row={row} />
   ) : attribution === "system" ? (
     <SystemMessageRow text={row.message.text} />
+  ) : attribution === "call" ? (
+    <CallRecapRow row={row} />
   ) : (
     <UserTimelineRow row={row} />
   );
@@ -293,6 +296,84 @@ function SystemMessageRow({ text }: { text: string }) {
         <span className="truncate">{text}</span>
       </span>
       <span className="h-px flex-1 bg-border/70" />
+    </div>
+  );
+}
+
+function callLength(seconds: number | undefined): string | null {
+  if (seconds === undefined) return null;
+  if (seconds < 60) return `${seconds} sec`;
+  return `${Math.round(seconds / 60)} min`;
+}
+
+/** A finished voice call: one line in the thread, its transcript folded behind it. */
+function CallRecapRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const [expanded, setExpanded] = useState(false);
+  const revealRef = findRevealRef(() => setExpanded(true));
+  const { text, call } = resolveUserMessagePresentation(row.message);
+  const length = callLength(call?.durationSeconds);
+  const summary = length === null ? "Call" : `Call · ${length}`;
+  const lines = text
+    .split(/\r?\n/)
+    .flatMap((line, index): Array<{ key: string; speaker: string | null; text: string }> => {
+      const key = `${index}:${line}`;
+      const separator = line.indexOf(": ");
+      if (separator <= 0) return line.trim() === "" ? [] : [{ key, speaker: null, text: line }];
+      const speaker = line.slice(0, separator);
+      return [
+        { key, speaker: speaker === "User" ? "You" : speaker, text: line.slice(separator + 2) },
+      ];
+    });
+  // Find reads the DOM, so a folded transcript stays mounted but hidden while find is open.
+  const bodyMounted = expanded || ctx.findActive;
+
+  return (
+    <div
+      className="mx-auto flex w-full max-w-(--chat-content-max-width) flex-col items-center gap-1.5"
+      data-user-message-attribution="call"
+    >
+      <MessageAuthorHeading>Call</MessageAuthorHeading>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-label={`${summary}. ${expanded ? "Hide" : "Show"} transcript`}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-muted-foreground/70 text-xs transition-colors hover:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <PhoneIcon aria-hidden="true" className="size-3 shrink-0" />
+        <span className="truncate">{summary}</span>
+        <span aria-hidden="true">·</span>
+        <span className="shrink-0 tabular-nums">
+          {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
+        </span>
+        <ChevronDownIcon
+          aria-hidden="true"
+          className={cn("size-3 shrink-0 transition-transform", expanded && "rotate-180")}
+        />
+      </button>
+      {bodyMounted ? (
+        // `beforematch` does not bubble, so the reveal listener sits on the hidden fold itself.
+        <div
+          ref={revealRef}
+          hidden={!expanded}
+          className={cn(
+            "w-full max-w-[80%] space-y-1.5 rounded-xl border border-border/70 px-3 py-2 text-sm",
+            BUBBLE_CHIP_CLASS_NAME,
+            !ctx.findActive && "max-h-96 overflow-auto",
+          )}
+          data-thread-find-text="true"
+        >
+          {lines.map((line) => (
+            <p key={line.key} className="text-muted-foreground">
+              {line.speaker !== null ? (
+                <span className="font-medium text-foreground">{line.speaker}: </span>
+              ) : null}
+              {line.text}
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -864,6 +945,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           data-user-message-attribution="t3code"
         >
           Sent by Boops
+        </p>
+      ) : null}
+      {userMessage.call?.kind === "request" ? (
+        <p className="me-1 flex items-center gap-1 text-2xs text-muted-foreground/70">
+          <PhoneIcon aria-hidden="true" className="size-2.5" />
+          Said on a call
         </p>
       ) : null}
       {/* The row's heading already names the sender for screen readers. */}

@@ -25,6 +25,20 @@ describe("withBotMessageHeader", () => {
     );
   });
 
+  it("tells the bot how a voice call's request and recap reach it", () => {
+    const call = (kind: "request" | "recap") => ({
+      version: 1 as const,
+      records: [],
+      call: { callId: "rtc_1", kind },
+    });
+    expect(withBotMessageHeader("Book the dentist.", call("request"))).toMatch(
+      /^\[Said on a voice call\.[^\n]*spoken sentences[^\n]*\]\n\nBook the dentist\.$/,
+    );
+    expect(withBotMessageHeader("User: hi", call("recap"))).toMatch(
+      /^\[The user's voice call with you just ended;[^\n]*memory\/[^\n]*\]\n\nUser: hi$/,
+    );
+  });
+
   it("leaves other messages alone", () => {
     expect(withBotMessageHeader("hi", undefined)).toBe("hi");
     expect(withBotMessageHeader("hi", { version: 1, records: [] })).toBe("hi");

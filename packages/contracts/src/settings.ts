@@ -867,6 +867,15 @@ export const UsageLimitSourceConfig = Schema.Struct({
 });
 export type UsageLimitSourceConfig = typeof UsageLimitSourceConfig.Type;
 
+/** Bot voice calls run on OpenAI's Realtime API with the user's own API key. */
+export const VoiceCallSettings = Schema.Struct({
+  openaiApiKey: SettingsSecretValue.pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+    secretSetting,
+  ),
+});
+export type VoiceCallSettings = typeof VoiceCallSettings.Type;
+
 export const SecretProviderKind = SecretProviderSlug.pipe(Schema.brand("SecretProviderKind"));
 export type SecretProviderKind = typeof SecretProviderKind.Type;
 
@@ -1367,6 +1376,7 @@ export const ServerSettings = Schema.Struct({
   secretProviders: Schema.Record(SecretProviderId, SecretProviderConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  voiceCalls: VoiceCallSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   cursorKeychainUsageEnabled: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1712,6 +1722,9 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Record(SecretProviderId, Schema.NullOr(SecretProviderConfigWrite)),
   ),
   cursorKeychainUsageEnabled: Schema.optionalKey(Schema.Boolean),
+  voiceCalls: Schema.optionalKey(
+    Schema.Struct({ openaiApiKey: Schema.optionalKey(SettingsSecretValue) }),
+  ),
 
   usagePriceOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(UsageModelPriceOverride)),
@@ -1734,7 +1747,8 @@ export function requiredScopesForServerSettingsPatch(
       key === "providers" ||
       key === "providerInstances" ||
       key === "usageLimitSources" ||
-      key === "secretProviders"
+      key === "secretProviders" ||
+      key === "voiceCalls"
     ) {
       changesProviders = true;
     } else {

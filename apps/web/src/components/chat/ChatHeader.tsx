@@ -43,6 +43,7 @@ import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
 import { BotAvatar } from "../bots/BotAvatar";
+import { BotCallButton } from "../bots/BotCallButton";
 import { BotConversationTabs } from "../bots/BotConversationTabs";
 import { openShareBotDialog } from "../members/ShareBotDialog";
 import { useCanManageMembers } from "../../state/members";
@@ -466,6 +467,9 @@ export const ChatHeader = memo(function ChatHeader({
           ) : null}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
+      {isBotConversation && activeProject && isServerThread ? (
+        <BotCallButton bot={activeProject} threadId={activeThreadId} />
+      ) : null}
       {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}
     </div>
   );

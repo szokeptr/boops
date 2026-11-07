@@ -123,7 +123,8 @@ const voiceInputAtom = Atom.make((get) => {
       const token = acquireAudioSession("recording");
       audioToken = token;
       try {
-        await activateAudioSession(token);
+        // A call owns the microphone until it ends.
+        if (!(await activateAudioSession(token))) throw new Error("The microphone is in a call.");
       } catch (error) {
         await releaseAudioSession(token).catch(() => {});
         throw error;

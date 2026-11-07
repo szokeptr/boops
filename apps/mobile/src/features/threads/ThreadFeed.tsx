@@ -20,6 +20,7 @@ import {
   ThreadHandoffRow,
   ThreadModelSwitchDivider,
 } from "./thread-handoff-row";
+import { BotCallRecapRow } from "../bot-call/BotCallRecapRow";
 import { BotAvatarSlot } from "../bots/BotAvatarSlot";
 import { ThreadBotExchangeRow } from "./ThreadBotExchangeRow";
 import { GuestBubbleTint, GuestMessageName } from "./guestMessageStyle";
@@ -2011,6 +2012,20 @@ function renderFeedEntry(
         />
       );
     }
+    if (isUser && presentation.attribution === "call") {
+      const rowId = `call:${message.id}`;
+      return (
+        <BotCallRecapRow
+          text={presentation.text}
+          durationSeconds={presentation.call?.durationSeconds}
+          timestampLabel={timestampLabel}
+          expanded={props.expandedWorkRows[rowId] ?? false}
+          onToggle={() => props.onToggleWorkRow(rowId, entry.id)}
+          bubbleMaxWidth={props.duoColumns ? "85%" : props.userBubbleMaxWidth}
+          iconSubtleColor={iconSubtleColor}
+        />
+      );
+    }
     if (isUser) {
       const enterAnimated = isFreshTimestamp(message.createdAt);
       const foldRowId = presentation.attribution === "agent" ? `agent:${message.id}` : null;
@@ -2068,6 +2083,17 @@ function renderFeedEntry(
           ) : null}
           {presentation.guestName !== undefined ? (
             <GuestMessageName name={presentation.guestName} />
+          ) : null}
+          {presentation.call?.kind === "request" ? (
+            <View className="mb-1 flex-row items-center gap-1 pr-1">
+              <SymbolView
+                name="phone.fill"
+                size={9}
+                tintColor={iconSubtleColor}
+                type="monochrome"
+              />
+              <Text className="font-t3-medium text-2xs text-foreground-muted">Said on a call</Text>
+            </View>
           ) : null}
           {presentation.bot !== undefined ? (
             <View className="mb-1 flex-row items-center gap-1.5 pr-1">

@@ -20,6 +20,7 @@
 - [Product usage data](./user/telemetry.md)
 - [Remote access](./user/remote-access.md)
 - [Guest links](./user/guest-links.md)
+- [Calling a bot](./user/bot-calls.md)
 - [T3 Connect troubleshooting](./user/t3-connect-troubleshooting.md)
 - [Connectors](./user/connectors.md)
 - [Outside agents (MCP)](./user/outside-agents.md)

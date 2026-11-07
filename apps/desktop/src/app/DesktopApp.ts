@@ -25,6 +25,7 @@ import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopLinuxUrlHandler from "./DesktopLinuxUrlHandler.ts";
 import * as DesktopObservability from "./DesktopObservability.ts";
 import * as DesktopPreReadyPlatform from "./DesktopPreReadyPlatform.ts";
+import * as MacMicrophoneAccess from "../permissions/MacMicrophoneAccess.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -333,6 +334,7 @@ const startup = Effect.gen(function* () {
   }
   yield* appIdentity.configure;
   yield* previewPasskeys.configure;
+  if (environment.platform === "darwin") yield* MacMicrophoneAccess.configure;
   yield* applicationMenu.configure;
   yield* updates.configure;
   yield* DesktopRemoteUpdates.listen;

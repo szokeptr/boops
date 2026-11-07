@@ -287,6 +287,28 @@ describe("resolveUserMessagePresentation", () => {
     ).toMatchObject({ attribution: null });
   });
 
+  it("keeps a request said on a call as the user's own, and shows the call's transcript as a call", () => {
+    expect(
+      resolveUserMessagePresentation({
+        role: "user",
+        createdBy: "user",
+        creationSource: "server",
+        text: "Book the dentist for Tuesday.",
+        context: { call: { callId: "rtc_1", kind: "request" } },
+      }),
+    ).toMatchObject({ attribution: null, call: { kind: "request" } });
+    // Sent by the server once the call ends; without its call it would be a system divider.
+    expect(
+      resolveUserMessagePresentation({
+        role: "user",
+        createdBy: "system",
+        creationSource: "server",
+        text: "You: hi",
+        context: { call: { callId: "rtc_1", kind: "recap", durationSeconds: 75 } },
+      }),
+    ).toMatchObject({ attribution: "call", call: { durationSeconds: 75 } });
+  });
+
   it("labels a routine message with the routine's name and trigger", () => {
     const routine = {
       taskId: ScheduledTaskId.make("task:heartbeat"),
