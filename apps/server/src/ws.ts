@@ -5,6 +5,7 @@ import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as Connectors from "./connectors/Connectors.ts";
 import * as Members from "./members/Members.ts";
+import * as NotificationDeviceKeys from "./notifications/NotificationDeviceKeys.ts";
 import {
   authorizeMemberCommand,
   authorizeMemberLaunch,
@@ -1521,6 +1522,7 @@ export const layerWsRpc = (
       const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
       const connectors = yield* Connectors.Connectors;
       const members = yield* Members.Members;
+      const notificationDeviceKeys = yield* NotificationDeviceKeys.NotificationDeviceKeys;
       const currentMemberId = memberIdFromSessionSubject(currentSession.subject);
       // A lookup that fails refuses the member rather than letting the call through.
       const failClosed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -2834,6 +2836,10 @@ export const layerWsRpc = (
         [WS_METHODS.membersSetBotConnectionAccess]: (input) =>
           members.setBotConnectionAccess(input),
         [WS_METHODS.membersLeave]: () => members.leave(currentSession.subject),
+        [WS_METHODS.notificationsRegisterDeviceKey]: (input) =>
+          notificationDeviceKeys.register(currentSession.subject, input),
+        [WS_METHODS.notificationsRemoveDeviceKey]: ({ deviceId }) =>
+          notificationDeviceKeys.remove(currentSession.subject, deviceId),
         [WS_METHODS.connectorsAnswerRequest]: (input) =>
           Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
             Effect.andThen(connectors.answerRequest(input)),
@@ -3765,6 +3771,7 @@ export const layer = Layer.unwrap(
               Layer.provideMerge(RpcSerialization.layerJson),
               // Handler-context reporters see only request defects, not server-wide defects.
               Layer.provide(DefectReporter.layer),
+              Layer.provide(NotificationDeviceKeys.layer),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
               Layer.provide(AgentSessionScanner.layer),
               Layer.provide(ProviderMaintenanceRunner.layer),

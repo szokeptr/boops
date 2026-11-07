@@ -108,6 +108,7 @@ function makeApnsDeliveries(
   return {
     sendForTarget: () => Effect.succeed(null),
     sendPushNotificationForTarget: () => Effect.succeed(null),
+    sendMessageForTarget: () => Effect.succeed(null),
     sendLiveActivity: () =>
       Effect.succeed({
         deviceId: "device",
@@ -197,6 +198,107 @@ describe("AgentActivityPublisher", () => {
       ),
     );
   });
+
+  it.effect.each([
+    { label: "a bot reply", phase: "completed" as const, notificationsEnabled: true, rings: true },
+    {
+      label: "a bot reply with link alerts off",
+      phase: "completed" as const,
+      notificationsEnabled: false,
+      rings: false,
+    },
+    { label: "a working bot", phase: "running" as const, notificationsEnabled: true, rings: false },
+  ])(
+    "stores no ciphertext and hands $label to each iPhone's message push",
+    ({ phase, notificationsEnabled, rings }) => {
+      const published: RelayAgentActivityState = {
+        ...state,
+        phase,
+        message: {
+          senderId: "bot-ada",
+          senderName: "Ada",
+          previews: [{ deviceId: "ios", ciphertext: "sealed-for-ios" }],
+        },
+      };
+      const stored = { ...published, message: { ...published.message!, previews: [] } };
+      const android = {
+        ...target("android"),
+        platform: "android" as const,
+        ios_major_version: null,
+      };
+      const upserts: Array<RelayAgentActivityState> = [];
+      const fcmStates: Array<RelayAgentActivityState | null> = [];
+      const liveAggregates: Array<unknown> = [];
+      const messages: Array<{ deviceId: string; state: RelayAgentActivityState }> = [];
+      return Effect.gen(function* () {
+        const publisher = yield* AgentActivityPublisher.AgentActivityPublisher;
+        yield* publisher.publish({
+          environmentId: state.environmentId,
+          environmentPublicKey: "key",
+          threadId: state.threadId,
+          state: published,
+        });
+        expect(upserts).toEqual([stored]);
+        expect(fcmStates).toEqual([stored]);
+        expect(JSON.stringify(liveAggregates)).not.toContain("sealed-for-ios");
+        expect(messages).toEqual(rings ? [{ deviceId: "ios", state: published }] : []);
+      }).pipe(
+        Effect.provide(
+          AgentActivityPublisher.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(
+                  AgentActivityRows.AgentActivityRows,
+                  makeAgentActivityRows({
+                    upsert: (input) => Effect.sync(() => void upserts.push(input.state)),
+                    listForUser: () => Effect.succeed(upserts),
+                  }),
+                ),
+                Layer.succeed(
+                  EnvironmentLinks.EnvironmentLinks,
+                  makeEnvironmentLinks({
+                    listDeliveryUsersForEnvironment: () =>
+                      Effect.succeed([
+                        { userId: "dev:julius", notificationsEnabled, liveActivitiesEnabled: true },
+                      ]),
+                  }),
+                ),
+                Layer.succeed(
+                  LiveActivities.LiveActivities,
+                  makeLiveActivities({
+                    listTargets: () => Effect.succeed([android, target("ios")]),
+                  }),
+                ),
+                Layer.succeed(
+                  ApnsDeliveries.ApnsDeliveries,
+                  makeApnsDeliveries({
+                    sendForTarget: (input) =>
+                      Effect.sync(() => {
+                        liveAggregates.push(input.aggregate);
+                        return null;
+                      }),
+                    sendMessageForTarget: (input) =>
+                      Effect.sync(() => {
+                        messages.push({ deviceId: input.target.device_id, state: input.state });
+                        return null;
+                      }),
+                  }),
+                ),
+                Layer.succeed(FcmDeliveries.FcmDeliveries, {
+                  enqueue: (input) =>
+                    Effect.sync(() => {
+                      fcmStates.push(input.state);
+                      return null;
+                    }),
+                  process: () => Effect.void,
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
 
   it.effect("delivers a member's thread only to that member and the rest only to owners", () => {
     const reached: Array<string> = [];

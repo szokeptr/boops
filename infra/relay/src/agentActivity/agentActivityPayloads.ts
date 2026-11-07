@@ -73,6 +73,9 @@ function sanitizeAgentActivityAggregateRow(
     modelTitle: truncateText(row.modelTitle, MAX_SUMMARY_TEXT_LENGTH),
     status: truncateText(row.status, MAX_STATUS_TEXT_LENGTH),
     deepLink: sanitizeDeepLink(row.deepLink),
+    ...(row.senderName === undefined
+      ? {}
+      : { senderName: truncateText(row.senderName, MAX_SUMMARY_TEXT_LENGTH) }),
   };
 }
 
@@ -97,7 +100,55 @@ export function sanitizeApnsNotificationPayload(
     title: truncateText(notification.title, MAX_SUMMARY_TEXT_LENGTH),
     body: truncateText(notification.body, MAX_SUMMARY_TEXT_LENGTH),
     deepLink: sanitizeDeepLink(notification.deepLink),
+    ...(notification.message === undefined
+      ? {}
+      : {
+          message: {
+            ...notification.message,
+            senderName: truncateText(notification.message.senderName, MAX_SUMMARY_TEXT_LENGTH),
+          },
+        }),
   };
+}
+
+/** A bot reply that rings as its own message push instead of a Live Activity or status alert. */
+export function isMessageAlertPhase(phase: RelayAgentActivityState["phase"]): boolean {
+  return phase === "completed" || phase === "waiting_for_input";
+}
+
+export function ringsAsMessage(row: RelayAgentActivityAggregateRow): boolean {
+  return row.senderName !== undefined && isMessageAlertPhase(row.phase);
+}
+
+/** Ciphertexts are per phone and never stored; rows keep only who is speaking. */
+export function withoutMessagePreviews(state: RelayAgentActivityState): RelayAgentActivityState {
+  return state.message === undefined
+    ? state
+    : { ...state, message: { ...state.message, previews: [] } };
+}
+
+export function messageNotificationForState(
+  state: RelayAgentActivityState,
+  deviceId: string,
+): ApnsNotificationPayload | null {
+  const message = state.message;
+  if (message === undefined || !isMessageAlertPhase(state.phase)) return null;
+  const ciphertext = message.previews.find((preview) => preview.deviceId === deviceId)?.ciphertext;
+  return sanitizeApnsNotificationPayload({
+    title: message.senderName,
+    // Shown only when the phone cannot open the preview.
+    body: state.phase === "completed" ? "Sent you a message" : "Is waiting for your reply",
+    environmentId: state.environmentId,
+    threadId: state.threadId,
+    deepLink: state.deepLink,
+    phase: state.phase,
+    updatedAt: state.updatedAt,
+    message: {
+      senderId: message.senderId,
+      senderName: message.senderName,
+      ...(ciphertext === undefined ? {} : { ciphertext }),
+    },
+  });
 }
 
 export function notificationForActivity(

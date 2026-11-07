@@ -123,11 +123,17 @@ const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : variant.iosBundleIdentifier;
 
+const IOS_DEPLOYMENT_TARGET = "18.0";
+const appleTeamId = repoEnv.T3CODE_IOS_TEAM_ID?.trim() || "RMVRBAFHK5";
+const appGroupIdentifier = `group.${iosBundleIdentifier}`;
+// The app writes its notification preview key here; the Notification Service Extension reads it.
+const notificationKeychainGroup = `${variant.iosBundleIdentifier}.notification-keys`;
+
 const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   "expo-widgets",
   {
     bundleIdentifier: `${iosBundleIdentifier}.widgets`,
-    groupIdentifier: `group.${iosBundleIdentifier}`,
+    groupIdentifier: appGroupIdentifier,
     enablePushNotifications: true,
     // Frequent updates need the iOS entitlement to avoid early throttling.
     frequentUpdates: true,
@@ -194,6 +200,17 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   },
 ];
 
+// Bot replies arrive as Communication Notifications; Personal Teams cannot sign the extension.
+const notificationServicePlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
+  "./plugins/withIosNotificationService.cjs",
+  {
+    bundleIdentifier: `${iosBundleIdentifier}.NotificationService`,
+    appGroupId: appGroupIdentifier,
+    keychainAccessGroup: notificationKeychainGroup,
+    deploymentTarget: IOS_DEPLOYMENT_TARGET,
+  },
+];
+
 const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   "expo-sharing",
   {
@@ -201,7 +218,7 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       // Personal Teams cannot sign App Groups or extension targets; keep local builds usable.
       enabled: !isIosPersonalTeamBuild,
       extensionBundleIdentifier: `${iosBundleIdentifier}.sharing`,
-      appGroupId: `group.${iosBundleIdentifier}`,
+      appGroupId: appGroupIdentifier,
       activationRule: {
         supportsText: true,
         supportsWebUrlWithMaxCount: 1,
@@ -248,7 +265,7 @@ const config: ExpoConfig = {
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
     // Avoid Personal Team fallback: it cannot sign App Groups, Apple sign-in or push entitlements.
-    appleTeamId: repoEnv.T3CODE_IOS_TEAM_ID?.trim() || "RMVRBAFHK5",
+    appleTeamId,
     associatedDomains: [
       ...(clerkFrontendApiHost
         ? [`applinks:${clerkFrontendApiHost}`, `webcredentials:${clerkFrontendApiHost}`]
@@ -256,7 +273,14 @@ const config: ExpoConfig = {
       `applinks:${HOSTED_APP_HOST}`,
     ],
     entitlements: {
-      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
+      // The first group stays the default for every other keychain item.
+      "keychain-access-groups": [
+        `$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`,
+        ...(isIosPersonalTeamBuild ? [] : [`$(AppIdentifierPrefix)${notificationKeychainGroup}`]),
+      ],
+      ...(isIosPersonalTeamBuild
+        ? {}
+        : { "com.apple.developer.usernotifications.communication": true }),
     },
     infoPlist: {
       UISupportedInterfaceOrientations: [
@@ -274,6 +298,8 @@ const config: ExpoConfig = {
       // CallKit keeps a bot call going with the app in the background or the phone locked.
       UIBackgroundModes: ["audio", "voip"],
       ITSAppUsesNonExemptEncryption: false,
+      // Communication Notifications donate a message intent so a bot reply shows its face.
+      ...(isIosPersonalTeamBuild ? {} : { NSUserActivityTypes: ["INSendMessageIntent"] }),
       // Capture builds disable multitasking because iPadOS otherwise ignores orientation requests.
       ...(process.env.T3_SHOWCASE_CAPTURE_BUILD === "1"
         ? {
@@ -411,7 +437,7 @@ const config: ExpoConfig = {
           ].join("\n"),
         },
         ios: {
-          deploymentTarget: "18.0",
+          deploymentTarget: IOS_DEPLOYMENT_TARGET,
           // AppCheckCore 11.3+ includes Swift and needs module maps for these Objective-C dependencies.
           extraPods: [
             { name: "GoogleUtilities", modular_headers: true },
@@ -422,6 +448,7 @@ const config: ExpoConfig = {
     ],
     "./plugins/withIosCocoaPodsUuidCache.cjs",
     "./plugins/withIosCallKit.cjs",
+    ...(isIosPersonalTeamBuild ? [] : [notificationServicePlugin]),
     // Compile out the unused pedometer to avoid an iOS motion purpose string.
     ["expo-sensors", { motionPermission: false }],
     // Mods run in reverse order; expo-widgets must create and wipe the target before assets are added.
@@ -437,6 +464,13 @@ const config: ExpoConfig = {
   extra: {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
+    // The team's App ID prefix is its team ID; JS needs the expanded keychain group.
+    notificationService: isIosPersonalTeamBuild
+      ? null
+      : {
+          appGroup: appGroupIdentifier,
+          keychainAccessGroup: `${appleTeamId}.${notificationKeychainGroup}`,
+        },
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,
     },

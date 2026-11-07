@@ -23,7 +23,7 @@ const STALE_AFTER_SECONDS = 10 * 60;
 const DISMISS_AFTER_SECONDS = 5 * 60;
 // Without final content, the card freezes at stale state; dismiss it promptly.
 const CONTENTLESS_DISMISS_AFTER_SECONDS = 15;
-const MAX_LIVE_ACTIVITY_PAYLOAD_BYTES = 4096;
+const MAX_APNS_PAYLOAD_BYTES = 4096;
 const MIN_FITTED_TEXT_LENGTH = 8;
 
 const ApnsLiveActivityEventSchema = Schema.Literals(["update", "end"]);
@@ -134,6 +134,9 @@ function makeLiveActivityRequest(input: MakeLiveActivityRequestInput): ApnsLiveA
           projectTitle: truncateText(row.projectTitle, maxTextLength),
           threadTitle: truncateText(row.threadTitle, maxTextLength),
           modelTitle: truncateText(row.modelTitle, maxTextLength),
+          ...(row.senderName === undefined
+            ? {}
+            : { senderName: truncateText(row.senderName, maxTextLength) }),
         })),
       },
       alert: input.alert
@@ -160,11 +163,12 @@ function makeLiveActivityRequest(input: MakeLiveActivityRequestInput): ApnsLiveA
   return request;
 }
 
+function fitsApnsPayloadLimit(payload: unknown): boolean {
+  return new TextEncoder().encode(JSON.stringify(payload)).byteLength <= MAX_APNS_PAYLOAD_BYTES;
+}
+
 function fitsLiveActivityLimit(request: ApnsLiveActivityRequest): boolean {
-  return (
-    new TextEncoder().encode(JSON.stringify(request.payload)).byteLength <=
-    MAX_LIVE_ACTIVITY_PAYLOAD_BYTES
-  );
+  return fitsApnsPayloadLimit(request.payload);
 }
 
 function buildLiveActivityRequest(input: MakeLiveActivityRequestInput): ApnsLiveActivityRequest {
@@ -210,10 +214,11 @@ function notificationThreadId(notification: ApnsNotificationPayload): string {
     : "t3-agent-alerts";
 }
 
-function makePushNotificationRequest(input: {
+function buildPushNotificationRequest(input: {
   readonly token: string;
   readonly notification: ApnsNotificationPayload;
 }): ApnsPushNotificationRequest {
+  const message = input.notification.message;
   return {
     token: input.token,
     priority: "10",
@@ -225,15 +230,35 @@ function makePushNotificationRequest(input: {
         },
         sound: "default",
         "thread-id": notificationThreadId(input.notification),
+        // The Notification Service Extension decrypts the preview and makes it a communication notification.
+        ...(message === undefined ? {} : { "mutable-content": 1, "interruption-level": "active" }),
       },
       // Expo iOS exposes userInfo.body as notification.content.data for remote pushes.
       body: {
         environmentId: input.notification.environmentId,
         threadId: input.notification.threadId,
         deepLink: input.notification.deepLink,
+        ...(message === undefined ? {} : { message }),
       },
     },
   };
+}
+
+// An oversized preview loses its ciphertext and falls back to the plain alert text.
+function makePushNotificationRequest(input: {
+  readonly token: string;
+  readonly notification: ApnsNotificationPayload;
+}): ApnsPushNotificationRequest {
+  const request = buildPushNotificationRequest(input);
+  const message = input.notification.message;
+  if (message?.ciphertext === undefined || fitsApnsPayloadLimit(request.payload)) {
+    return request;
+  }
+  const { ciphertext: _dropped, ...withoutCiphertext } = message;
+  return buildPushNotificationRequest({
+    ...input,
+    notification: { ...input.notification, message: withoutCiphertext },
+  });
 }
 
 function apnsReasonFromBody(body: string): string | undefined {

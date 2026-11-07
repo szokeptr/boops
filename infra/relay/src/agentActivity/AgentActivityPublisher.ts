@@ -13,7 +13,11 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { isTerminalPhase } from "./agentActivityPayloads.ts";
+import {
+  isMessageAlertPhase,
+  isTerminalPhase,
+  withoutMessagePreviews,
+} from "./agentActivityPayloads.ts";
 
 export { isExpiredAgentActivityState } from "./agentActivityPayloads.ts";
 import * as AgentActivityRows from "./AgentActivityRows.ts";
@@ -61,6 +65,8 @@ const make = Effect.gen(function* () {
   const publishForDeliveryUser = Effect.fnUntraced(function* (input: {
     readonly deliveryUser: EnvironmentLinks.AgentAwarenessDeliveryUserRecord;
     readonly state: RelayAgentActivityState | null;
+    /** The published state with every phone's sealed preview; only message pushes see it. */
+    readonly messageState: RelayAgentActivityState | null;
     readonly nowMs: number;
   }) {
     const activeStates = input.deliveryUser.liveActivitiesEnabled
@@ -73,6 +79,7 @@ const make = Effect.gen(function* () {
           nowMs: input.nowMs,
         })
       : null;
+    const messageState = input.deliveryUser.notificationsEnabled ? input.messageState : null;
     const notificationOnlyAggregate =
       input.deliveryUser.notificationsEnabled &&
       !input.deliveryUser.liveActivitiesEnabled &&
@@ -103,8 +110,15 @@ const make = Effect.gen(function* () {
                   target,
                   aggregate: notificationOnlyAggregate,
                 }),
+            messageState === null
+              ? Effect.succeed(null)
+              : apnsDeliveries.sendMessageForTarget({
+                  target,
+                  state: messageState,
+                  nowMs: input.nowMs,
+                }),
           ],
-          { concurrency: 2 },
+          { concurrency: 3 },
         );
       }),
       { concurrency: 4 },
@@ -206,11 +220,16 @@ const make = Effect.gen(function* () {
         "relay.thread_id": input.threadId,
         "relay.agent_activity.phase": input.state?.phase ?? "deleted",
       });
-      if (input.state) {
+      const state = input.state === null ? null : withoutMessagePreviews(input.state);
+      const messageState =
+        input.state?.message !== undefined && isMessageAlertPhase(input.state.phase)
+          ? input.state
+          : null;
+      if (state) {
         // Retain terminal rows until cron pruning so completed threads remain visible alongside active ones.
         yield* rows.upsert({
           environmentPublicKey: input.environmentPublicKey,
-          state: input.state,
+          state,
         });
       } else {
         yield* rows.remove({
@@ -226,16 +245,17 @@ const make = Effect.gen(function* () {
       });
       // A deletion carries no audience; each user's re-read aggregate is already audience-filtered.
       const audience =
-        input.state === null
+        state === null
           ? deliveryUsers
-          : deliveryUsers.filter((user) => user.memberId === input.state?.memberId);
+          : deliveryUsers.filter((user) => user.memberId === state.memberId);
       const now = yield* DateTime.now;
       const deliveriesByUser = yield* Effect.forEach(
         audience,
         (deliveryUser) =>
           publishForDeliveryUser({
             deliveryUser,
-            state: input.state,
+            state,
+            messageState,
             nowMs: now.epochMilliseconds,
           }),
         { concurrency: 4 },

@@ -14,6 +14,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
+import { NotificationDeviceId } from "./notificationKeys.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 
 export const RelayAgentAwarenessPlatform = Schema.Literals(["ios", "android"]);
@@ -116,6 +117,21 @@ export const RelayDeviceUnregistrationParams = Schema.Struct({
 });
 export type RelayDeviceUnregistrationParams = typeof RelayDeviceUnregistrationParams.Type;
 
+/** One phone's sealed copy of a bot reply preview; see `notificationKeys.ts` for the envelope. */
+export const RelayAgentActivityMessagePreview = Schema.Struct({
+  deviceId: NotificationDeviceId,
+  ciphertext: TrimmedNonEmptyString.check(Schema.isMaxLength(2_048)),
+});
+export type RelayAgentActivityMessagePreview = typeof RelayAgentActivityMessagePreview.Type;
+
+/** Present when a bot's reply should arrive like a message from that bot. */
+export const RelayAgentActivityMessage = Schema.Struct({
+  senderId: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
+  senderName: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  previews: Schema.Array(RelayAgentActivityMessagePreview).check(Schema.isMaxLength(20)),
+});
+export type RelayAgentActivityMessage = typeof RelayAgentActivityMessage.Type;
+
 export const RelayAgentActivityState = Schema.Struct({
   environmentId: EnvironmentId,
   threadId: ThreadId,
@@ -129,6 +145,7 @@ export const RelayAgentActivityState = Schema.Struct({
   deepLink: TrimmedNonEmptyString,
   /** A member's thread: only that member's link hears it. Absent means only owner links do. */
   memberId: Schema.optional(TrimmedNonEmptyString),
+  message: Schema.optional(RelayAgentActivityMessage),
 });
 export type RelayAgentActivityState = typeof RelayAgentActivityState.Type;
 
@@ -142,6 +159,8 @@ export const RelayAgentActivityAggregateRow = Schema.Struct({
   status: TrimmedNonEmptyString,
   updatedAt: TrimmedNonEmptyString,
   deepLink: TrimmedNonEmptyString,
+  /** The bot's name when this row is a bot conversation; the Live Activity speaks as the bot. */
+  senderName: Schema.optional(TrimmedNonEmptyString),
 });
 export type RelayAgentActivityAggregateRow = typeof RelayAgentActivityAggregateRow.Type;
 

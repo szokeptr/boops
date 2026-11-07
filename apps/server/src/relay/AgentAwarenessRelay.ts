@@ -1,7 +1,9 @@
 import type { AgentAwarenessThread } from "../orchestration-v2/ProjectionStore.ts";
 import {
+  isBotConversationThread,
   isListedThreadLineage,
   type EnvironmentId,
+  type EnvironmentMemberId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2TurnItem,
   type Project,
@@ -9,6 +11,7 @@ import {
 } from "@t3tools/contracts";
 import {
   RelayApi,
+  type RelayAgentActivityMessagePreview,
   type RelayAgentActivityPublishProofPayload,
   type RelayAgentActivityState,
 } from "@t3tools/contracts/relay";
@@ -35,6 +38,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import { isBot } from "../bots/botFamily.ts";
 import {
   isAgentActivityPublishingEnabledValue,
   PUBLISH_AGENT_ACTIVITY_SECRET,
@@ -44,6 +48,8 @@ import {
 } from "../cloud/config.ts";
 import { EnvironmentSigningKey } from "../cloud/environmentKeys.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as NotificationDeviceKeys from "../notifications/NotificationDeviceKeys.ts";
+import { sealNotificationPreview } from "../notifications/notificationPreviewSeal.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
@@ -153,15 +159,67 @@ export const makeAgentAwarenessPublishWorker = Effect.fnUntraced(function* <R>(
   return { enqueue, drain: worker.drain };
 });
 
-function agentAwarenessPublishIdentity(state: RelayAgentActivityState | null): string {
+/** A bot's reply, sealed per phone only when publishing; previews are random per seal. */
+interface BotReply {
+  readonly senderId: string;
+  readonly senderName: string;
+  readonly messageId: string | null;
+  readonly text: string | null;
+  readonly memberId: EnvironmentMemberId | undefined;
+}
+
+function agentAwarenessPublishIdentity(
+  state: RelayAgentActivityState | null,
+  reply: BotReply | null = null,
+): string {
   if (state === null) {
     return "null";
   }
   const { updatedAt: _updatedAt, ...meaningfulState } = state;
-  return JSON.stringify(meaningfulState);
+  return JSON.stringify(
+    reply === null
+      ? meaningfulState
+      : {
+          ...meaningfulState,
+          message: {
+            senderId: reply.senderId,
+            senderName: reply.senderName,
+            messageId: reply.messageId,
+          },
+        },
+  );
 }
 
 const CLEARED_PUBLISH_IDENTITY = agentAwarenessPublishIdentity(null);
+
+const RELAY_MESSAGE_SENDER_NAME_MAX_LENGTH = 200;
+
+/** A bot conversation that finished or asks something speaks as the bot; other threads do not. */
+function resolveBotReply(
+  state: RelayAgentActivityState | null,
+  project: Project,
+  thread: AgentAwarenessThread,
+): BotReply | null {
+  if (state?.phase !== "completed" && state?.phase !== "waiting_for_input") return null;
+  if (!isBot(project) || !isBotConversationThread(thread, project.mainThreadId ?? null)) {
+    return null;
+  }
+  // The relay limits UTF-16 length; cut on a code point so no surrogate half is left.
+  let senderName = "";
+  for (const char of state.projectTitle) {
+    if (senderName.length + char.length > RELAY_MESSAGE_SENDER_NAME_MAX_LENGTH) break;
+    senderName += char;
+  }
+  const latest = thread.latestVisibleMessage;
+  const reply = latest?.role === "assistant" && latest.text.trim() !== "" ? latest : null;
+  return {
+    senderId: project.id,
+    senderName: senderName.trim(),
+    messageId: reply?.id ?? null,
+    text: reply?.text ?? null,
+    memberId: thread.linkOrigin?.memberId,
+  };
+}
 
 // A published tombstone stays recorded so repeats are skipped, but it is not live state.
 function hasLivePublishedState(
@@ -292,12 +350,14 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
 }): {
   readonly projectId: string | null;
   readonly state: RelayAgentActivityState | null;
+  readonly reply: BotReply | null;
   readonly reason: "snapshot" | "thread-not-found" | "project-not-found";
 } {
   if (Option.isNone(input.thread)) {
     return {
       projectId: null,
       state: null,
+      reply: null,
       reason: "thread-not-found",
     };
   }
@@ -305,6 +365,7 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
     return {
       projectId: input.thread.value.projectId,
       state: null,
+      reply: null,
       reason: "project-not-found",
     };
   }
@@ -320,6 +381,7 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
   return {
     projectId: input.thread.value.projectId,
     state: state === null || memberId === undefined ? state : { ...state, memberId },
+    reply: resolveBotReply(state, input.project.value, input.thread.value),
     reason: "snapshot",
   };
 }
@@ -367,6 +429,7 @@ export const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const random = yield* SecureRandom.SecureRandom;
   const signingKey = yield* EnvironmentSigningKey;
+  const deviceKeys = yield* NotificationDeviceKeys.NotificationDeviceKeys;
   const scope = yield* Effect.scope;
   const startedAt = (yield* DateTime.now).epochMilliseconds;
   const catchUpRequests = yield* Queue.dropping<void>(1);
@@ -463,20 +526,72 @@ export const make = Effect.gen(function* () {
     }
     const environmentId = yield* serverEnvironment.getEnvironmentId;
 
+    const sealPreviews = Effect.fn("relay.agent_activity.seal_previews")(function* (
+      text: string,
+      memberId: EnvironmentMemberId | undefined,
+    ) {
+      const keys = yield* deviceKeys
+        .listForAudience(memberId)
+        .pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("could not read notification device keys", { threadId, cause }).pipe(
+              Effect.as([]),
+            ),
+          ),
+        );
+      const previews: RelayAgentActivityMessagePreview[] = [];
+      for (const key of keys) {
+        const sealed = yield* Effect.try(() =>
+          sealNotificationPreview({
+            devicePublicKey: key.publicKey,
+            environmentId,
+            threadId,
+            text,
+          }),
+        ).pipe(
+          Effect.tapError((cause) =>
+            Effect.logWarning("could not seal a notification preview", {
+              threadId,
+              deviceId: key.deviceId,
+              cause,
+            }),
+          ),
+          Effect.option,
+        );
+        if (Option.isSome(sealed))
+          previews.push({ deviceId: key.deviceId, ciphertext: sealed.value });
+      }
+      return previews;
+    });
+
     const publishState = Effect.fn("relay.agent_activity.publish")(function* (input: {
       readonly projectId: string | null;
       readonly state: RelayAgentActivityState | null;
+      readonly reply: BotReply | null;
       readonly reason: string;
     }) {
       if (cachedRelayClient === undefined) {
         cachedRelayClient = yield* makeRelayClient(relayConfig);
       }
       const relayClient = cachedRelayClient;
+      const reply = input.reply;
+      const state =
+        input.state === null || reply === null
+          ? input.state
+          : {
+              ...input.state,
+              message: {
+                senderId: reply.senderId,
+                senderName: reply.senderName,
+                previews:
+                  reply.text === null ? [] : yield* sealPreviews(reply.text, reply.memberId),
+              },
+            };
       const proof = yield* makePublishProof({
         relayIssuer: relayConfig.issuer,
         environmentId,
         threadId,
-        state: input.state,
+        state,
         jti: yield* random.uuidV4(),
       }).pipe(Effect.provideService(EnvironmentSigningKey, signingKey));
 
@@ -496,7 +611,7 @@ export const make = Effect.gen(function* () {
             threadId,
           },
           payload: {
-            state: input.state,
+            state,
             proof,
           },
         })
@@ -532,7 +647,7 @@ export const make = Effect.gen(function* () {
       thread,
       project,
     });
-    const publishIdentity = agentAwarenessPublishIdentity(snapshot.state);
+    const publishIdentity = agentAwarenessPublishIdentity(snapshot.state, snapshot.reply);
     const publishedStateByThread = yield* Ref.get(publishedStateByThreadRef);
     if (
       (snapshot.state?.phase === "completed" || snapshot.state?.phase === "failed") &&
@@ -604,12 +719,16 @@ export const make = Effect.gen(function* () {
         yield* publishState({
           projectId: unsettled.projectId,
           state: completion,
+          reply: unsettled.reply,
           reason: unsettled.reason,
         }).pipe(withRelayClientTracing);
         heldCompletions.delete(threadId);
         publishConfirmDeadlines.set(threadId, nowMs + 5_000);
         yield* Ref.update(publishedStateByThreadRef, (publishedStates) =>
-          new Map(publishedStates).set(threadId, agentAwarenessPublishIdentity(completion)),
+          new Map(publishedStates).set(
+            threadId,
+            agentAwarenessPublishIdentity(completion, unsettled.reply),
+          ),
         );
         yield* schedulePublishConfirm(threadId);
         return;
@@ -635,6 +754,7 @@ export const make = Effect.gen(function* () {
     yield* publishState({
       projectId: snapshot.projectId,
       state: snapshot.state,
+      reply: snapshot.reply,
       reason: snapshot.reason,
     }).pipe(withRelayClientTracing);
     publishConfirmDeadlines.delete(threadId);
@@ -844,4 +964,6 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(AgentAwarenessRelay, make);
+export const layer = Layer.effect(AgentAwarenessRelay, make).pipe(
+  Layer.provide(NotificationDeviceKeys.layer),
+);

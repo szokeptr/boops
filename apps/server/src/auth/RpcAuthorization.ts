@@ -218,6 +218,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.membersSubscribe]: AuthAccessReadScope,
   // A member's own way out; member policy is what lets them reach it.
   [WS_METHODS.membersLeave]: AuthOrchestrationReadScope,
+  // A paired phone registers itself; keys are scoped to the caller's own audience.
+  [WS_METHODS.notificationsRegisterDeviceKey]: AuthOrchestrationReadScope,
+  [WS_METHODS.notificationsRemoveDeviceKey]: AuthOrchestrationReadScope,
 } as const satisfies Readonly<Record<WsRpcMethod, AuthEnvironmentScope>>;
 
 /**
@@ -255,6 +258,9 @@ const MEMBER_RPC_POLICY = {
   [WS_METHODS.subscribeServerLifecycle]: "allow",
   [WS_METHODS.serverReportClientActivity]: "allow",
   [WS_METHODS.membersLeave]: "allow",
+  // Her own phones, filed under her audience.
+  [WS_METHODS.notificationsRegisterDeviceKey]: "allow",
+  [WS_METHODS.notificationsRemoveDeviceKey]: "allow",
   [WS_METHODS.previewClose]: "deny",
   [WS_METHODS.previewStopLocalServer]: "deny",
   [WS_METHODS.serverRunStorageCleanup]: "deny",

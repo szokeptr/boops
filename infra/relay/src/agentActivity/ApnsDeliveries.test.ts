@@ -1,4 +1,6 @@
 import * as AgentActivityAlerts from "./agentActivityAlerts.ts";
+import { makeAggregateState } from "./agentActivityAggregate.ts";
+import { messageNotificationForState, withoutMessagePreviews } from "./agentActivityPayloads.ts";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type {
   RelayAgentActivityAggregateState,
@@ -1164,6 +1166,181 @@ describe("fast completion delivery", () => {
       expect(queuedJobs).toHaveLength(1);
       expect(queuedJobs[0]?.payload.alert).toBeUndefined();
     }).pipe(Effect.provide(layerFor({ attempts: [], queuedJobs })));
+  });
+});
+
+describe("bot message delivery", () => {
+  const botState: RelayAgentActivityState = {
+    ...state,
+    phase: "completed",
+    headline: "Done",
+    message: {
+      senderId: "bot-ada",
+      senderName: "Ada",
+      previews: [
+        { deviceId: "device-1", ciphertext: "sealed-for-device-1" },
+        { deviceId: "device-2", ciphertext: "sealed-for-device-2" },
+      ],
+    },
+  };
+  const botAggregate = makeAggregateState({
+    activeStates: [],
+    terminalState: botState,
+    nowMs: 0,
+  })!;
+  const phone = (deviceId: string, preferences = enabledPreferences): LiveActivities.TargetRow => ({
+    ...target,
+    device_id: deviceId,
+    push_token: `push-${deviceId}`,
+    preferences_json: preferences,
+    last_aggregate_json: JSON.stringify(aggregate),
+  });
+
+  it.effect("rings once per phone with its own ciphertext and keeps the card silent", () => {
+    const queuedJobs: SignedApnsDeliveryJob[] = [];
+    return Effect.gen(function* () {
+      const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+      const update = yield* deliveries.sendForTarget({
+        target: phone("device-1"),
+        aggregate: botAggregate,
+        nowMs: 0,
+      });
+      const statusAlert = yield* deliveries.sendPushNotificationForTarget({
+        target: phone("device-1"),
+        aggregate: botAggregate,
+      });
+      for (const deviceId of ["device-1", "device-2"]) {
+        yield* deliveries.sendMessageForTarget({
+          target: phone(deviceId),
+          state: botState,
+          nowMs: 0,
+        });
+      }
+
+      expect(update?.kind).toBe("live_activity_update");
+      expect(statusAlert).toBeNull();
+      expect(queuedJobs.map((job) => job.payload.kind)).toEqual([
+        "live_activity_update",
+        "push_notification",
+        "push_notification",
+      ]);
+      expect(queuedJobs[0]?.payload.alert).toBeUndefined();
+      expect(queuedJobs[0]?.payload.aggregate?.activities[0]?.senderName).toBe("Ada");
+      expect(queuedJobs.slice(1).map((job) => job.payload.notification)).toMatchObject([
+        {
+          title: "Ada",
+          body: "Sent you a message",
+          message: { senderId: "bot-ada", senderName: "Ada", ciphertext: "sealed-for-device-1" },
+        },
+        { message: { ciphertext: "sealed-for-device-2" } },
+      ]);
+    }).pipe(Effect.provide(layerFor({ attempts: [], queuedJobs })));
+  });
+
+  it.effect.each([
+    { label: "a phone without a key", deviceId: "device-3", body: "Sent you a message" },
+    {
+      label: "a reply waiting for input",
+      state: { ...botState, phase: "waiting_for_input" as const },
+      body: "Is waiting for your reply",
+      ciphertext: "sealed-for-device-1",
+    },
+    {
+      label: "completion alerts turned off",
+      preferences: JSON.stringify({ ...JSON.parse(enabledPreferences), notifyOnCompletion: false }),
+    },
+    {
+      label: "input alerts turned off",
+      state: { ...botState, phase: "waiting_for_input" as const },
+      preferences: JSON.stringify({ ...JSON.parse(enabledPreferences), notifyOnInput: false }),
+    },
+    { label: "notifications turned off", preferences: notificationsDisabledPreferences },
+    {
+      label: "an old reply",
+      state: {
+        ...botState,
+        phase: "waiting_for_input" as const,
+        updatedAt: "1969-12-31T23:57:00.000Z",
+      },
+    },
+    { label: "a coding thread", state: { ...botState, message: undefined } },
+  ])(
+    "queues the right message push for $label",
+    ({ deviceId = "device-1", state: published = botState, preferences, body, ciphertext }) => {
+      const queuedJobs: SignedApnsDeliveryJob[] = [];
+      return Effect.gen(function* () {
+        const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+        yield* deliveries.sendMessageForTarget({
+          target: phone(deviceId, preferences),
+          state: published,
+          nowMs: 0,
+        });
+        const notification = queuedJobs[0]?.payload.notification;
+        if (body === undefined) {
+          expect(queuedJobs).toEqual([]);
+          return;
+        }
+        expect(notification).toMatchObject({
+          title: "Ada",
+          body,
+          message: { senderId: "bot-ada" },
+        });
+        expect(notification?.message?.ciphertext).toBe(ciphertext);
+      }).pipe(Effect.provide(layerFor({ attempts: [], queuedJobs })));
+    },
+  );
+
+  it.effect.each([
+    { label: "a fresh reply", updatedAt: "1970-01-01T00:00:00.000Z", sends: true },
+    {
+      label: "a reply gone stale in the queue",
+      updatedAt: "1969-12-31T23:57:00.000Z",
+      sends: false,
+    },
+  ])("processes $label as a mutable alert push", ({ updatedAt, sends }) => {
+    const requests: HttpClientRequest.HttpClientRequest[] = [];
+    const stored = { ...botState, phase: "waiting_for_input" as const, updatedAt };
+    const signed = signApnsDeliveryJob({
+      secret: config.apnsDeliveryJobSigningSecret,
+      payload: makeApnsDeliveryJobPayload({
+        kind: "push_notification",
+        userId: target.user_id,
+        deviceId: "device-1",
+        token: "push-device-1",
+        aggregate: null,
+        notification: messageNotificationForState(stored, "device-1"),
+        createdAt: "1970-01-01T00:00:00.000Z",
+        expiresAt: "1970-01-01T00:10:00.000Z",
+        jobId: "job-message-1",
+      }),
+    });
+    return Effect.gen(function* () {
+      const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+      yield* deliveries.processSignedJob(yield* signed);
+      expect(requests).toHaveLength(sends ? 1 : 0);
+      const request = requests[0];
+      if (request?.body._tag === "Uint8Array") {
+        expect(request.headers["apns-push-type"]).toBe("alert");
+        expect(JSON.parse(new TextDecoder().decode(request.body.body))).toMatchObject({
+          aps: { "mutable-content": 1, alert: { title: "Ada" } },
+          body: { message: { ciphertext: "sealed-for-device-1" } },
+        });
+      }
+    }).pipe(
+      Effect.provide(
+        layerFor({
+          attempts: [],
+          config: signingConfig,
+          currentTargets: [phone("device-1")],
+          activityStates: [withoutMessagePreviews(stored)],
+          execute: (request) =>
+            Effect.sync(() => {
+              requests.push(request);
+              return HttpClientResponse.fromWeb(request, new Response("", { status: 200 }));
+            }),
+        }),
+      ),
+    );
   });
 });
 

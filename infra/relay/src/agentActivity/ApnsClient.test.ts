@@ -145,7 +145,48 @@ describe("ApnsClient", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
-  it.effect("fits long routing metadata and multibyte alerts within the APNs 4096-byte limit", () =>
+  it.effect("marks a bot message push mutable and hands the extension its ciphertext", () =>
+    Effect.gen(function* () {
+      const apns = yield* ApnsClient.ApnsClient;
+      const request = apns.makePushNotificationRequest({
+        token: "push-token",
+        notification: {
+          title: "Ada",
+          body: "Sent you a message",
+          environmentId: "env",
+          threadId: "thread",
+          deepLink: "/threads/env/thread",
+          phase: "completed",
+          updatedAt: DateTime.formatIso(now),
+          message: { senderId: "bot-ada", senderName: "Ada", ciphertext: "sealed-for-device-1" },
+        },
+      });
+
+      expect(request.payload).toEqual({
+        aps: {
+          alert: { title: "Ada", body: "Sent you a message" },
+          sound: "default",
+          "thread-id": "env/thread",
+          "mutable-content": 1,
+          "interruption-level": "active",
+        },
+        body: {
+          environmentId: "env",
+          threadId: "thread",
+          deepLink: "/threads/env/thread",
+          message: { senderId: "bot-ada", senderName: "Ada", ciphertext: "sealed-for-device-1" },
+        },
+      });
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect.each([
+    { label: "a status alert", message: undefined },
+    {
+      label: "a bot message, dropping its ciphertext",
+      message: { senderId: "bot-ada", senderName: "界".repeat(200), ciphertext: "c".repeat(2_048) },
+    },
+  ])("fits long routing metadata in $label within the APNs 4096-byte limit", ({ message }) =>
     Effect.gen(function* () {
       const apns = yield* ApnsClient.ApnsClient;
       const environmentId = "é".repeat(191);
@@ -156,6 +197,7 @@ describe("ApnsClient", () => {
         environmentId,
         threadId,
         deepLink: `/threads/${encodeURIComponent(environmentId)}/${threadId}`,
+        ...(message === undefined ? {} : { message }),
       });
       const request = apns.makePushNotificationRequest({ token: "push-token", notification });
 
@@ -167,8 +209,15 @@ describe("ApnsClient", () => {
           environmentId,
           threadId,
           deepLink: notification.deepLink,
+          ...(message === undefined
+            ? {}
+            : { message: { senderId: "bot-ada", senderName: notification.message?.senderName } }),
         },
       });
+      expect(
+        (request.payload as { body: { message?: { ciphertext?: string } } }).body.message
+          ?.ciphertext,
+      ).toBeUndefined();
     }).pipe(Effect.provide(layerTest)),
   );
 

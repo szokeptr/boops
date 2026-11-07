@@ -37,6 +37,14 @@ export const ApnsNotificationPayload = Schema.Struct({
   deepLink: Schema.String,
   phase: Schema.optional(RelayAgentAwarenessPhase),
   updatedAt: Schema.optional(Schema.String),
+  /** A bot reply; the phone's Notification Service Extension opens this device's ciphertext. */
+  message: Schema.optional(
+    Schema.Struct({
+      senderId: Schema.String,
+      senderName: Schema.String,
+      ciphertext: Schema.optional(Schema.String),
+    }),
+  ),
 });
 export type ApnsNotificationPayload = typeof ApnsNotificationPayload.Type;
 

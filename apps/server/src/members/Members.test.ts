@@ -5,6 +5,8 @@ import {
   EnvironmentId,
   type OrchestrationProjectShell,
   type Project,
+  NotificationDeviceId,
+  NotificationDevicePublicKey,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -20,6 +22,7 @@ import * as ProviderContinuationRequests from "@t3tools/provider-core/server/Pro
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as NotificationDeviceKeys from "../notifications/NotificationDeviceKeys.ts";
 import * as SessionStore from "../auth/SessionStore.ts";
 import { RELAY_ENVIRONMENT_CREDENTIAL_SECRET, RELAY_URL_SECRET } from "../cloud/config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -191,6 +194,7 @@ const makeHarness = Effect.gen(function* () {
     relayCalls,
     revokedSubjects,
     members: Context.get(context, Members.Members),
+    deviceKeys: Context.get(context, NotificationDeviceKeys.NotificationDeviceKeys),
     withFetch,
     memberThreads: threads
       .listProjectThreads({ projectId: botId, includeSubagents: true })
@@ -246,33 +250,40 @@ it.effect("an invite shares the bot with a stamped conversation of its own", () 
   }),
 );
 
-it.effect("removing a member signs them out, unshares their bots and archives their threads", () =>
-  Effect.gen(function* () {
-    const harness = yield* makeHarness;
-    const anna = yield* harness.members
-      .invite({ email: "anna@example.com", label: "Anna", projectIds: [botId] })
-      .pipe(harness.withFetch);
-    yield* harness.members.authorizeMint({ cloudUserId: "anna-user", memberId: anna.id });
-    expect(
-      Option.getOrThrow(yield* harness.members.get(anna.id)).status,
-      "first mint binds her Connect user",
-    ).toBe("active");
-    expect(
-      yield* harness.members.authorizeMint({ cloudUserId: "someone-else", memberId: anna.id }),
-    ).toEqual(Option.none());
+it.effect(
+  "removing a member signs them out, forgets their phones, unshares bots, archives threads",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness;
+      const anna = yield* harness.members
+        .invite({ email: "anna@example.com", label: "Anna", projectIds: [botId] })
+        .pipe(harness.withFetch);
+      yield* harness.members.authorizeMint({ cloudUserId: "anna-user", memberId: anna.id });
+      expect(
+        Option.getOrThrow(yield* harness.members.get(anna.id)).status,
+        "first mint binds her Connect user",
+      ).toBe("active");
+      expect(
+        yield* harness.members.authorizeMint({ cloudUserId: "someone-else", memberId: anna.id }),
+      ).toEqual(Option.none());
+      yield* harness.deviceKeys.register(`member:${anna.id}`, {
+        deviceId: NotificationDeviceId.make("anna-phone"),
+        publicKey: NotificationDevicePublicKey.make("a".repeat(43)),
+      });
 
-    yield* harness.members.leave(`member:${anna.id}`).pipe(harness.withFetch);
+      yield* harness.members.leave(`member:${anna.id}`).pipe(harness.withFetch);
 
-    expect(harness.revokedSubjects).toEqual([`member:${anna.id}`]);
-    expect(harness.relayCalls.at(-1)).toMatchObject({
-      method: "DELETE",
-      url: `https://relay.test/v1/environments/environment-1/members/${anna.id}`,
-    });
-    expect(harness.bots.get(botId)?.memberIds).toEqual([]);
-    expect(yield* harness.memberThreads).toEqual([]);
-    expect((yield* harness.members.list).members).toEqual([]);
-    expect(
-      yield* harness.members.authorizeMint({ cloudUserId: "anna-user", memberId: anna.id }),
-    ).toEqual(Option.none());
-  }),
+      expect(harness.revokedSubjects).toEqual([`member:${anna.id}`]);
+      expect(harness.relayCalls.at(-1)).toMatchObject({
+        method: "DELETE",
+        url: `https://relay.test/v1/environments/environment-1/members/${anna.id}`,
+      });
+      expect(harness.bots.get(botId)?.memberIds).toEqual([]);
+      expect(yield* harness.memberThreads).toEqual([]);
+      expect(yield* harness.deviceKeys.listForAudience(anna.id)).toEqual([]);
+      expect((yield* harness.members.list).members).toEqual([]);
+      expect(
+        yield* harness.members.authorizeMint({ cloudUserId: "anna-user", memberId: anna.id }),
+      ).toEqual(Option.none());
+    }),
 );

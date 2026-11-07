@@ -1,4 +1,6 @@
 import { installPermissionUpdateNotice } from "./features/connection/permissionUpdateNotice";
+import { installNotificationPreviewKeySync } from "./features/agent-awareness/notificationPreviewKeySync";
+import { installBotAvatarExport } from "./features/bots/botAvatarExport";
 import { installComposerAttachmentUploads } from "./state/composer-attachment-uploads";
 import { installThreadOutboxDelivery } from "./state/threadOutboxDelivery";
 import * as Linking from "expo-linking";
@@ -195,6 +197,8 @@ const appServiceDisposers = [
   installComposerAttachmentUploads(),
   startIncomingShareInbox(),
   installAgentNotificationNavigation(linkToAppPath),
+  installNotificationPreviewKeySync(),
+  installBotAvatarExport(),
   installAppShortcuts(linkToAppPath),
   installAppUpdateChecks(),
   installShowcaseCapture(rootPathnameFromState),

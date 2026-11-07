@@ -37,6 +37,7 @@ import * as SessionStore from "../auth/SessionStore.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { readRelayConnection } from "../cloud/config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as NotificationDeviceKeys from "../notifications/NotificationDeviceKeys.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as EnvironmentMembers from "../persistence/EnvironmentMembers.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -75,8 +76,8 @@ export class Members extends Context.Service<
     /** Access applies to conversations started after the change; stamped threads keep theirs. */
     readonly update: (input: MembersUpdateInput) => Effect.Effect<EnvironmentMember, MembersError>;
     /**
-     * Deletes the member, signs out their devices, withdraws their Connect link, unshares every
-     * bot and stops and archives their threads.
+     * Deletes the member, signs out their devices, forgets their notification keys, withdraws
+     * their Connect link, unshares every bot and stops and archives their threads.
      */
     readonly remove: (memberId: EnvironmentMemberId) => Effect.Effect<void, MembersError>;
     /** `remove`, for the member's own session. */
@@ -105,6 +106,7 @@ const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const random = yield* SecureRandom.SecureRandom;
+  const deviceKeys = yield* NotificationDeviceKeys.NotificationDeviceKeys;
 
   const changes = yield* PubSub.unbounded<void>();
   const published = PubSub.publish(changes, undefined).pipe(Effect.asVoid);
@@ -354,6 +356,7 @@ const make = Effect.gen(function* () {
   ) {
     yield* requireRecord(memberId);
     yield* store.delete(memberId).pipe(Effect.mapError(persistence));
+    yield* deviceKeys.removeMember(memberId).pipe(Effect.mapError(persistence));
     // Revoking closes the leaving member's own socket, which would swallow the reply to `leave`.
     if (sessionsGo === "now") yield* revokeSessions(memberId);
     else yield* Effect.forkDetach(revokeSessions(memberId).pipe(Effect.ignore));
@@ -427,4 +430,7 @@ const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(Members, make).pipe(Layer.provideMerge(EnvironmentMembers.layer));
+export const layer = Layer.effect(Members, make).pipe(
+  Layer.provideMerge(EnvironmentMembers.layer),
+  Layer.provideMerge(NotificationDeviceKeys.layer),
+);

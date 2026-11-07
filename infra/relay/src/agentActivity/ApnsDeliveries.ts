@@ -1,5 +1,6 @@
 import type {
   RelayAgentActivityAggregateState,
+  RelayAgentActivityState,
   RelayAgentAwarenessPreferences,
   RelayDeliveryKind,
   RelayDeliveryResult,
@@ -19,7 +20,9 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import {
+  messageNotificationForState,
   notificationForActivity,
+  ringsAsMessage,
   sanitizeAgentActivityAggregateState,
   sanitizeApnsNotificationPayload,
 } from "./agentActivityPayloads.ts";
@@ -185,6 +188,13 @@ function shouldUpdateLiveActivity(input: {
   );
 }
 
+// Bot replies ring once through their own message push, never through the card or a status alert.
+function withoutMessageRows(
+  aggregate: RelayAgentActivityAggregateState,
+): RelayAgentActivityAggregateState {
+  return { ...aggregate, activities: aggregate.activities.filter((row) => !ringsAsMessage(row)) };
+}
+
 // Restart replays of old completions must not ring again.
 
 function notificationForAggregate(input: {
@@ -200,7 +210,7 @@ function notificationForAggregate(input: {
     return null;
   }
   const activity = input.aggregate.activities[0];
-  if (!activity) {
+  if (!activity || ringsAsMessage(activity)) {
     return null;
   }
   if (!shouldAlertForActivity({ ...activity, preferences, nowMs: input.nowMs })) return null;
@@ -262,12 +272,12 @@ function chooseLiveActivityDelivery(input: {
           ? null
           : (alertForAttentionTransition({
               previousAggregate,
-              nextAggregate,
+              nextAggregate: withoutMessageRows(nextAggregate),
               preferences,
             }) ??
             alertForNewlyTerminal({
               previousAggregate,
-              nextAggregate,
+              nextAggregate: withoutMessageRows(nextAggregate),
               preferences,
               nowMs: input.nowMs,
               includeUnobserved: true,
@@ -491,6 +501,12 @@ export class ApnsDeliveries extends Context.Service<
       readonly target: LiveActivities.TargetRow;
       readonly aggregate: RelayAgentActivityAggregateState | null;
     }) => Effect.Effect<RelayDeliveryResult | null, ApnsDeliveryError>;
+    /** A bot reply as a plain alert push, whatever the device's Live Activity is doing. */
+    readonly sendMessageForTarget: (input: {
+      readonly target: LiveActivities.TargetRow;
+      readonly state: RelayAgentActivityState;
+      readonly nowMs: number;
+    }) => Effect.Effect<RelayDeliveryResult | null, ApnsDeliveryError>;
     readonly sendLiveActivity: (
       input: SendLiveActivityDeliveryInput,
     ) => Effect.Effect<RelayDeliveryResult, ApnsDeliveryError>;
@@ -695,12 +711,12 @@ const make = Effect.gen(function* () {
           ? null
           : (alertForAttentionTransition({
               previousAggregate,
-              nextAggregate: aggregate,
+              nextAggregate: withoutMessageRows(aggregate),
               preferences,
             }) ??
             alertForNewlyTerminal({
               previousAggregate,
-              nextAggregate: aggregate,
+              nextAggregate: withoutMessageRows(aggregate),
               preferences,
               nowMs: now.epochMilliseconds,
               includeUnobserved: true,
@@ -878,6 +894,7 @@ const make = Effect.gen(function* () {
             updatedAt: notification.updatedAt,
             preferences,
             nowMs: now.epochMilliseconds,
+            requireFresh: notification.message !== undefined,
           })
         : preferences?.notificationsEnabled === true;
     if (!alertAllowed) {
@@ -1034,6 +1051,31 @@ const make = Effect.gen(function* () {
           })
         : Effect.succeed(null);
     }),
+    sendMessageForTarget: Effect.fnUntraced(function* (input) {
+      const token = input.target.push_token;
+      if (!config.apns || !token) return null;
+      const notification = messageNotificationForState(input.state, input.target.device_id);
+      if (
+        notification === null ||
+        !shouldAlertForActivity({
+          phase: input.state.phase,
+          updatedAt: input.state.updatedAt,
+          preferences: parsePreferences(input.target.preferences_json),
+          nowMs: input.nowMs,
+          requireFresh: true,
+        })
+      ) {
+        return null;
+      }
+      return yield* deliveryQueue.enqueuePushNotification({
+        userId: input.target.user_id,
+        deviceId: input.target.device_id,
+        token,
+        bundleId: input.target.bundle_id,
+        apsEnvironment: input.target.aps_environment,
+        notification,
+      });
+    }),
     sendForTarget: Effect.fnUntraced(function* (input) {
       if (!config.apns) return null;
       const delivery = chooseDelivery({
@@ -1063,11 +1105,12 @@ const make = Effect.gen(function* () {
             aggregate: input.aggregate,
             nowMs: input.nowMs,
           });
+      const heroRow = delivery.aggregate?.activities[0];
       // Use the end alert only when no companion notification will ring, preserving feedback for Live-Activity-only users.
       const alert = input.replay
         ? null
         : delivery.kind === "live_activity_end"
-          ? notification && input.target.push_token
+          ? (notification && input.target.push_token) || (heroRow && ringsAsMessage(heroRow))
             ? null
             : alertForTerminalAggregate({
                 aggregate: delivery.aggregate,

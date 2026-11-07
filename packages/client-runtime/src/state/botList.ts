@@ -1,7 +1,6 @@
 import {
-  botHeartbeatThreadId,
   botMainThreadId,
-  isListedThreadLineage,
+  isBotConversationThread,
   type BotAutonomy,
   type EnvironmentId,
   type ProjectAvatar,
@@ -20,6 +19,9 @@ import {
   resolveThreadStatus,
 } from "./threadStatus.ts";
 import { toSortableTimestamp } from "./threadSort.ts";
+
+// Web and mobile read it from here; the server shares the rule through contracts.
+export { isBotConversationThread };
 
 /** What one thread of a bot is doing. */
 export type BotThreadStatus = "working" | "needs-you" | "idle";
@@ -113,20 +115,6 @@ function botThreads(
       thread.environmentId === project.environmentId &&
       thread.projectId === project.id &&
       isListedThread(thread),
-  );
-}
-
-/**
- * A thread the user talks to the bot in: its main one, or one started beside it. Helpers, side
- * chats and the Heartbeat thread are the bot's background work, which Activity lists.
- */
-export function isBotConversationThread(
-  thread: Pick<EnvironmentThreadShell, "id" | "projectId" | "lineage">,
-  mainThreadId: ThreadId | null,
-): boolean {
-  return (
-    thread.id === mainThreadId ||
-    (isListedThreadLineage(thread.lineage) && thread.id !== botHeartbeatThreadId(thread.projectId))
   );
 }
 

@@ -431,6 +431,11 @@ import {
   MembersSnapshot,
   MembersUpdateInput,
 } from "./members.ts";
+import {
+  NotificationKeysError,
+  NotificationsRegisterDeviceKeyInput,
+  NotificationsRemoveDeviceKeyInput,
+} from "./notificationKeys.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
 import {
   BotArchiveInput,
@@ -578,6 +583,8 @@ export const WS_METHODS = {
   membersSetBotAccess: "members.setBotAccess",
   membersSetBotConnectionAccess: "members.setBotConnectionAccess",
   membersLeave: "members.leave",
+  notificationsRegisterDeviceKey: "notifications.registerDeviceKey",
+  notificationsRemoveDeviceKey: "notifications.removeDeviceKey",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverSearchAcpRegistry: "server.searchAcpRegistry",
@@ -931,6 +938,15 @@ const WsMembersSetBotConnectionAccessRpc = Rpc.make(WS_METHODS.membersSetBotConn
 const WsMembersLeaveRpc = Rpc.make(WS_METHODS.membersLeave, {
   payload: Schema.Struct({}),
   error: Schema.Union([MembersError, EnvironmentAuthorizationError]),
+});
+/** Lets this environment seal bot reply previews to the calling phone; members register their own. */
+const WsNotificationsRegisterDeviceKeyRpc = Rpc.make(WS_METHODS.notificationsRegisterDeviceKey, {
+  payload: NotificationsRegisterDeviceKeyInput,
+  error: Schema.Union([NotificationKeysError, EnvironmentAuthorizationError]),
+});
+const WsNotificationsRemoveDeviceKeyRpc = Rpc.make(WS_METHODS.notificationsRemoveDeviceKey, {
+  payload: NotificationsRemoveDeviceKeyInput,
+  error: Schema.Union([NotificationKeysError, EnvironmentAuthorizationError]),
 });
 /** The current connections, then the list again after every change. */
 const WsConnectorsSubscribeRpc = Rpc.make(WS_METHODS.connectorsSubscribe, {
@@ -2339,6 +2355,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsMembersSetBotAccessRpc,
   WsMembersSetBotConnectionAccessRpc,
   WsMembersLeaveRpc,
+  WsNotificationsRegisterDeviceKeyRpc,
+  WsNotificationsRemoveDeviceKeyRpc,
   WsProjectsCreateFromThreadRpc,
   WsProjectsWriteFileRpc,
   WsProjectsMutateRpc,

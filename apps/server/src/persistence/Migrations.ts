@@ -91,6 +91,7 @@ import Migration0084 from "./Migrations/084_ScheduledTasksPausedByArchive.ts";
 import Migration0085 from "./Migrations/085_Connectors.ts";
 import Migration0086 from "./Migrations/086_EnvironmentMembers.ts";
 import Migration0087 from "./Migrations/087_ProjectionProjectsCallSettings.ts";
+import Migration0088 from "./Migrations/088_NotificationDeviceKeys.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -181,6 +182,7 @@ const migrationEntries = [
   [85, "Connectors", Migration0085],
   [86, "EnvironmentMembers", Migration0086],
   [87, "ProjectionProjectsCallSettings", Migration0087],
+  [88, "NotificationDeviceKeys", Migration0088],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

@@ -41,6 +41,8 @@ export interface AgentActivityRowProps {
   readonly status: string;
   readonly updatedAt: string;
   readonly deepLink: string;
+  /** Set for a bot conversation: the row speaks as the bot. */
+  readonly senderName?: string;
 }
 
 export interface AgentActivityProps {
@@ -193,7 +195,49 @@ function AgentActivity(
     </HStack>
   );
 
-  const renderCompactRow = (row: AgentActivityRowProps) => (
+  // A bot's row reads like a contact's status: "Pip is thinking…".
+  const botStatus = (row: AgentActivityRowProps): string => {
+    switch (row.phase) {
+      case "starting":
+      case "running":
+        return "is thinking…";
+      case "waiting_for_input":
+        return "is waiting for you";
+      case "completed":
+        return "replied";
+      case "failed":
+        return "couldn't finish";
+      default:
+        return row.status;
+    }
+  };
+
+  const renderBotRow = (row: AgentActivityRowProps, size: number) => (
+    <HStack spacing={5} alignment="center">
+      <Text
+        modifiers={[
+          font({ weight: "semibold", size }),
+          foregroundStyle(primaryForeground),
+          lineLimit(1),
+        ]}
+      >
+        {row.senderName}
+      </Text>
+      <Text
+        modifiers={[
+          font({ size: size - 1 }),
+          foregroundStyle(phaseTint(row.phase)),
+          lineLimit(1),
+          layoutPriority(1),
+        ]}
+      >
+        {botStatus(row)}
+      </Text>
+      <Spacer minLength={8} />
+    </HStack>
+  );
+
+  const renderPlainRow = (row: AgentActivityRowProps) => (
     <HStack spacing={7} alignment="center">
       <Text
         modifiers={[
@@ -220,6 +264,9 @@ function AgentActivity(
       </Text>
     </HStack>
   );
+
+  const renderCompactRow = (row: AgentActivityRowProps) =>
+    row.senderName ? renderBotRow(row, 13) : renderPlainRow(row);
 
   // Image views only honor `resizable` directly (frame/foregroundStyle are
   // dropped), so we size it via a container frame the resizable image fills and
@@ -300,7 +347,8 @@ function AgentActivity(
           </Text>
           <Spacer minLength={6} />
         </HStack>
-        {row0 ? (
+        {row0 && row0.senderName ? renderBotRow(row0, 12) : null}
+        {row0 && !row0.senderName ? (
           <HStack spacing={7} alignment="center">
             <Text
               modifiers={[

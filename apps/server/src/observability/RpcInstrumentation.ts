@@ -83,6 +83,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.membersSetBotAccess]: "members",
   [WS_METHODS.membersSetBotConnectionAccess]: "members",
   [WS_METHODS.membersLeave]: "members",
+  [WS_METHODS.notificationsRegisterDeviceKey]: "notifications",
+  [WS_METHODS.notificationsRemoveDeviceKey]: "notifications",
   [WS_METHODS.serverUpdateSettings]: "server",
   [WS_METHODS.serverSearchAcpRegistry]: "server",
   [WS_METHODS.serverPrepareAcpRegistryAgent]: "server",

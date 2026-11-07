@@ -1,9 +1,13 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
+  botHeartbeatThreadId,
   EnvironmentId,
+  EnvironmentMemberId,
   EventId,
   MessageId,
+  NotificationDeviceId,
+  NotificationDevicePublicKey,
   NodeId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
@@ -37,6 +41,11 @@ import {
   RELAY_URL_SECRET,
 } from "../cloud/config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as NotificationDeviceKeys from "../notifications/NotificationDeviceKeys.ts";
+import {
+  makeDeviceKey,
+  openNotificationPreview,
+} from "../notifications/notificationPreviewSeal.testkit.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -146,6 +155,8 @@ const makeTestRelay = Effect.fnUntraced(function* (
     readonly readShell?: (threadId: ThreadId) => Effect.Effect<OrchestrationV2ThreadShell | null>;
     readonly domainEvents?: Stream.Stream<OrchestrationV2DomainEvent>;
     readonly catchUpThreads?: ReadonlyArray<OrchestrationV2ThreadShell>;
+    readonly project?: { readonly title?: string; readonly mainThreadId?: ThreadId };
+    readonly deviceKeys?: ReadonlyArray<NotificationDeviceKeys.NotificationDeviceKey>;
   } = {},
 ) {
   const values = new Map<string, Uint8Array>(
@@ -266,9 +277,21 @@ const makeTestRelay = Effect.fnUntraced(function* (
     },
     { preconnect: () => {} },
   );
+  const deviceKeyAudiences: Array<EnvironmentMemberId | undefined> = [];
+  const deviceKeys = NotificationDeviceKeys.NotificationDeviceKeys.of({
+    register: unused,
+    remove: unused,
+    removeMember: unused,
+    listForAudience: (memberId) =>
+      Effect.sync(() => {
+        deviceKeyAudiences.push(memberId);
+        return options.deviceKeys ?? [];
+      }),
+  });
   const project = {
+    ...options.project,
     id: PROJECT_ID,
-    title: "Project",
+    title: options.project?.title ?? "Project",
     workspaceRoot: "/workspace",
     defaultModelSelection: null,
     scripts: [],
@@ -296,10 +319,20 @@ const makeTestRelay = Effect.fnUntraced(function* (
       listShells: unused,
       getById: () => Effect.succeedSome(project),
     }),
+    Effect.provideService(NotificationDeviceKeys.NotificationDeviceKeys, deviceKeys),
     Effect.provideService(FetchHttpClient.Fetch, fetch),
     Effect.provide(NodeCrypto.layer),
   );
-  return { relay, secrets, secretReads, currentShell, shellReads, publications, catchUp };
+  return {
+    relay,
+    secrets,
+    secretReads,
+    currentShell,
+    shellReads,
+    publications,
+    catchUp,
+    deviceKeyAudiences,
+  };
 });
 
 describe("AgentAwarenessRelay", () => {
@@ -364,6 +397,120 @@ describe("AgentAwarenessRelay", () => {
       yield* relay.publishThread(THREAD_ID);
       assert.equal(publications.length, 2);
       assert.equal(publications[1]?.state?.threadTitle, "Renamed thread");
+    }),
+  );
+
+  it.effect("a bot conversation's reply arrives as a message sealed to each phone", () =>
+    Effect.gen(function* () {
+      const anna = EnvironmentMemberId.make("member-anna");
+      const phones = [makeDeviceKey(), makeDeviceKey()];
+      const deviceIds = [
+        NotificationDeviceId.make("phone-1"),
+        NotificationDeviceId.make("phone-2"),
+      ];
+      const { relay, currentShell, publications, deviceKeyAudiences } = yield* makeTestRelay({
+        project: { title: "Pip", mainThreadId: THREAD_ID },
+        deviceKeys: phones.map((phone, index) => ({
+          deviceId: deviceIds[index]!,
+          publicKey: NotificationDevicePublicKey.make(phone.publicKey),
+        })),
+      });
+      const linkOrigin = {
+        sessionId: `member:${anna}`,
+        label: "Anna",
+        access: "full-access" as const,
+        memberId: anna,
+      };
+      const reply = (id: string, text: string) =>
+        shell({
+          status: "completed",
+          linkOrigin,
+          latestVisibleMessage: {
+            id: MessageId.make(id),
+            role: "assistant",
+            text,
+            updatedAt: DateTime.makeUnsafe(NOW),
+          },
+        });
+      const completeWith = Effect.fnUntraced(function* (next: OrchestrationV2ThreadShell) {
+        yield* Ref.set(currentShell, next);
+        yield* relay.publishThread(THREAD_ID);
+        yield* TestClock.adjust("5 seconds");
+        yield* relay.drain;
+      });
+      const opened = (index: number) =>
+        publications[index]?.state?.message?.previews.map((preview, phone) => {
+          assert.equal(preview.deviceId, deviceIds[phone]);
+          return openNotificationPreview({
+            envelope: preview.ciphertext,
+            devicePrivateKey: phones[phone]!.privateKey,
+            environmentId: "relay-environment",
+            threadId: THREAD_ID,
+          }).text;
+        });
+
+      yield* Ref.set(currentShell, shell({ linkOrigin }));
+      yield* relay.publishThread(THREAD_ID);
+      assert.isUndefined(publications[0]?.state?.message, "only replies speak as the bot");
+      yield* completeWith(reply("message:1", "**Done.**\n\nThe report is ready."));
+      assert.equal(publications.length, 2);
+      assert.deepEqual(
+        { ...publications[1]?.state?.message, previews: undefined },
+        { senderId: PROJECT_ID, senderName: "Pip", previews: undefined },
+      );
+      assert.deepEqual(opened(1), ["Done. The report is ready.", "Done. The report is ready."]);
+      assert.deepEqual(deviceKeyAudiences, [anna]);
+
+      // Fresh ciphertext must not count as a change, but a new reply does.
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(publications.length, 2);
+      yield* completeWith(reply("message:2", "One more thing"));
+      assert.equal(publications.length, 3);
+      assert.deepEqual(opened(2), ["One more thing", "One more thing"]);
+
+      // Without the bot's words the phone still hears from the bot, just without a preview.
+      yield* completeWith(shell({ status: "completed", linkOrigin }));
+      assert.deepEqual(publications[3]?.state?.message, {
+        senderId: PROJECT_ID,
+        senderName: "Pip",
+        previews: [],
+      });
+    }),
+  );
+
+  it.effect.each([
+    { name: "a coding thread", project: {}, threadId: THREAD_ID },
+    {
+      name: "a bot's Heartbeat thread",
+      project: { mainThreadId: ThreadId.make("bot-main") },
+      threadId: botHeartbeatThreadId(PROJECT_ID),
+    },
+  ])("$name does not speak as the bot", ({ project, threadId }) =>
+    Effect.gen(function* () {
+      const { relay, currentShell, publications, deviceKeyAudiences } = yield* makeTestRelay({
+        project,
+      });
+      const assistant = {
+        id: MessageId.make("message:1"),
+        role: "assistant" as const,
+        text: "Done",
+        updatedAt: DateTime.makeUnsafe(NOW),
+      };
+      yield* Ref.set(currentShell, shell({ id: threadId, latestVisibleMessage: assistant }));
+      yield* relay.publishThread(threadId);
+      yield* Ref.set(
+        currentShell,
+        shell({ id: threadId, status: "completed", latestVisibleMessage: assistant }),
+      );
+      yield* relay.publishThread(threadId);
+      yield* TestClock.adjust("5 seconds");
+      yield* relay.drain;
+      assert.deepEqual(
+        publications.map((publication) => publication.state?.phase),
+        ["running", "completed"],
+      );
+      assert.isUndefined(publications[1]?.state?.message);
+      assert.deepEqual(deviceKeyAudiences, []);
     }),
   );
 

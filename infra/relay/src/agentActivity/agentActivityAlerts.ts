@@ -151,11 +151,13 @@ export function shouldAlertForActivity(input: {
   readonly updatedAt: string;
   readonly preferences: RelayAgentAwarenessPreferences | null;
   readonly nowMs: number;
+  /** Bot replies go stale like completions, so a republished old reply stays quiet. */
+  readonly requireFresh?: boolean;
 }): boolean {
   return (
     input.preferences?.notificationsEnabled === true &&
     alertAllowedForPhase(input.preferences, input.phase) &&
-    ((input.phase !== "completed" && input.phase !== "failed") ||
+    ((input.requireFresh !== true && input.phase !== "completed" && input.phase !== "failed") ||
       isFreshTerminalNotification(input.updatedAt, input.nowMs))
   );
 }

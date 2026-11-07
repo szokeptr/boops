@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 
 import { ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ModelSelection } from "./modelSelection.ts";
+import { isListedThreadLineage, type OrchestrationV2AppThreadLineage } from "./orchestrationV2.ts";
 import { ProjectAvatar } from "./project.ts";
 
 export const BotCreateInput = Schema.Struct({
@@ -150,6 +151,24 @@ export class BotCallError extends Schema.TaggedError<BotCallError>()("BotCallErr
 /** The background thread a bot's Heartbeat routine runs in, out of its conversations. */
 export const botHeartbeatThreadId = (projectId: ProjectId) =>
   ThreadId.make(`heartbeat:${projectId}`);
+
+/**
+ * A thread the user talks to the bot in: its main one, or one started beside it. Helpers, side
+ * chats and the Heartbeat thread are the bot's background work, which Activity lists.
+ */
+export function isBotConversationThread(
+  thread: {
+    readonly id: ThreadId;
+    readonly projectId: ProjectId;
+    readonly lineage: OrchestrationV2AppThreadLineage;
+  },
+  mainThreadId: ThreadId | null,
+): boolean {
+  return (
+    thread.id === mainThreadId ||
+    (isListedThreadLineage(thread.lineage) && thread.id !== botHeartbeatThreadId(thread.projectId))
+  );
+}
 
 type Timestamp = string | DateTime.DateTime;
 

@@ -27,7 +27,7 @@ function botRelation(self: FamilyMember, other: FamilyMember): "parent" | "child
 }
 
 /** `Bots.create` records a main thread; scratch and plain projects have none. */
-const isBot = (member: FamilyMember | undefined): member is FamilyMember =>
+export const isBot = (member: FamilyMember | undefined): member is FamilyMember =>
   member?.mainThreadId != null;
 
 /** Two bots may message each other only when one created the other; non-bot projects are not limited. */
