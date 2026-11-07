@@ -29,7 +29,6 @@ export function useSidebarWorkspaceTabs(): "picker" | "toolbar" | null {
 export function useCompactWorkspaceTabs() {
   const { layout } = useAdaptiveWorkspaceLayout();
   const deviceType = useDeviceType();
-  // The compact glass picker reserves the trailing edge for a separate compose button.
   return (
     Platform.OS === "ios" &&
     deviceType !== "pad" &&
@@ -38,8 +37,7 @@ export function useCompactWorkspaceTabs() {
   );
 }
 
-/** The workspace tab bar floats with compose beside it. Before iOS 26 UITabBar is opaque and
- * full width, so it sits flush and compose stays in the header. */
+/** The workspace tab bar floats. Before iOS 26 UITabBar is opaque and full width, so it sits flush. */
 export function useFloatingWorkspaceTabs() {
   const { layout } = useAdaptiveWorkspaceLayout();
   const deviceType = useDeviceType();

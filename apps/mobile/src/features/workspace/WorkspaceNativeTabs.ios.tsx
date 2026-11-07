@@ -107,7 +107,7 @@ export function WorkspaceNativeTabs(props: {
         ios={{
           tabBarControllerMode: "tabBar",
           tabBarMinimizeBehavior: "never",
-          tabBarTintColor: colors["--color-primary"],
+          tabBarTintColor: colors["--color-foreground"],
         }}
         onTabSelectionRejected={({
           nativeEvent,
@@ -183,18 +183,5 @@ export function WorkspaceNativeTabs(props: {
 
 /** The workspace tabs at the foot of the sidebar. */
 export function WorkspaceSidebarTabsFooter() {
-  const workspace = useWorkspaceTabs()!;
-  const { addBot } = useAdaptiveWorkspaceLayout();
-  const compact = useFloatingWorkspaceTabs();
-  return (
-    <WorkspaceSidebarTabs
-      compact={compact}
-      reserveComposeSpace={compact}
-      onAddBot={
-        compact && !workspace.settingsOpen && workspace.state.selectedTab === "threads"
-          ? addBot
-          : undefined
-      }
-    />
-  );
+  return <WorkspaceSidebarTabs compact={useFloatingWorkspaceTabs()} />;
 }

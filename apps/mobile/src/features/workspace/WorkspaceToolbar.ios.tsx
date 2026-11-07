@@ -17,7 +17,7 @@ import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { shouldRestoreNativeSearch } from "./workspace-tabs-state";
-import { useFloatingWorkspaceTabs, useSidebarWorkspaceTabs } from "./useSystemWorkspaceTabBar";
+import { useSidebarWorkspaceTabs } from "./useSystemWorkspaceTabBar";
 import { WorkspaceTabToolbarButtons } from "./WorkspaceSectionToolbar";
 
 const SEARCH_LABELS = {
@@ -33,7 +33,6 @@ export function WorkspaceToolbar(props: {
   const activeNewTask = useActiveNewTask();
   const deviceType = useDeviceType();
   const sidebarTabs = useSidebarWorkspaceTabs();
-  const floatingTabs = useFloatingWorkspaceTabs();
   const duoSearch = NATIVE_LIQUID_GLASS_SUPPORTED && isDuoDevice(deviceType);
   const bottomSearch = duoSearch && sidebarTabs !== "picker";
   // On the Duo, compose belongs to the threads tab, in the detail column's bar when unfolded.
@@ -192,8 +191,7 @@ export function WorkspaceToolbar(props: {
           selectedTab !== "threads" ||
           isDuoDevice(deviceType) ||
           (deviceType === "pad" && layout.usesSplitView) ||
-          sidebarTabs === "picker" ||
-          floatingTabs ? null : (
+          sidebarTabs === "picker" ? null : (
             <Toolbar.Button accessibilityLabel="Add bot" icon="plus" onPress={props.onAddBot} />
           )}
           {NATIVE_LIQUID_GLASS_SUPPORTED ? null : (

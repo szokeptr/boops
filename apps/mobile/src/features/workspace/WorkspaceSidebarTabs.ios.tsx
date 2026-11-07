@@ -12,18 +12,11 @@ const NativeSidebarTabBar = requireNativeView<
     selectedTab: string;
     selectedColor: string;
     appearance: string;
-    showsCompose: boolean;
-    compact?: boolean;
     onSelectionChange: (event: NativeSyntheticEvent<{ tab: string }>) => void;
-    onCompose: () => void;
   }
 >("T3NativeControls", "SidebarTabBar");
 
-export function WorkspaceSidebarTabs(props: {
-  readonly onAddBot?: () => void;
-  readonly compact?: boolean;
-  readonly reserveComposeSpace?: boolean;
-}) {
+export function WorkspaceSidebarTabs(props: { readonly compact?: boolean }) {
   const workspace = useWorkspaceTabs()!;
   const order = useNavigationTabOrder();
   const hidden = useHiddenNavigationTabs();
@@ -42,11 +35,8 @@ export function WorkspaceSidebarTabs(props: {
         workspace.settingsOpen,
         hidden,
       )}
-      selectedColor={colors["--color-primary"]}
+      selectedColor={colors["--color-foreground"]}
       appearance={colorScheme}
-      showsCompose={Boolean(props.onAddBot)}
-      compact={props.compact}
-      onCompose={() => props.onAddBot?.()}
       onSelectionChange={({ nativeEvent }) => {
         const tab = tabs.find((candidate) => candidate === nativeEvent.tab);
         if (tab === "settings") selectTab("settings");
@@ -57,14 +47,7 @@ export function WorkspaceSidebarTabs(props: {
         position: "absolute",
         bottom: 0,
         left: props.compact ? 8 : 0,
-        // Keep the tab icons in place when Compose disappears on other destinations.
-        right:
-          (props.compact ? 12 : 0) +
-          ((props.reserveComposeSpace ?? props.compact) && !props.onAddBot
-            ? props.compact
-              ? 64
-              : 76
-            : 0),
+        right: props.compact ? 8 : 0,
         height: 128,
       }}
     />
