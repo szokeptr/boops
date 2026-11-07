@@ -413,6 +413,7 @@ const make = Effect.gen(function* () {
           credential === undefined ||
           (credential.kind === "oauth" && credential.tokens === undefined)
         ) {
+          yield* setStatus(row.connection_id, "needs_auth", "Sign-in missing");
           return yield* new ConnectorError({ reason: "not_connected" });
         }
         if (credential.kind !== "oauth") return credentialHeaders(row, credential);

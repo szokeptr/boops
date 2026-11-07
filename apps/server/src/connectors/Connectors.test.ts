@@ -643,6 +643,11 @@ it.effect("refreshes a token near expiry, and a failed refresh means needs_auth"
         harness.approve(again.authorizationUrl!),
       );
       expect(reconnected).toMatchObject({ id: connection.id, status: "connected" });
+      // A credential lost from the secret store (a copied home) means needs_auth too.
+      harness.secrets.delete(`connector-${connection.id}`);
+      expect((yield* upstream.pipe(Effect.flip)).reason).toBe("not_connected");
+      const [missing] = (yield* harness.connectors.list).connections;
+      expect(missing).toMatchObject({ status: "needs_auth", statusDetail: "Sign-in missing" });
     }),
   ),
 );
