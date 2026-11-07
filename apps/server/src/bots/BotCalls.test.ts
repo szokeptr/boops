@@ -236,7 +236,8 @@ it.effect(
         assert.strictEqual(result.delegation_id, "del_1");
         assert.include(String(result.content), "Booked for 3pm Tuesday.");
 
-        yield* calls.end({ callId: "live_1" });
+        // The bot hangs up from its conversation.
+        assert.strictEqual(yield* calls.endForThread(threadId), true);
         yield* nextSent(sent, "session.close");
         const recap = yield* Queue.take(messages);
         assert.strictEqual(
@@ -245,6 +246,7 @@ it.effect(
         );
         assert.strictEqual(recap.call?.kind, "recap");
         assert.strictEqual(recap.mode, "queue");
+        assert.strictEqual(yield* calls.endForThread(threadId), false);
       }).pipe(Effect.provide(layer));
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

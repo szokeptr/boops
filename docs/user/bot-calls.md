@@ -4,7 +4,7 @@ You can talk to a bot out loud. The bot answers in its own voice, and it can sti
 
 ## Start a call
 
-Open a conversation with the bot and click the phone button next to its name. You can also open the command palette and choose **Call <bot name>**. The call stays in a small panel while you use the rest of the app. Minimize it to a pill, mute your microphone, or hang up from there. The bot says goodbye when you do, but you hang up yourself.
+Open a conversation with the bot and click the phone button next to its name. You can also open the command palette and choose **Call <bot name>**. The call stays in a small panel while you use the rest of the app. Minimize it to a pill, mute your microphone, or hang up from there. Say goodbye or ask the bot to end the call, and it hangs up a few seconds later.
 
 On iPhone, calls use the system call screen, so they keep going with the screen locked and work with AirPods and CarPlay.
 

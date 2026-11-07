@@ -75,6 +75,8 @@ export class BotCalls extends Context.Service<
     readonly start: (input: BotCallStartInput) => Effect.Effect<BotCallStartResult, BotCallError>;
     /** Hangs up. The conversation gets the call's transcript. */
     readonly end: (input: BotCallEndInput) => Effect.Effect<void>;
+    /** Hangs up the call this conversation is on, for the bot itself; false when none is live. */
+    readonly endForThread: (threadId: ThreadId) => Effect.Effect<boolean>;
   }
 >()("boops/bots/BotCalls") {}
 
@@ -103,7 +105,10 @@ const make = Effect.gen(function* () {
   const secrets = yield* SecretResolver.SecretResolver;
   const makeWebSocket = yield* Socket.WebSocketConstructor;
   const sessions = yield* FiberMap.make<string>();
-  const projectOfCall = new Map<string, ProjectId>();
+  const ownerOfCall = new Map<
+    string,
+    { readonly projectId: ProjectId; readonly threadId: ThreadId }
+  >();
 
   const apiKey = Effect.gen(function* () {
     const configured = (yield* settings.getSettings).voiceCalls.openaiApiKey;
@@ -138,7 +143,7 @@ const make = Effect.gen(function* () {
   const closers = new Map<string, Effect.Effect<void>>();
 
   const end: BotCalls["Service"]["end"] = Effect.fn("BotCalls.end")(function* (input) {
-    projectOfCall.delete(input.callId);
+    ownerOfCall.delete(input.callId);
     const close = closers.get(input.callId);
     const fiber = yield* FiberMap.get(sessions, input.callId);
     if (close !== undefined && Option.isSome(fiber)) {
@@ -147,6 +152,14 @@ const make = Effect.gen(function* () {
     }
     yield* FiberMap.remove(sessions, input.callId);
   });
+
+  const endForThread: BotCalls["Service"]["endForThread"] = Effect.fn("BotCalls.endForThread")(
+    function* (threadId) {
+      const calls = [...ownerOfCall].filter(([, owner]) => owner.threadId === threadId);
+      for (const [callId] of calls) yield* end({ callId });
+      return calls.length > 0;
+    },
+  );
 
   const start: BotCalls["Service"]["start"] = Effect.fn("BotCalls.start")(function* (input) {
     const key = yield* apiKey;
@@ -233,10 +246,10 @@ const make = Effect.gen(function* () {
       return yield* callError("rejected", "OpenAI did not return a call.");
     }
 
-    for (const [otherCall, projectId] of projectOfCall) {
-      if (projectId === bot.id) yield* end({ callId: otherCall });
+    for (const [otherCall, owner] of ownerOfCall) {
+      if (owner.projectId === bot.id) yield* end({ callId: otherCall });
     }
-    projectOfCall.set(callId, bot.id);
+    ownerOfCall.set(callId, { projectId: bot.id, threadId: input.threadId });
     yield* FiberMap.run(
       sessions,
       callId,
@@ -255,7 +268,7 @@ const make = Effect.gen(function* () {
         ),
         Effect.ensuring(
           Effect.sync(() => {
-            projectOfCall.delete(callId);
+            ownerOfCall.delete(callId);
             closers.delete(callId);
           }),
         ),
@@ -465,7 +478,7 @@ const make = Effect.gen(function* () {
     );
   }, Effect.scoped);
 
-  return BotCalls.of({ start, end });
+  return BotCalls.of({ start, end, endForThread });
 });
 
 function parseEvent(raw: string): Readonly<Record<string, unknown>> | null {

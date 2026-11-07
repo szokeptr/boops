@@ -1,6 +1,7 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
+import * as BotCalls from "../../../bots/BotCalls.ts";
 import type { BotFamilyError } from "../../../bots/botFamily.ts";
 import * as Bots from "../../../bots/Bots.ts";
 import { assertNotLinked } from "../../linkOrigin.ts";
@@ -125,6 +126,13 @@ const handlers = {
         text: input.text,
       });
     }).pipe(mapBotErrors),
+  ),
+  end_call: McpToolAccess.actsAsCaller(() =>
+    Effect.gen(function* () {
+      const thread = yield* callerThread;
+      const calls = yield* BotCalls.BotCalls;
+      return { ended: yield* calls.endForThread(thread.id) };
+    }),
   ),
 } satisfies McpToolAccess.Handlers<typeof BotToolkit.tools>;
 

@@ -40,14 +40,15 @@ Generate <|SpawnThinking|> when:
 - The user wants anything done, looked up, checked, remembered or thought through.
 - The user asks how ongoing work is going, or wants it stopped or changed.
 - A correction changes work already requested.
+- The user says goodbye or wants to end the call: your conversation hangs up.
 Do not generate <|SpawnThinking|> when:
 - You can answer from this call or a result you already have.
-- The user is greeting you, chatting, or saying goodbye.
+- The user is greeting you or chatting.
 - You need a brief clarification to understand the request.
 Generate <|SpawnThinking|> before giving an answer that depends on your conversation's work.
 Do not guess the result while waiting. Never pretend you did something yourself, and never make up results or facts about the user.
 Your conversation's results arrive as commentary. Tell the user what matters in a sentence or two and offer the rest; the full answer is in the chat too, so never read out long text.
-The user hangs up when they are done. When they say goodbye, say a short goodbye.`,
+You cannot hang up yourself; your conversation does. When the user says goodbye or wants to end the call, say one short goodbye and generate <|SpawnThinking|>. The call ends a few seconds later.`,
   ];
   if (context.persona !== null) sections.push(`Who you are (your PERSONA.md):\n${context.persona}`);
   if (context.memoryIndex !== null) {

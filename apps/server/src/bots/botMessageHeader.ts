@@ -18,7 +18,7 @@ export function withBotMessageHeader(
   if (call !== undefined) {
     const header =
       call.kind === "request"
-        ? "[Said on a voice call. Your voice passed it on and reads your reply to the user, so answer in a few plain spoken sentences, without markdown, tables or links unless they asked for one.]"
+        ? "[Said on a voice call. Your voice passed it on and reads your reply to the user, so answer in a few plain spoken sentences, without markdown, tables or links unless they asked for one. If they are saying goodbye or want the call ended, call end_call.]"
         : "[The user's voice call with you just ended; your voice spoke for you. Its transcript is below, and requests from it already reached you as their own messages. Save anything durable to memory/, then reply in one short line.]";
     return `${header}\n\n${text}`;
   }

@@ -89,6 +89,10 @@ export const BotMcpDelivery = Schema.Struct({
 });
 export type BotMcpDelivery = typeof BotMcpDelivery.Type;
 
+/** `ended: false` when no call with this conversation was live. */
+export const BotMcpEndCallResult = Schema.Struct({ ended: Schema.Boolean });
+export type BotMcpEndCallResult = typeof BotMcpEndCallResult.Type;
+
 export const BotArchiveInput = Schema.Struct({
   projectId: ProjectId,
   /** Also archive the bots this bot created. */

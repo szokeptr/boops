@@ -2,6 +2,7 @@ import {
   BotCreateResult,
   BotMcpCreateChildInput,
   BotMcpDelivery,
+  BotMcpEndCallResult,
   BotMcpListChildrenResult,
   BotMcpMessageChildInput,
   BotMcpReadChildInput,
@@ -12,6 +13,7 @@ import {
 } from "@t3tools/contracts";
 import { Tool, Toolkit } from "effect/ai";
 
+import * as BotCalls from "../../../bots/BotCalls.ts";
 import * as Bots from "../../../bots/Bots.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -21,6 +23,19 @@ const dependencies = [
   ThreadManagementService.ThreadManagementService,
   Bots.Bots,
 ];
+
+const EndCallTool = Tool.make("end_call", {
+  description:
+    "Hang up the user's voice call with you, when a message said on the call asks to end it or says goodbye. Your voice has already said goodbye, so don't reply with another one.",
+  success: BotMcpEndCallResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: [...dependencies, BotCalls.BotCalls],
+})
+  .annotate(Tool.Title, "End the voice call")
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true)
+  .annotate(Tool.OpenWorld, false);
 
 const CreateChildBotTool = Tool.make("create_child_bot", {
   description:
@@ -106,4 +121,5 @@ export const BotToolkit = Toolkit.make(
   MessageChildBotTool,
   ReportToParentTool,
   TellMainConversationTool,
+  EndCallTool,
 );
