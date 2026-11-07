@@ -57,6 +57,7 @@ import {
   type ChatFileAttachment,
   type ChatImageAttachment,
   type EnvironmentId,
+  type AssistantCitation,
   type MessageId,
   type OrchestrationV2ProjectedTurnItem,
   type RunId,
@@ -161,6 +162,7 @@ import { SYSTEM_FONT_FAMILY } from "../../lib/fontFamilies";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { downloadAndShareAttachment } from "../../lib/attachmentDownload";
+import { mobileAssistantCitation } from "../../lib/composerCitation";
 import { splitMarkdownDetails } from "../../lib/markdownDetails";
 import { hasWideMarkdownBlock } from "../../lib/wideMarkdownBlocks";
 import {
@@ -399,6 +401,8 @@ export interface ThreadFeedProps {
   readonly onEndFollowEnabledChange?: (enabled: boolean) => void;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
+  /** Null hides Cite, e.g. with no composer draft to cite into. */
+  readonly onCite?: ((citation: AssistantCitation) => void) | null;
 }
 
 async function waitForThreadShell(
@@ -1236,7 +1240,25 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   readonly onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
   readonly renderImage: MarkdownImageRenderer;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill> | undefined;
+  /** All three are set only on a thread's own assistant messages, which a citation can point back to. */
+  readonly citeThreadId?: ThreadId | undefined;
+  readonly citeMessageId?: MessageId | undefined;
+  readonly onCite?: ((citation: AssistantCitation) => void) | null | undefined;
 }) {
+  const { citeThreadId, citeMessageId, onCite, environmentId } = props;
+  const onCiteSelection =
+    citeThreadId && citeMessageId && onCite
+      ? (selection: { readonly text: string; readonly start: number }) => {
+          const citation = mobileAssistantCitation({
+            environmentId,
+            threadId: citeThreadId,
+            messageId: citeMessageId,
+            ...selection,
+          });
+          if (citation) onCite(citation);
+          else void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }
+      : undefined;
   const liveMarkdown = useLiveThreadLinkLabels(props.markdown, props.environmentId);
   const threadIcons = useThreadChipIcons(props.environmentId, liveMarkdown);
   const linkHandlers: MarkdownLinkHandlers = {
@@ -1253,6 +1275,7 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
       onUseArtifactTemplate={props.onUseArtifactTemplate}
       renderImage={props.renderImage}
       skills={props.skills}
+      onCiteSelection={onCiteSelection}
     />
   );
 });
@@ -1265,6 +1288,9 @@ function AssistantMarkdownBlocks(props: {
   readonly onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
   readonly renderImage: MarkdownImageRenderer;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill> | undefined;
+  readonly onCiteSelection?:
+    | ((selection: { readonly text: string; readonly start: number }) => void)
+    | undefined;
 }) {
   const blocks = useMemo(
     () =>
@@ -1303,6 +1329,7 @@ function AssistantMarkdownBlocks(props: {
         <SelectableMarkdownText
           key={`markdown:${offset}`}
           markdown={renderCodexInlineDirectivesAsMarkdown(segment.markdown)}
+          onCiteSelection={props.onCiteSelection}
           skills={props.skills}
           textStyle={props.markdownStyles.nativeTextStyle}
           {...props.linkHandlers}
@@ -1679,6 +1706,7 @@ function renderFeedEntry(
     ThreadFeedProps,
     | "environmentId"
     | "onUseArtifactTemplate"
+    | "onCite"
     | "skills"
     | "dispatchingMessageId"
     | "onEditPendingMessage"
@@ -2400,6 +2428,9 @@ function renderFeedEntry(
                 <AssistantMarkdownContent
                   markdown={renderedText}
                   environmentId={props.environmentId}
+                  citeThreadId={props.threadId}
+                  citeMessageId={message.id}
+                  onCite={props.onCite}
                   markdownStyles={styles}
                   linkHandlers={props.markdownLinkHandlers}
                   onUseArtifactTemplate={props.onUseArtifactTemplate}
@@ -2433,6 +2464,9 @@ function renderFeedEntry(
             <AssistantMarkdownContent
               markdown={renderedText}
               environmentId={props.environmentId}
+              citeThreadId={props.threadId}
+              citeMessageId={message.id}
+              onCite={props.onCite}
               markdownStyles={styles}
               linkHandlers={props.markdownLinkHandlers}
               onUseArtifactTemplate={props.onUseArtifactTemplate}
@@ -3913,6 +3947,7 @@ export const ThreadFeed = memo(function ThreadFeed({
             onEditPendingMessage: props.onEditPendingMessage,
             onEditSentMessage: props.onEditSentMessage,
             onUseArtifactTemplate: props.onUseArtifactTemplate,
+            onCite: props.onCite,
             threadId: props.threadId,
             copiedRowId,
             expandedWorkRows,

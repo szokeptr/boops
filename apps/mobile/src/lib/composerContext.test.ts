@@ -1,8 +1,12 @@
 import {
   ComposerContextId,
+  EnvironmentId,
+  MessageId,
   type OrchestrationMessageContext,
   type ServerProviderSkill,
+  ThreadId,
 } from "@t3tools/contracts";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import { collectComposerInlineTokens } from "@t3tools/shared/composerInlineTokens";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
@@ -217,6 +221,28 @@ describe("mobile composer context", () => {
         .filter((token) => token.type === "skill")
         .map((token) => token.source),
     ).toEqual(["$babysit"]);
+    const citation = serializeAssistantCitation({
+      version: 1,
+      environmentId: EnvironmentId.make("env"),
+      threadId: ThreadId.make("thread"),
+      messageId: MessageId.make("message"),
+      text: "costs $babysit today",
+      start: 0,
+      end: 20,
+      prefix: "",
+      suffix: "",
+    });
+    const cited = `See ${citation} and $babysit `;
+    expect(
+      composerContextEditorTokens(
+        cited,
+        collectComposerInlineTokens(cited),
+        composerSkillLabels(skills),
+      ).map((token) => [token.type, token.source, token.value]),
+    ).toEqual([
+      ["citation", citation, "costs $babysit today"],
+      ["skill", "$babysit", "babysit"],
+    ]);
   });
 
   it("removes deleted payloads but keeps the screenshot linked to a remaining annotation", () => {

@@ -40,6 +40,7 @@ import { HeaderHeightContext } from "@react-navigation/elements";
 import { NativeLayoutObserver } from "../../native/NativeLayoutObserver";
 import { deriveBottomControlInsets, type NativeLayoutMetrics } from "../../lib/reserved-regions";
 import type {
+  AssistantCitation,
   EnvironmentId,
   MessageId,
   ProviderInteractionMode,
@@ -60,6 +61,14 @@ import {
   type ThreadUserInputQuestion,
 } from "@t3tools/client-runtime/state/thread-requests";
 import { useDeadlinePassed } from "../../lib/clock";
+import {
+  appendAssistantCitationToDraft,
+  draftCitationAt,
+  removeDraftCitation,
+  setDraftCitationComment,
+  type DraftCitationRange,
+} from "../../lib/composerCitation";
+import { ComposerCitationSheet } from "../../components/ComposerCitationSheet";
 import {
   BACKGROUND_WORK_STOP_RETRY_AFTER_MS,
   type BackgroundWorkStopRequest,
@@ -1472,6 +1481,35 @@ function ThreadDetailBody(
     });
   };
 
+  // Like desktop, a new citation opens its comment editor; the composer takes focus after it closes.
+  const [newCitation, setNewCitation] = useState<DraftCitationRange | null>(null);
+  const handleCite = (citation: AssistantCitation) => {
+    if (props.composerDraftKey === null) return;
+    const draftMessage = getComposerDraftSnapshot(props.composerDraftKey).text;
+    const next = appendAssistantCitationToDraft(draftMessage, citation);
+    void Haptics.selectionAsync();
+    props.onChangeDraftMessage(next.text);
+    setNewCitation(next.range);
+  };
+  const editNewCitation = (edit: (draft: string, range: DraftCitationRange) => string | null) => {
+    if (props.composerDraftKey === null || newCitation === null) return;
+    const next = edit(getComposerDraftSnapshot(props.composerDraftKey).text, newCitation);
+    if (next !== null) props.onChangeDraftMessage(next);
+  };
+  const closeNewCitation = () => {
+    setNewCitation(null);
+    requestAnimationFrame(() => {
+      if (props.composerDraftKey === null) return;
+      const end = getComposerDraftSnapshot(props.composerDraftKey).text.length;
+      composerEditorRef.current?.focus();
+      composerEditorRef.current?.setSelection({ start: end, end });
+    });
+  };
+  const newCitationValue =
+    newCitation && props.composerDraftKey !== null
+      ? draftCitationAt(getComposerDraftSnapshot(props.composerDraftKey).text, newCitation)
+      : null;
+
   const handleScrollToEnd = () => {
     void Haptics.selectionAsync();
     void scrollMessageToEnd({ animated: !reduceMotion, closeKeyboard: false }).catch(() => {
@@ -1635,6 +1673,7 @@ function ThreadDetailBody(
                 onEndFollowEnabledChange={handleEndFollowEnabledChange}
                 skills={selectedProviderSkills}
                 onUseArtifactTemplate={handleUseArtifactTemplate}
+                onCite={props.composerDraftKey === null ? null : handleCite}
               />
             </WorkspaceMutationIdProvider>
           </RenderErrorBoundary>
@@ -1642,6 +1681,20 @@ function ThreadDetailBody(
       ) : (
         <View className="flex-1" />
       )}
+
+      {newCitationValue ? (
+        <ComposerCitationSheet
+          citation={newCitationValue}
+          onSave={(comment) =>
+            editNewCitation((draft, range) => setDraftCitationComment(draft, range, comment))
+          }
+          onRemove={() => {
+            editNewCitation(removeDraftCitation);
+            setNewCitation(null);
+          }}
+          onClose={closeNewCitation}
+        />
+      ) : null}
 
       {showContent ? (
         <ThreadBrowserFloat

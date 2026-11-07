@@ -1,5 +1,9 @@
 import { isProviderSkillUserInvocable } from "@t3tools/client-runtime/providerSkills";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import {
+  assistantCitationLabel,
+  collectAssistantCitations,
+} from "@t3tools/shared/assistantCitations";
 import { filePreviewKind } from "@t3tools/shared/filePreview";
 import { videoMimeType } from "@t3tools/shared/video";
 import {
@@ -169,17 +173,26 @@ export function composerContextEditorTokens(
   knownSkills: { has(name: string): boolean },
 ) {
   const references = collectComposerContextReferences(text);
+  const citations = collectAssistantCitations(text);
+  const claimed = [...references, ...citations];
   return [
     ...tokens.filter(
       (token) =>
         // `$HOME` and other `$name` text that is not one of the provider's skills stays prose.
         (token.type !== "skill" || knownSkills.has(token.value)) &&
-        !references.some((ref) => token.start < ref.end && token.end > ref.start),
+        !claimed.some((ref) => token.start < ref.end && token.end > ref.start),
     ),
     ...references.map((ref) => ({
       type: "context" as const,
       value: ref.label,
       ...ref,
+    })),
+    ...citations.map(({ citation, source, start, end }) => ({
+      type: "citation" as const,
+      value: assistantCitationLabel(citation),
+      source,
+      start,
+      end,
     })),
   ].sort((a, b) => a.start - b.start);
 }

@@ -28,6 +28,12 @@ import { appAtomRegistry } from "../state/atom-registry";
 import { mobilePreferencesAtom } from "../state/preferences";
 import { useOpenLinkedThread } from "../features/threads/useOpenLinkedThread";
 import { useLinkedEnvironments } from "../state/peerLinks";
+import {
+  draftCitationAt,
+  removeDraftCitation,
+  setDraftCitationComment,
+} from "../lib/composerCitation";
+import { ComposerCitationSheet } from "./ComposerCitationSheet";
 import { ComposerContextSheet } from "./ComposerContextSheet";
 import { AppText as Text } from "./ui/AppText";
 import {
@@ -171,6 +177,8 @@ export function ComposerEditor({
   const record = draft.context?.records.find(
     (entry) => entry.contextId === selectedReference?.contextId,
   );
+  const selectedCitation = selected ? draftCitationAt(props.value, selected) : null;
+  const citationEditable = !props.readOnly && props.editable !== false;
   return (
     <>
       {/* Reset revision history with the recreated iOS view without aborting context imports. */}
@@ -213,6 +221,29 @@ export function ComposerEditor({
       />
       {importing ? (
         <Text className="py-2 text-xs text-foreground-muted">Copying context…</Text>
+      ) : null}
+      {selected && selectedCitation ? (
+        <ComposerCitationSheet
+          citation={selectedCitation}
+          onSave={(comment) => {
+            if (!citationEditable) return;
+            const next = setDraftCitationComment(props.value, selected, comment);
+            if (next !== null) changeText(next);
+          }}
+          onRemove={
+            citationEditable
+              ? () => {
+                  const next = removeDraftCitation(props.value, selected);
+                  if (next !== null) {
+                    changeText(next);
+                    props.onSelectionChange?.({ start: selected.start, end: selected.start });
+                  }
+                  setSelected(null);
+                }
+              : undefined
+          }
+          onClose={() => setSelected(null)}
+        />
       ) : null}
       {selected && (selectedReference || selectedSkill) ? (
         <ComposerContextSheet

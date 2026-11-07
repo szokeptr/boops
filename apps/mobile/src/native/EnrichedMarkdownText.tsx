@@ -263,6 +263,17 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
       mimeTypes: { "app.t3.context-fragment": props.contextClipboardFragment! },
     };
   }, [props.contextClipboardFragment, props.markdown]);
+  const { onCiteSelection } = props;
+  const contextMenuItems = onCiteSelection
+    ? [
+        {
+          text: "Cite",
+          icon: "quote.opening",
+          onPress: ({ text, selection }: { text: string; selection: { start: number } }) =>
+            onCiteSelection({ text, start: selection.start }),
+        },
+      ]
+    : undefined;
   const { fontScale } = useWindowDimensions();
   const markdownStyle = useMemo(() => {
     const style = enrichedStyle(props.textStyle, themeAppearance === "dark", fontScale);
@@ -329,6 +340,7 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
           flavor="github"
           selectable
           selectionClipboard={selectionClipboard}
+          contextMenuItems={contextMenuItems}
           selectionColor={props.textStyle.selectionColor}
           selectionHandleColor={props.textStyle.selectionHandleColor}
           md4cFlags={{
