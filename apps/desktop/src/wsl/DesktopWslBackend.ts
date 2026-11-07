@@ -128,7 +128,7 @@ export const layer = Layer.effect(
                 Ref.set(
                   preflightErrorRef,
                   Option.some(
-                    "Another Boops server is using this distro's Boops home, or an older background service is set up for it. Stop that server or pair with it, or try `boops update` in the distro. If the older launcher cannot update, run `boops service uninstall` and optionally reinstall with `boops service install` from a current CLI in the distro. Use `npx boops@latest` if `boops` is missing or outdated, and pass `--base-dir` with the service's Boops home to each command.",
+                    "Another Boops server is using this distro's Boops home, or an older background service is set up for it. Stop that server or pair with it, or try `boops update` in the distro. If the older launcher cannot update, run `boops service uninstall` and optionally reinstall with `boops service install` from a current CLI in the distro. Use `npx boops-cli@latest` if `boops` is missing or outdated, and pass `--base-dir` with the service's Boops home to each command.",
                   ),
                 ),
               ),

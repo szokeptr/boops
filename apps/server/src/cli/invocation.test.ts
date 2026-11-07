@@ -39,17 +39,17 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
 
   it.effect("keeps a user-installed Node reachable when the command runs under sudo", () =>
     Effect.gen(function* () {
-      const npx = "/home/theo/.npm/_npx/abc/node_modules/boops/dist/bin.mjs";
+      const npx = "/home/theo/.npm/_npx/abc/node_modules/boops-cli/dist/bin.mjs";
       expect(yield* rootCommand({ node: "/usr/bin/node", entry: npx })).toBe(
-        "sudo npx boops browser setup",
+        "sudo npx boops-cli browser setup",
       );
       expect(
         yield* rootCommand({ node: "/home/theo/.nvm/versions/node/v24/bin/node", entry: npx }),
-      ).toBe('sudo env "PATH=$PATH" npx boops browser setup');
+      ).toBe('sudo env "PATH=$PATH" npx boops-cli browser setup');
       expect(
         yield* rootCommand({
           node: "/home/theo/.local/node/bin/node",
-          entry: "/home/theo/.local/lib/node_modules/boops/dist/bin.mjs",
+          entry: "/home/theo/.local/lib/node_modules/boops-cli/dist/bin.mjs",
           path: yield* pathWithT3,
         }),
       ).toBe('sudo env "PATH=$PATH" boops browser setup');
@@ -62,7 +62,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       expect(
         yield* rootCommand({
           node: "/home/theo/.local/node/bin/node",
-          entry: "/home/theo/.local/lib/node_modules/boops/dist/bin.mjs",
+          entry: "/home/theo/.local/lib/node_modules/boops-cli/dist/bin.mjs",
           path: yield* pathWithT3,
           args,
         }),
@@ -167,9 +167,9 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
       yield* fs.writeFileString(executable, "");
       for (const [relative, kind] of [
-        ["npm/_npx/hash/node_modules/boops/dist/bin.mjs", "npx"],
-        ["npm/_npx/hash/node_modules/boops/bin/t3.mjs", "npx"],
-        ["pnpm/dlx/hash/node_modules/boops/dist/bin.mjs", "pnpm-dlx"],
+        ["npm/_npx/hash/node_modules/boops-cli/dist/bin.mjs", "npx"],
+        ["npm/_npx/hash/node_modules/boops-cli/bin/t3.mjs", "npx"],
+        ["pnpm/dlx/hash/node_modules/boops-cli/dist/bin.mjs", "pnpm-dlx"],
         [".bun/install/cache/t3/dist/bin.mjs", "bunx"],
       ] as const) {
         const entry = path.join(root, relative);
@@ -177,7 +177,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
         yield* fs.writeFileString(entry, "");
         yield* fs.writeFileString(
           path.join(path.dirname(entry), "../package.json"),
-          `{"name":"boops","version":"${packageJson.version}","bin":{"boops":"./bin/t3.mjs"}}`,
+          `{"name":"boops-cli","version":"${packageJson.version}","bin":{"boops":"./bin/t3.mjs"}}`,
         );
         const launchedBy = entry.endsWith("t3.mjs");
         const installation = yield* resolveServerInstallation.pipe(
@@ -200,7 +200,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
       const prefix = path.join(root, "bunx-tools");
-      const packageRoot = path.join(prefix, "lib/node_modules/boops");
+      const packageRoot = path.join(prefix, "lib/node_modules/boops-cli");
       const entry = path.join(packageRoot, "dist/bin.mjs");
       const globalBin = path.join(prefix, "bin/boops");
       yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
@@ -208,7 +208,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       yield* fs.writeFileString(entry, "");
       yield* fs.writeFileString(
         path.join(packageRoot, "package.json"),
-        '{"name":"boops","version":"0.0.45","bin":{"boops":"./dist/bin.mjs"}}',
+        '{"name":"boops-cli","version":"0.0.45","bin":{"boops":"./dist/bin.mjs"}}',
       );
       const resolve = resolveServerInstallation.pipe(
         Effect.provideService(HostProcess.Arguments, ["node", entry]),
@@ -231,7 +231,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
       const prefix = path.join(root, "bunx-tools");
-      const packageRoot = path.join(prefix, "lib/node_modules/boops");
+      const packageRoot = path.join(prefix, "lib/node_modules/boops-cli");
       const launcher = path.join(packageRoot, "bin/t3.mjs");
       const executable = path.join(root, ".t3/runtime/versions/1.0.0/t3");
       yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
@@ -253,7 +253,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       ] as const) {
         yield* fs.writeFileString(
           path.join(packageRoot, "package.json"),
-          `{"name":"boops","version":"${version}","bin":{"boops":"./bin/t3.mjs"}}`,
+          `{"name":"boops-cli","version":"${version}","bin":{"boops":"./bin/t3.mjs"}}`,
         );
         expect(yield* resolve).toEqual(expected);
       }
@@ -266,7 +266,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
       for (const relative of [
-        "project/node_modules/boops/dist/bin.mjs",
+        "project/node_modules/boops-cli/dist/bin.mjs",
         "project/apps/server/dist/bin.mjs",
         ".t3/runtime/0.0.45/t3",
         "missing/dist/bin.mjs",

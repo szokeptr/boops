@@ -3,7 +3,7 @@ import {
   ServerNpmReleaseInput,
   type ServerNpmRelease,
 } from "@t3tools/contracts";
-import { npmReleaseDatabaseMigration } from "@t3tools/shared/cliRelease";
+import { CLI_NPM_PACKAGE_NAME, npmReleaseDatabaseMigration } from "@t3tools/shared/cliRelease";
 import { resolveCommandPath } from "@t3tools/shared/shell";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -63,7 +63,9 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
       reason: "npm is not installed and the public npm registry could not be reached.",
     });
     const json = yield* Effect.gen(function* () {
-      const response = yield* http.get(`https://registry.npmjs.org/boops/${spec}`);
+      const response = yield* http.get(
+        `https://registry.npmjs.org/${CLI_NPM_PACKAGE_NAME}/${spec}`,
+      );
       if (response.status === 404) return Option.none<string>();
       if (response.status < 200 || response.status >= 300) return yield* unreachable;
       return Option.some(yield* response.text);

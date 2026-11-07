@@ -177,7 +177,7 @@ export const layer = Layer.effect(
         electronDialog
           .showErrorBox(
             "This Boops home is unavailable",
-            "Another Boops server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `boops update`. If the older launcher cannot update, run `boops service uninstall` and optionally reinstall with `boops service install` from a current CLI. Use `npx boops@latest` if `boops` is missing or outdated, and pass `--base-dir` with the service's Boops home to each command. Then reopen Boops. You can also set a separate T3CODE_HOME and pair with the running server.",
+            "Another Boops server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `boops update`. If the older launcher cannot update, run `boops service uninstall` and optionally reinstall with `boops service install` from a current CLI. Use `npx boops-cli@latest` if `boops` is missing or outdated, and pass `--base-dir` with the service's Boops home to each command. Then reopen Boops. You can also set a separate T3CODE_HOME and pair with the running server.",
           )
           .pipe(Effect.andThen(electronApp.quit)),
     });

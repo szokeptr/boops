@@ -404,7 +404,7 @@ describe("boops pair", () => {
           ]);
           assert.isTrue(Exit.isFailure(exit));
           if (Exit.isFailure(exit)) {
-            assert.include(String(Cause.squash(exit.cause)), "boops@0.0.45 pair");
+            assert.include(String(Cause.squash(exit.cause)), "boops-cli@0.0.45 pair");
           }
         }),
       "127.0.0.1",

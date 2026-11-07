@@ -11,13 +11,14 @@ import * as Schema from "effect/Schema";
 import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
+import { CLI_NPM_PACKAGE_NAME } from "@t3tools/shared/cliRelease";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import { windowsSystemTar } from "./lib/windows-tar.ts";
 
-export const NPM_LAUNCHER_PACKAGE_NAME = "boops";
+export const NPM_LAUNCHER_PACKAGE_NAME = CLI_NPM_PACKAGE_NAME;
 
 const encodePackageJson = Schema.encodeEffect(fromJsonStringPretty(Schema.Unknown));
 
@@ -39,7 +40,8 @@ export function npmLauncherPackageManifest(version: string, databaseMigration: n
       "Boops CLI. Downloads the self-contained executable for this platform from the GitHub Release.",
     license: serverPackageJson.license,
     repository: serverPackageJson.repository,
-    bin: { boops: "./bin/t3.mjs" },
+    // npm publish drops a bin path that starts with "./".
+    bin: { boops: "bin/t3.mjs" },
     files: ["bin", "dist"],
     engines: { node: ">=20.11" },
     t3code: { databaseMigration },

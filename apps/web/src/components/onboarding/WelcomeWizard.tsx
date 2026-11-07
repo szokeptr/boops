@@ -534,7 +534,7 @@ function ConnectAccountOption({
             <p className="text-sm text-muted-foreground">
               Run this on each computer you want to connect.
             </p>
-            <CommandBlock command="npx boops connect" className="mt-3" />
+            <CommandBlock command="npx boops-cli connect" className="mt-3" />
             <p className="mt-3 text-xs text-muted-foreground">
               Keep Boops running. Select the computers you want to set up above.
             </p>
@@ -643,11 +643,11 @@ function PairingForm({
           <CollapsiblePanel>
             <p className="pt-3 text-sm text-muted-foreground">
               On the computer with your code, start Boops or run{" "}
-              <code className="font-mono">npx boops serve</code>, then run:
+              <code className="font-mono">npx boops-cli serve</code>, then run:
             </p>
-            <CommandBlock command="npx boops pair" className="mt-2" />
+            <CommandBlock command="npx boops-cli pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              On a tailnet, run <code className="font-mono">npx boops pair --tailscale</code>{" "}
+              On a tailnet, run <code className="font-mono">npx boops-cli pair --tailscale</code>{" "}
               instead.
             </p>
           </CollapsiblePanel>

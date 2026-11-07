@@ -215,7 +215,7 @@ The limit decides which modes Boops asks the provider for. It is not a sandbox; 
 `clients` lists how the server may run:
 
 - `desktop`: as the desktop app's own server.
-- `local-browser`: as a server only browsers on this machine reach, such as `npx boops`.
+- `local-browser`: as a server only browsers on this machine reach, such as `npx boops-cli`.
 - `remote`: reachable from phones, other computers, and app.getboops.com over the network.
 
 `remote` is the line that matters. A server reachable from the network also accepts browsers on

@@ -22,7 +22,7 @@ mobile the palette row shows it before you start. The agent runs inside that Boo
 If the app does not start, or triage does not work in the app, run:
 
 ```sh
-npx boops triage
+npx boops-cli triage
 ```
 
 It starts Claude Code or Codex in your terminal with the same instructions.

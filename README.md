@@ -27,7 +27,7 @@ A bot's persona and the notes it keeps are plain Markdown in its home folder. Ba
 ### Command line
 
 ```bash
-npx boops
+npx boops-cli
 ```
 
 That starts the server and opens the local web app. Once installed, `boops service install` keeps it running in the background, `boops update` moves to a newer release, and `boops --help` has the full reference.

@@ -120,7 +120,7 @@ or `--tailscale-serve`.
 
 If you run the server with `npx` rather than an installed `boops`, there is
 nothing to update on the host: stop the server and relaunch it as
-`npx boops@<client-version>` with the same subcommand and options.
+`npx boops-cli@<client-version>` with the same subcommand and options.
 
 ## If an update fails
 

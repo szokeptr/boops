@@ -906,7 +906,7 @@ jobs:
           RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
         run: gh release edit "$RELEASE_TAG" --draft=false
 
-  # The `t3` npm package is a launcher that downloads this version's CLI
+  # The `boops-cli` npm package is a launcher that downloads this version's CLI
   # archive from the GitHub Release, so it publishes only once that release
   # exists. Preview publishes too, under the `preview` dist-tag, which
   # nothing resolves unless asked for by name.
@@ -940,7 +940,7 @@ jobs:
       - name: Publish the npm launcher
         run: |
           if ! node apps/server/scripts/cli.ts publish --packages-dir npm-packages --tag "${{ needs.preflight.outputs.cli_dist_tag }}" --provenance --verbose; then
-            echo "::error::npm publish failed. Make sure package boops has a trusted publisher registered for .github/workflows/release.yml (see docs/operations/release.md)." >&2
+            echo "::error::npm publish failed. Make sure package boops-cli has a trusted publisher registered for .github/workflows/release.yml (see docs/operations/release.md)." >&2
             exit 1
           fi
 

@@ -43,7 +43,7 @@ If `boops` or `boops start` reports an already running server, connect to that s
 instead. Stop it before starting a replacement, or use a different `--base-dir`
 for an independent server.
 
-To try Boops once without installing it, run `npx boops@latest` instead (needs
+To try Boops once without installing it, run `npx boops-cli@latest` instead (needs
 Node.js for `npx`).
 
 ### Intel Macs

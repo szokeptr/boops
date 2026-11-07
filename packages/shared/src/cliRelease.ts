@@ -4,6 +4,8 @@ import * as Schema from "effect/Schema";
 import { compareSemverVersions } from "./semver.ts";
 
 const CLI_RELEASE_REPOSITORY = "szokeptr/boops";
+/** npm refused `boops` as too close to `boom`; the installed command is still `boops`. */
+export const CLI_NPM_PACKAGE_NAME = "boops-cli";
 export const CLI_RELEASES_PAGE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases`;
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
 export const CLI_RELEASE_BASE_URL_ENV = "T3CODE_RELEASE_BASE_URL";

@@ -13,7 +13,7 @@ Bring your own: Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigra
 We were inspired by the Codex desktop app, Conductor, Claude Desktop, and Cursor Glass, but none met our bar. What you get:
 
 - Bring your own sub. Claude, Codex, and whatever else you already have installed.
-- Best in class remote. Run `npx boops up` on any box and drive it from anywhere.
+- Best in class remote. Run `npx boops-cli up` on any box and drive it from anywhere.
 - Best in class mobile app.
 - Truly 100% open source. If we go the wrong direction, fork it.
 
@@ -37,7 +37,7 @@ Boops drives Claude through Anthropic's Agent SDK. I confirmed it's a real bug o
 
 ## How do I use Boops remotely?
 
-Your agents run wherever Boops runs: your desktop, a server, a VPS. You connect to it from anywhere. I do this constantly. Less than 5% of my prompts run on my laptop. Run `npx boops up` on that machine and you get really good remote support. Boops Connect is the easy path. LAN pairing and Tailscale work too, and [app.getboops.com](https://app.getboops.com) is the web client. [Remote access](./remote-access.md)
+Your agents run wherever Boops runs: your desktop, a server, a VPS. You connect to it from anywhere. I do this constantly. Less than 5% of my prompts run on my laptop. Run `npx boops-cli up` on that machine and you get really good remote support. Boops Connect is the easy path. LAN pairing and Tailscale work too, and [app.getboops.com](https://app.getboops.com) is the web client. [Remote access](./remote-access.md)
 
 ## How do I use Boops on my phone?
 

@@ -17,7 +17,7 @@ const imageProps = {
 
 <Layout
   title="Download | Boops"
-  description="Download Boops for macOS, Windows, or Linux, or run it with npx boops."
+  description="Download Boops for macOS, Windows, or Linux, or run it with npx boops-cli."
   pageClass="is-night"
 >
   <div class="download-page" id="download-page" data-channel="stable">
@@ -127,8 +127,8 @@ const imageProps = {
         <code class="cli-line cli-line--nightly">curl -fsSL https://getboops.com/install.sh | T3CODE_CHANNEL=nightly sh</code>
         <code class="cli-line cli-line--nightly">$env:T3CODE_CHANNEL="nightly"; irm https://getboops.com/install.ps1 | iex</code>
         <p class="cli-note">Or try it once without installing:</p>
-        <code class="cli-line cli-line--stable">npx boops@latest</code>
-        <code class="cli-line cli-line--nightly">npx boops@nightly</code>
+        <code class="cli-line cli-line--stable">npx boops-cli@latest</code>
+        <code class="cli-line cli-line--nightly">npx boops-cli@nightly</code>
       </section>
     </div>
 

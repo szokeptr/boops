@@ -74,7 +74,7 @@ export class NoRunningServerError extends Schema.TaggedError<NoRunningServerErro
       ...(this.inLinkedWorktree
         ? ["In a linked worktree, pass --base-dir to pair with a server outside it."]
         : []),
-      "Start one with `npx boops serve`, or connect this machine with Boops Connect: `npx boops connect`.",
+      "Start one with `npx boops-cli serve`, or connect this machine with Boops Connect: `npx boops-cli connect`.",
     ].join("\n");
   }
 }
@@ -86,7 +86,7 @@ export class IncompatibleServerProtocolError extends Schema.TaggedError<Incompat
   override get message(): string {
     return [
       `The running Boops server (${this.serverVersion}) speaks orchestration protocol ${String(this.serverProtocolVersion)}, but this CLI speaks protocol ${String(ORCHESTRATION_PROTOCOL_VERSION)}.`,
-      `Pair with the matching CLI instead: \`npx boops@${this.serverVersion} pair\`.`,
+      `Pair with the matching CLI instead: \`npx boops-cli@${this.serverVersion} pair\`.`,
     ].join("\n");
   }
 }
