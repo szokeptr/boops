@@ -19,10 +19,10 @@ agent-written summary.
 
 ## Bots start fresh sessions instead
 
-A bot's conversation never hands its transcript to a new session. When its context fills up again
-after the provider compacted it, after 4 hours without a turn on a large session, when you switch
-its provider or model (in the conversation's model picker or its project settings), or when you pick
-**Start a fresh session** from the thread menu or command palette, the bot first gets one turn to
+A bot's conversation never hands its transcript to a new session. A full context is left to the
+provider's own compaction. When you switch its provider or model (in the conversation's model
+picker or its project settings), or when you pick **Start a fresh session** from the thread menu or
+command palette, the bot first gets one turn to
 write down what its notes are missing. The next turn then runs in a new provider session that
 re-reads `PERSONA.md` and `memory/`. The conversation stays one thread, with a **New session**
 divider where the switch happened. Stopping the note-taking turn cancels the switch.
