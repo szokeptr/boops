@@ -79,13 +79,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
       const fs = yield* FileSystem.FileSystem;
       const baseDir = yield* fs.makeTempDirectoryScoped();
       const prefix = `${baseDir}/node`;
-      const entry = `${prefix}/lib/node_modules/boops/dist/bin.mjs`;
-      yield* fs.makeDirectory(`${prefix}/lib/node_modules/boops/dist`, { recursive: true });
+      const entry = `${prefix}/lib/node_modules/boops-cli/dist/bin.mjs`;
+      yield* fs.makeDirectory(`${prefix}/lib/node_modules/boops-cli/dist`, { recursive: true });
       yield* fs.makeDirectory(`${prefix}/bin`, { recursive: true });
       yield* fs.writeFileString(entry, "");
       yield* fs.writeFileString(
-        `${prefix}/lib/node_modules/boops/package.json`,
-        '{"name":"boops","version":"0.0.45","bin":{"boops":"./dist/bin.mjs"}}',
+        `${prefix}/lib/node_modules/boops-cli/package.json`,
+        '{"name":"boops-cli","version":"0.0.45","bin":{"boops":"./dist/bin.mjs"}}',
       );
       yield* fs.symlink(entry, `${prefix}/bin/boops`);
       const config = yield* makeServerConfig(baseDir);
