@@ -5,6 +5,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { deriveBotConversations } from "@t3tools/client-runtime/state/bot-list";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   isAtomCommandInterrupted,
@@ -29,6 +30,7 @@ import { threadEnvironment } from "../../state/threads";
 import { canShareWithGuestAtom } from "./guestShareAvailability";
 import { useAtomValue } from "@effect/atom-react";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { useQuietThreadShells } from "../../state/entities";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
@@ -73,6 +75,27 @@ function resolveRenameCommit(input: {
   if (trimmed.length === 0) return { action: "reject-empty" };
   if (trimmed === input.originalTitle) return { action: "noop" };
   return { action: "commit", title: trimmed };
+}
+
+/** The bot heading its conversation wears that conversation's status. */
+function BotConversationAvatar(props: {
+  readonly project: EnvironmentProject;
+  readonly threadId: ThreadId;
+}) {
+  const threads = useQuietThreadShells();
+  const status =
+    deriveBotConversations({ project: props.project, threads }).find(
+      (conversation) => conversation.threadId === props.threadId,
+    )?.status ?? "idle";
+  return (
+    <BotAvatar
+      avatar={props.project.avatar ?? null}
+      name={props.project.title}
+      status={status}
+      size={32}
+      className="me-2 shrink-0"
+    />
+  );
 }
 
 // Delay the input-swallowing native menu through the double-click rename interval.
@@ -436,13 +459,7 @@ export const ChatHeader = memo(function ChatHeader({
         ) : null}
         <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
           {isBotConversation && activeProject ? (
-            <BotAvatar
-              avatar={activeProject.avatar ?? null}
-              name={activeProject.title}
-              status="idle"
-              size={32}
-              className="me-2 shrink-0"
-            />
+            <BotConversationAvatar project={activeProject} threadId={activeThreadId} />
           ) : null}
           {isBotConversation && activeProject ? (
             <BotConversationTabs

@@ -115,7 +115,12 @@ export function BotConversationTitle(props: { readonly bot: ConversationHeaderBo
         className="flex-row items-center gap-2"
       >
         <View>
-          <BotAvatarSlot avatar={bot.avatar} name={bot.name} status="idle" size={32} />
+          <BotAvatarSlot
+            avatar={bot.avatar}
+            name={bot.name}
+            status={open?.status ?? "idle"}
+            size={32}
+          />
           {attention === null ? null : (
             <View
               className={`absolute -top-0.5 -right-0.5 size-2.5 rounded-full ${attention.className}`}
