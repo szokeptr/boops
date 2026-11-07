@@ -228,6 +228,13 @@ vi.mock("react-native-safe-area-context", () => ({
 }));
 vi.mock("expo-haptics", () => ({ selectionAsync: async () => {} }));
 vi.mock("expo-image", () => ({}));
+vi.mock("expo-clipboard", () => ({}));
+vi.mock("react-native-svg", () => ({
+  default: () => null,
+  Circle: () => null,
+  Path: () => null,
+  Rect: () => null,
+}));
 vi.mock("uniwind", () => ({}));
 vi.mock("../components/ui/Dialog", () => ({}));
 vi.mock("../components/ui/NativePresentation", () => ({

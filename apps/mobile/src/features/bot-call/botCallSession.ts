@@ -199,3 +199,17 @@ export class BotCallSession {
     for (const listener of this.listeners) listener();
   }
 }
+
+/** Whether `call` is on the line with this conversation's bot. */
+export function isOnCallWith(
+  call: ActiveBotCall | null,
+  bot: { readonly environmentId: EnvironmentId; readonly projectId: ProjectId } | null,
+): boolean {
+  return (
+    call !== null &&
+    bot !== null &&
+    call.environmentId === bot.environmentId &&
+    call.projectId === bot.projectId &&
+    (call.state.phase === "connecting" || call.state.phase === "live")
+  );
+}

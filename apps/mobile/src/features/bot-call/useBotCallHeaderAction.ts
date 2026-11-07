@@ -2,22 +2,8 @@ import type { ConversationHeaderBot } from "../bots/BotConversationTitle";
 import type { ThreadHeaderControlsProps } from "../threads/ThreadHeaderControls";
 import { openCallScreen } from "./BotCallPill";
 import { useBotCall } from "./BotCallProvider";
-import type { ActiveBotCall } from "./botCallSession";
+import { isOnCallWith } from "./botCallSession";
 import { CALL_LIVE_GREEN } from "./callColors";
-
-/** Whether `call` is on the line with this conversation's bot. */
-export function isOnCallWith(
-  call: ActiveBotCall | null,
-  bot: Pick<ConversationHeaderBot, "environmentId" | "projectId"> | null,
-): boolean {
-  return (
-    call !== null &&
-    bot !== null &&
-    call.environmentId === bot.environmentId &&
-    call.projectId === bot.projectId &&
-    (call.state.phase === "connecting" || call.state.phase === "live")
-  );
-}
 
 /** The header's call button: calls the bot (the call starts as a pill), or opens its call screen. */
 export function useBotCallHeaderAction(

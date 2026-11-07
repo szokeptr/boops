@@ -16,7 +16,7 @@ import { useBotCall } from "../bot-call/BotCallProvider";
 import { formatCallDuration } from "../bot-call/botCallPresentation";
 import { useCallClock } from "../bot-call/callClock";
 import { CALL_LIVE_GREEN } from "../bot-call/callColors";
-import { isOnCallWith } from "../bot-call/useBotCallHeaderAction";
+import { isOnCallWith } from "../bot-call/botCallSession";
 import { BotAvatarSlot } from "./BotAvatarSlot";
 
 export interface ConversationBot {
