@@ -16,6 +16,7 @@ describe("call presentation", () => {
     expect(callRecapLabel(undefined)).toBe("Call");
     expect(callRecapLabel(20)).toBe("Call · under a minute");
     expect(callRecapLabel(250)).toBe("Call · 4 min");
+    expect(callRecapLabel(250, 2)).toBe("Call · 4 min · 2 requests");
   });
 
   it("splits a transcript back into who said what", () => {

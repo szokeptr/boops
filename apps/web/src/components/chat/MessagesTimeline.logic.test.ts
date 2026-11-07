@@ -2827,6 +2827,39 @@ describe("v2 run and attempt history", () => {
       ["bot-exchange:ask-jarvis-entry", ["jarvis"], ["sending:File them please"]],
       ["asked-entry"],
     ]);
+
+    // What the voice passed on during a call folds into the call's row, not the conversation.
+    const onCall = (kind: "request" | "recap", runId: string) => ({
+      runId: runId as never,
+      context: {
+        version: 1,
+        records: [],
+        call:
+          kind === "request"
+            ? { callId: "live_1", kind }
+            : { callId: "live_1", kind, durationSeconds: 60 },
+      },
+    });
+    const callRows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        ...timelineEntries,
+        message("ask-mail", "user", "2026-01-01T00:03:00Z", onCall("request", "run-call-1")),
+        message("mail", "assistant", "2026-01-01T00:03:05Z", { runId: "run-call-1" }),
+        message("recap", "user", "2026-01-01T00:04:00Z", onCall("recap", "run-call-2")),
+      ],
+      isWorking: false,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      directMessage: true,
+    });
+    const recapRow = callRows.at(-1);
+    expect(callRows.some((row) => row.id === "ask-mail-entry" || row.id === "mail-entry")).toBe(
+      false,
+    );
+    expect(
+      recapRow?.kind === "message" &&
+        recapRow.callWork?.map((work) => [work.request?.id, work.replies.map((reply) => reply.id)]),
+    ).toEqual([["ask-mail", ["mail"]]]);
   });
   it("collapses only output from a superseded V2 attempt within the active logical run", () => {
     const runId = "run-steered" as never;

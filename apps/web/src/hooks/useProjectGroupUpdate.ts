@@ -1,6 +1,7 @@
 import {
   AuthOrchestrationOperateScope,
   type BotAutonomy,
+  type BotCallSettings,
   type ProjectIconOverride,
 } from "@t3tools/contracts";
 import {
@@ -28,6 +29,7 @@ export type ProjectGroupUpdate = Partial<{
   archived: boolean;
   autonomy: BotAutonomy;
   canCreateBotsWithoutAsking: boolean;
+  callSettings: BotCallSettings | null;
 }>;
 
 type ProjectGroupMember = Pick<

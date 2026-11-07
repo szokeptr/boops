@@ -3,7 +3,11 @@ import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import * as Dialog from "../../components/ui/Dialog";
-import { AuthOrchestrationOperateScope, type BotAutonomy } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  type BotAutonomy,
+  type BotCallSettings,
+} from "@t3tools/contracts";
 import { botHomeFolderUnavailableReason } from "@t3tools/client-runtime/state/bot-home-folder";
 import { liveBotDescendants } from "@t3tools/client-runtime/state/bot-list";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
@@ -39,6 +43,7 @@ import { BotSharingSection } from "../members/BotSharingSection";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
+import { BotCallVoiceRows } from "./components/BotCallVoiceRows";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import {
   useSettingsEnvironmentMenu,
@@ -190,6 +195,7 @@ function ProjectOverviewContent(props: {
   const organize = async (input: {
     readonly autonomy?: BotAutonomy;
     readonly canCreateBotsWithoutAsking?: boolean;
+    readonly callSettings?: BotCallSettings | null;
   }) => {
     setIsOrganizing(true);
     for (const member of allMembers) {
@@ -444,6 +450,14 @@ function ProjectOverviewContent(props: {
             value={allMembers.every((member) => member.canCreateBotsWithoutAsking === true)}
             disabled={isOrganizing || offline}
             onValueChange={(allowed) => void organize({ canCreateBotsWithoutAsking: allowed })}
+          />
+        ) : null}
+        {canOrganize ? (
+          <BotCallVoiceRows
+            projectId={representative.id}
+            settings={representative.callSettings ?? null}
+            disabled={isOrganizing || offline}
+            onChange={(callSettings) => void organize({ callSettings })}
           />
         ) : null}
       </SettingsSection>

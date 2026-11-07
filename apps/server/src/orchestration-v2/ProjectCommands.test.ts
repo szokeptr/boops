@@ -3,6 +3,7 @@ import {
   CommandId,
   EventId,
   ProjectId,
+  type BotCallSettings,
   type ProjectAvatar,
   type ProjectScript,
   ProviderInstanceId,
@@ -34,6 +35,7 @@ const row = (overrides: Partial<ProjectRow> = {}): ProjectRow => ({
   pinnedAt: null,
   archivedAt: null,
   avatar: null,
+  callSettings: null,
   mainThreadId: null,
   autonomy: "full",
   parentBotProjectId: null,
@@ -145,6 +147,7 @@ describe("planProjectCommand", () => {
     const owl = { hue: "grape", accessory: "phones", glow: "white" } as const;
     const update = (change: {
       avatar?: ProjectAvatar | null;
+      callSettings?: BotCallSettings | null;
       mainThreadId?: ThreadId | null;
       autonomy?: "full" | "home-folder" | null;
     }) =>
@@ -160,17 +163,32 @@ describe("planProjectCommand", () => {
         ),
       );
     assert.deepInclude(
-      update({ avatar: owl, mainThreadId: ThreadId.make("thread-new"), autonomy: "home-folder" }),
-      { avatar: owl, mainThreadId: "thread-new", autonomy: "home-folder" },
+      update({
+        avatar: owl,
+        callSettings: { voice: "stone", language: "Hungarian" },
+        mainThreadId: ThreadId.make("thread-new"),
+        autonomy: "home-folder",
+      }),
+      {
+        avatar: owl,
+        callSettings: { voice: "stone", language: "Hungarian" },
+        mainThreadId: "thread-new",
+        autonomy: "home-folder",
+      },
     );
     // Clearing autonomy resets it to the default rather than storing a third state.
-    assert.deepInclude(update({ avatar: null, mainThreadId: null, autonomy: null }), {
-      avatar: null,
-      mainThreadId: null,
-      autonomy: "full",
-    });
+    assert.deepInclude(
+      update({ avatar: null, callSettings: null, mainThreadId: null, autonomy: null }),
+      {
+        avatar: null,
+        callSettings: null,
+        mainThreadId: null,
+        autonomy: "full",
+      },
+    );
     const untouched = update({});
     assert.notProperty(untouched, "avatar");
+    assert.notProperty(untouched, "callSettings");
     assert.notProperty(untouched, "mainThreadId");
     assert.notProperty(untouched, "autonomy");
   });

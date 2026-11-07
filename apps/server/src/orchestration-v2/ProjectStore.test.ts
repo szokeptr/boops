@@ -87,6 +87,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
             pinnedAt: at,
             archivedAt: at,
             avatar,
+            callSettings: { voice: "stone", language: "Hungarian" },
             mainThreadId: ThreadId.make("thread-main"),
             autonomy: "home-folder",
             parentBotProjectId: ProjectId.make("project-parent"),
@@ -111,6 +112,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
         const shell = Option.getOrNull(yield* projects.getShell(projectId));
         assert.strictEqual(shell?.mainThreadId, "thread-main");
         assert.strictEqual(shell?.autonomy, "home-folder");
+        assert.deepStrictEqual(shell?.callSettings, { voice: "stone", language: "Hungarian" });
         assert.strictEqual(shell?.parentBotProjectId, "project-parent");
         assert.strictEqual(shell?.canCreateBotsWithoutAsking, true);
         assert.strictEqual(shell?.personaReady, true);
@@ -118,6 +120,8 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
         const sql = yield* SqlClient.SqlClient;
         yield* sql`UPDATE projection_projects SET avatar = 'pixel-fox' WHERE project_id = ${projectId}`;
         assert.isNull(Option.getOrNull(yield* projects.get(projectId))?.avatar);
+        yield* sql`UPDATE projection_projects SET call_settings = '{"voice":"retired"}' WHERE project_id = ${projectId}`;
+        assert.isNull(Option.getOrNull(yield* projects.get(projectId))?.callSettings);
       }),
     );
   },

@@ -87,6 +87,7 @@ function makeHarness(
               pinnedAt: null,
               archivedAt: null,
               avatar: null,
+              callSettings: null,
               mainThreadId: null,
               autonomy: "full",
               parentBotProjectId: null,

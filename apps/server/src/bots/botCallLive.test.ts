@@ -24,7 +24,10 @@ const delegated = (id: string, offsetMs: number) => ({
   delegation: { id, type: "delegation", target: "client" },
 });
 
-function play(events: ReadonlyArray<Record<string, unknown>>, from: CallState = initialCallState) {
+function play(
+  events: ReadonlyArray<Record<string, unknown>>,
+  from: CallState = initialCallState(null),
+) {
   let state = from;
   const effects: CallEffect[] = [];
   for (const event of events) {
@@ -63,7 +66,7 @@ describe("onServerEvent", () => {
       [
         said("user", " for Tuesday.", 1800, 2000),
         said("bot", "On it.", 2200, 2800),
-        said("user", "Oh, and remind me", 3000, 3500),
+        said("user", ". Oh, and remind me", 3000, 3500),
         delegated("del_2", 3600),
       ],
       first.state,
@@ -120,6 +123,7 @@ it("seeds the session with the conversation and keeps the client to captions", (
   const session = callSessionConfig({
     instructions: "Be Wren.",
     voice: "marin",
+    language: null,
     recent: [
       { role: "user", text: "Find me a dentist" },
       { role: "assistant", text: "Found three." },

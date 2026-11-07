@@ -49,6 +49,7 @@ import {
   canPickExternalProjectFavicon,
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
+import { BotCallVoiceRows } from "./BotCallVoiceRows";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import {
   defaultProjectIcon,
@@ -479,6 +480,17 @@ function ProjectDetail({
                 }
                 aria-label="Can create bots without asking"
               />
+            }
+          />
+          <BotCallVoiceRows
+            projectId={representative.id}
+            settings={representative.callSettings ?? null}
+            disabled={!canEditGroup}
+            onChange={(callSettings) =>
+              void updateAllMembers(
+                { callSettings },
+                "Failed to change how the bot sounds on calls",
+              )
             }
           />
           {canOrganize ? (

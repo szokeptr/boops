@@ -108,6 +108,7 @@ const layerWithPolicy = (policy?: ManagedPolicySummary, autonomy: BotAutonomy = 
             pinnedAt: null,
             archivedAt: null,
             avatar: null,
+            callSettings: null,
             mainThreadId: null,
             autonomy,
             parentBotProjectId: null,

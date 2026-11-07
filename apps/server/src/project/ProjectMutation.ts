@@ -45,6 +45,7 @@ export const projectMutationOperation = Effect.fn("projectMutationOperation")(fu
         ...(mutation.pinned === undefined ? {} : { pinned: mutation.pinned }),
         ...(mutation.archived === undefined ? {} : { archived: mutation.archived }),
         ...(mutation.avatar === undefined ? {} : { avatar: mutation.avatar }),
+        ...(mutation.callSettings === undefined ? {} : { callSettings: mutation.callSettings }),
         ...(mutation.mainThreadId === undefined ? {} : { mainThreadId: mutation.mainThreadId }),
         ...(mutation.autonomy === undefined ? {} : { autonomy: mutation.autonomy }),
         ...(mutation.parentBotProjectId === undefined

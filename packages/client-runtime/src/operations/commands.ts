@@ -16,6 +16,7 @@ import {
   type OrchestrationV2CreationSource,
   type PlanId,
   type ProjectId,
+  type BotCallSettings,
   type ProjectAvatar,
   type ProjectIconOverride,
   type ProjectScript,
@@ -65,6 +66,7 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly pinned?: boolean;
   readonly archived?: boolean;
   readonly avatar?: ProjectAvatar | null;
+  readonly callSettings?: BotCallSettings | null;
   readonly mainThreadId?: ThreadId | null;
   readonly autonomy?: BotAutonomy | null;
   readonly canCreateBotsWithoutAsking?: boolean;
@@ -396,6 +398,7 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
     ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
     ...(input.archived === undefined ? {} : { archived: input.archived }),
     ...(input.avatar === undefined ? {} : { avatar: input.avatar }),
+    ...(input.callSettings === undefined ? {} : { callSettings: input.callSettings }),
     ...(input.mainThreadId === undefined ? {} : { mainThreadId: input.mainThreadId }),
     ...(input.autonomy === undefined ? {} : { autonomy: input.autonomy }),
     ...(input.canCreateBotsWithoutAsking === undefined

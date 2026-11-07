@@ -8,6 +8,7 @@ import {
   ModelSelection,
   type OrchestrationProjectShell,
   StoredProjectIcon,
+  BotCallSettings,
   ProjectAvatar,
   ProjectId,
   ProjectScript,
@@ -49,6 +50,7 @@ export const ProjectRow = Schema.Struct({
   pinnedAt: Schema.NullOr(IsoDateTime),
   archivedAt: Schema.NullOr(IsoDateTime),
   avatar: Schema.NullOr(ProjectAvatar),
+  callSettings: Schema.NullOr(BotCallSettings),
   mainThreadId: Schema.NullOr(ThreadId),
   autonomy: BotAutonomy,
   parentBotProjectId: Schema.NullOr(ProjectId),
@@ -76,9 +78,23 @@ const StoredAvatar = Schema.NullOr(Schema.String).pipe(
   ),
 );
 
+const decodeStoredCallSettings = Schema.decodeUnknownOption(Schema.fromJsonString(BotCallSettings));
+
+// JSON text; settings an older build cannot read, such as a voice added later, read as defaults.
+const StoredCallSettings = Schema.NullOr(Schema.String).pipe(
+  Schema.decodeTo(
+    Schema.NullOr(BotCallSettings),
+    SchemaTransformation.transform<BotCallSettings | null, string | null>({
+      decode: (text) => (text === null ? null : Option.getOrNull(decodeStoredCallSettings(text))),
+      encode: (settings) => (settings === null ? null : JSON.stringify(settings)),
+    }),
+  ),
+);
+
 const ProjectDbRow = Schema.Struct({
   ...ProjectRow.fields,
   avatar: StoredAvatar,
+  callSettings: StoredCallSettings,
   defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
   autoPull: Schema.BooleanFromBit,
   canCreateBotsWithoutAsking: Schema.BooleanFromBit,
@@ -105,6 +121,7 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
     pinnedAt: row.pinnedAt,
     archivedAt: row.archivedAt,
     avatar: row.avatar,
+    callSettings: row.callSettings,
     mainThreadId: row.mainThreadId,
     autonomy: row.autonomy,
     parentBotProjectId: row.parentBotProjectId,
@@ -171,6 +188,7 @@ export const make = Effect.gen(function* () {
         pinned_at AS "pinnedAt",
         archived_at AS "archivedAt",
         avatar,
+        call_settings AS "callSettings",
         main_thread_id AS "mainThreadId",
         autonomy,
         parent_bot_project_id AS "parentBotProjectId",
@@ -212,6 +230,7 @@ export const make = Effect.gen(function* () {
             pinned_at,
             archived_at,
             avatar,
+            call_settings,
             main_thread_id,
             autonomy,
             parent_bot_project_id,
@@ -237,6 +256,7 @@ export const make = Effect.gen(function* () {
             ${encoded.pinnedAt},
             ${encoded.archivedAt},
             ${encoded.avatar},
+            ${encoded.callSettings},
             ${encoded.mainThreadId},
             ${encoded.autonomy},
             ${encoded.parentBotProjectId},
@@ -262,6 +282,7 @@ export const make = Effect.gen(function* () {
             pinned_at = excluded.pinned_at,
             archived_at = excluded.archived_at,
             avatar = excluded.avatar,
+            call_settings = excluded.call_settings,
             main_thread_id = excluded.main_thread_id,
             autonomy = excluded.autonomy,
             parent_bot_project_id = excluded.parent_bot_project_id,
@@ -321,6 +342,7 @@ export const make = Effect.gen(function* () {
           pinnedAt: null,
           archivedAt: null,
           avatar: null,
+          callSettings: null,
           mainThreadId: null,
           autonomy: DEFAULT_BOT_AUTONOMY,
           parentBotProjectId: null,
@@ -362,6 +384,7 @@ export const make = Effect.gen(function* () {
         ...(payload.pinnedAt === undefined ? {} : { pinnedAt: payload.pinnedAt }),
         ...(payload.archivedAt === undefined ? {} : { archivedAt: payload.archivedAt }),
         ...(payload.avatar === undefined ? {} : { avatar: payload.avatar }),
+        ...(payload.callSettings === undefined ? {} : { callSettings: payload.callSettings }),
         ...(payload.mainThreadId === undefined ? {} : { mainThreadId: payload.mainThreadId }),
         ...(payload.autonomy === undefined ? {} : { autonomy: payload.autonomy }),
         ...(payload.parentBotProjectId === undefined

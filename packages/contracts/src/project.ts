@@ -208,6 +208,95 @@ export type ProjectAvatar = typeof ProjectAvatar.Type;
 
 const isProjectAvatar = Schema.is(ProjectAvatar);
 
+/** GPT-Live's voices. A bot without one saved gets one picked from its id. */
+export const BOT_CALL_VOICES = [
+  "marin",
+  "cedar",
+  "coral",
+  "sage",
+  "verse",
+  "ballad",
+  "ash",
+  "alloy",
+  "shimmer",
+  "echo",
+  "quartz",
+  "ripple",
+  "vesper",
+  "willow",
+  "stone",
+  "gleam",
+  "meridian",
+  "beacon",
+  "delta",
+  "cinder",
+  "bossa",
+  "tempo",
+  "nuri",
+  "juni",
+  "flitz",
+  "brise",
+  "sillage",
+  "nira",
+  "harema",
+  "shida",
+  "noeul",
+] as const;
+export type BotCallVoice = (typeof BOT_CALL_VOICES)[number];
+
+/** The voice a bot without a chosen one speaks in: one of the multilingual originals, from its id. */
+export function defaultBotCallVoice(projectId: string): BotCallVoice {
+  const originals = BOT_CALL_VOICES.slice(0, 10);
+  let hash = 0;
+  for (const char of projectId) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return originals[hash % originals.length]!;
+}
+
+/** Languages a bot can be held to on calls. Without one it speaks the user's language. */
+export const BOT_CALL_LANGUAGES = [
+  "English",
+  "Hungarian",
+  "German",
+  "French",
+  "Spanish",
+  "Italian",
+  "Portuguese",
+  "Polish",
+  "Dutch",
+  "Swedish",
+  "Czech",
+  "Romanian",
+  "Ukrainian",
+  "Russian",
+  "Turkish",
+  "Arabic",
+  "Hindi",
+  "Japanese",
+  "Korean",
+  "Chinese",
+] as const;
+export type BotCallLanguage = (typeof BOT_CALL_LANGUAGES)[number];
+
+/** How a bot sounds on voice calls. Each field left out keeps its default. */
+export const BotCallSettings = Schema.Struct({
+  voice: Schema.optional(Schema.Literals(BOT_CALL_VOICES)),
+  language: Schema.optional(Schema.Literals(BOT_CALL_LANGUAGES)),
+});
+export type BotCallSettings = typeof BotCallSettings.Type;
+
+const isBotCallSettings = Schema.is(BotCallSettings);
+
+/** Settings this client cannot read, such as a voice added later, read as the defaults. */
+export const ReceivedBotCallSettings = Schema.Unknown.pipe(
+  Schema.decodeTo(
+    Schema.NullOr(BotCallSettings),
+    SchemaTransformation.transform<BotCallSettings | null, unknown>({
+      decode: (settings) => (isBotCallSettings(settings) ? settings : null),
+      encode: (settings) => settings,
+    }),
+  ),
+);
+
 /** Anything but a current avatar, such as a pre-Screenie avatar id, reads as no avatar. */
 export const ReceivedProjectAvatar = Schema.Unknown.pipe(
   Schema.decodeTo(
@@ -234,6 +323,7 @@ export const Project = Schema.Struct({
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   avatar: Schema.optional(ReceivedProjectAvatar),
+  callSettings: Schema.optional(ReceivedBotCallSettings),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   autonomy: Schema.optional(BotAutonomy),
   parentBotProjectId: Schema.optional(Schema.NullOr(ProjectId)),
@@ -280,6 +370,8 @@ export const ProjectUpdatePayload = Schema.Struct({
     }),
   ),
   avatar: Schema.optional(Schema.NullOr(ProjectAvatar)),
+  /** How the bot sounds on calls. Null resets it to the defaults. */
+  callSettings: Schema.optional(Schema.NullOr(BotCallSettings)),
   /** The bot's conversation. Null falls back to the project's oldest unarchived thread. */
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   autonomy: Schema.optional(

@@ -11,3 +11,11 @@ export {
   type BotCallStream,
   type BotCallTrack,
 } from "./controller.ts";
+export {
+  BOT_CALL_VOICE_GROUPS,
+  botCallVoiceLabel,
+  botCallVoiceName,
+  botCallVoiceNote,
+  changeBotCallSettings,
+} from "./voices.ts";
+export { type BotCallWorkEntry, botCallRequestWords, foldBotCallMessages } from "./callFolding.ts";

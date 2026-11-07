@@ -1,5 +1,7 @@
 import {
   type BotCallEndInput,
+  type BotCallLanguage,
+  defaultBotCallVoice,
   BotCallError,
   type BotCallStartInput,
   type BotCallStartResult,
@@ -46,7 +48,6 @@ import {
   releaseDelegation,
   requestMessage,
   spokenResult,
-  voiceFor,
 } from "./botCallLive.ts";
 
 const OPENAI_LIVE_SESSIONS = "https://api.openai.com/v1/live/sessions";
@@ -187,14 +188,17 @@ const make = Effect.gen(function* () {
       readText(path.join(bot.workspaceRoot, PERSONA_FILE), PERSONA_CHARS),
       readText(path.join(bot.workspaceRoot, "memory", "INDEX.md"), MEMORY_INDEX_CHARS),
     ]);
+    const language = bot.callSettings?.language ?? null;
     const session = callSessionConfig({
       instructions: callInstructions({
         name: bot.title,
         persona,
         memoryIndex,
         working: thread.activeRunId !== null,
+        language,
       }),
-      voice: voiceFor(bot.id),
+      voice: bot.callSettings?.voice ?? defaultBotCallVoice(bot.id),
+      language,
       recent,
     });
 
@@ -242,6 +246,7 @@ const make = Effect.gen(function* () {
         projectId: bot.id,
         threadId: input.threadId,
         botName: bot.title,
+        language,
         activeRunId: thread.activeRunId,
       }).pipe(
         Effect.timeout(MAX_CALL),
@@ -265,10 +270,11 @@ const make = Effect.gen(function* () {
     readonly projectId: ProjectId;
     readonly threadId: ThreadId;
     readonly botName: string;
+    readonly language: BotCallLanguage | null;
     readonly activeRunId: RunId | null;
   }) {
     const startedAt = yield* Clock.currentTimeMillis;
-    const state = yield* Ref.make<CallState>(initialCallState);
+    const state = yield* Ref.make(initialCallState(call.language));
     // Requests and run watchers end with the call.
     const tasks = yield* FiberSet.make();
     const socket = yield* Socket.makeWebSocket(

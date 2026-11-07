@@ -28,6 +28,8 @@ import {
   isVideoAttachment,
 } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
+import { botCallRequestWords } from "@t3tools/client-runtime/bot-call";
+import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import {
   CalendarClockIcon,
   ChevronDownIcon,
@@ -313,7 +315,12 @@ function CallRecapRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> 
   const revealRef = findRevealRef(() => setExpanded(true));
   const { text, call } = resolveUserMessagePresentation(row.message);
   const length = callLength(call?.durationSeconds);
-  const summary = length === null ? "Call" : `Call · ${length}`;
+  const requests = row.callWork?.filter((work) => work.request !== null).length ?? 0;
+  const summary = [
+    "Call",
+    ...(length === null ? [] : [length]),
+    ...(requests === 0 ? [] : [requests === 1 ? "1 request" : `${requests} requests`]),
+  ].join(" · ");
   const lines = text
     .split(/\r?\n/)
     .flatMap((line, index): Array<{ key: string; speaker: string | null; text: string }> => {
@@ -372,8 +379,48 @@ function CallRecapRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> 
               {line.text}
             </p>
           ))}
+          {row.callWork === undefined ? null : <CallWork work={row.callWork} />}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** What the bot did on a call: each request with its full written replies. */
+function CallWork({
+  work,
+}: {
+  work: NonNullable<Extract<TimelineRow, { kind: "message" }>["callWork"]>;
+}) {
+  const ctx = use(TimelineRowCtx);
+  return (
+    <div className="mt-2 space-y-3 border-border/70 border-t pt-2">
+      {work.map((entry, index) => (
+        <div key={entry.request?.id ?? `after:${index}`} className="space-y-1">
+          <p className="text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {entry.request === null ? "After the call" : "You asked"}
+              {entry.request === null ? null : ": "}
+            </span>
+            {entry.request === null ? null : botCallRequestWords(entry.request.text)}
+          </p>
+          {entry.replies.map((reply) => (
+            <ChatMarkdown
+              key={reply.id}
+              text={reply.text}
+              cwd={ctx.markdownCwd}
+              threadRef={ctx.threadRef ?? undefined}
+              isStreaming={reply.streaming}
+              lineBreaks={shouldPreserveAssistantLineBreaks(reply.text)}
+              skills={ctx.skills}
+              headingLevelOffset={MESSAGE_HEADING_LEVEL}
+              onUseArtifactTemplate={ctx.onUseArtifactTemplate}
+              onRunShellCommand={ctx.onRunShellCommand}
+              onImageExpand={ctx.onImageExpand}
+            />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

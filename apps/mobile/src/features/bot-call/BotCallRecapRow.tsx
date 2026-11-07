@@ -1,4 +1,6 @@
+import { type BotCallWorkEntry, botCallRequestWords } from "@t3tools/client-runtime/bot-call";
 import * as Haptics from "expo-haptics";
+import type { ReactNode } from "react";
 import { Pressable, View, type ColorValue } from "react-native";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -15,8 +17,14 @@ export function BotCallRecapRow(props: {
   readonly onToggle: () => void;
   readonly bubbleMaxWidth: number | "85%";
   readonly iconSubtleColor: ColorValue;
+  /** What the bot did on the call, folded here instead of the conversation. */
+  readonly work?: ReadonlyArray<BotCallWorkEntry<{ readonly id: string; readonly text: string }>>;
+  readonly renderMarkdown: (text: string) => ReactNode;
 }) {
-  const label = callRecapLabel(props.durationSeconds);
+  const label = callRecapLabel(
+    props.durationSeconds,
+    props.work?.filter((entry) => entry.request !== null).length ?? 0,
+  );
   return (
     <View className="mb-5 items-center">
       <Pressable
@@ -68,6 +76,24 @@ export function BotCallRecapRow(props: {
               <Text selectable className="text-sm leading-5 text-foreground">
                 {line.text}
               </Text>
+            </View>
+          ))}
+          {props.work?.map((entry, index) => (
+            <View
+              key={entry.request?.id ?? `after:${index}`}
+              className="gap-1 border-t border-separator pt-2.5"
+            >
+              <Text className="font-t3-medium text-2xs text-foreground-muted">
+                {entry.request === null ? "After the call" : "You asked"}
+              </Text>
+              {entry.request === null ? null : (
+                <Text selectable className="text-sm leading-5 text-foreground">
+                  {botCallRequestWords(entry.request.text)}
+                </Text>
+              )}
+              {entry.replies.map((reply) => (
+                <View key={reply.id}>{props.renderMarkdown(reply.text)}</View>
+              ))}
             </View>
           ))}
         </View>

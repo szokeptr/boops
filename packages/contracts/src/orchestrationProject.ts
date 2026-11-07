@@ -13,6 +13,7 @@ import { ModelSelection } from "./modelSelection.ts";
 import {
   BotAutonomy,
   ProjectScript,
+  ReceivedBotCallSettings,
   ReceivedProjectAvatar,
   ReceivedProjectIcon,
 } from "./project.ts";
@@ -34,6 +35,7 @@ export const OrchestrationProjectShell = Schema.Struct({
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   // Bot identity; see botMainThreadId for the main-thread fallback.
   avatar: Schema.optional(ReceivedProjectAvatar),
+  callSettings: Schema.optional(ReceivedBotCallSettings),
   mainThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   autonomy: Schema.optional(BotAutonomy),
   parentBotProjectId: Schema.optional(Schema.NullOr(ProjectId)),

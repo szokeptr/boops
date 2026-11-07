@@ -2023,6 +2023,21 @@ function renderFeedEntry(
           onToggle={() => props.onToggleWorkRow(rowId, entry.id)}
           bubbleMaxWidth={props.duoColumns ? "85%" : props.userBubbleMaxWidth}
           iconSubtleColor={iconSubtleColor}
+          work={entry.callWork}
+          renderMarkdown={(text) => (
+            // The transcript card's border and padding.
+            <MarkdownImageAvailableWidthContext value={Math.max(0, props.contentWidth - 32)}>
+              <AssistantMarkdownContent
+                markdown={renderAssistantCitationsAsText(text)}
+                environmentId={props.environmentId}
+                markdownStyles={markdownStyles.assistant}
+                linkHandlers={props.markdownLinkHandlers}
+                onUseArtifactTemplate={props.onUseArtifactTemplate}
+                renderImage={props.renderMarkdownImage}
+                skills={props.skills}
+              />
+            </MarkdownImageAvailableWidthContext>
+          )}
         />
       );
     }

@@ -25,10 +25,15 @@ export function callStatusLabel(state: BotCallState, now: number): string {
 }
 
 /** The finished call's row in the conversation: "Call · 4 min". */
-export function callRecapLabel(durationSeconds: number | undefined): string {
-  if (durationSeconds === undefined) return "Call";
-  if (durationSeconds < 60) return "Call · under a minute";
-  return `Call · ${Math.round(durationSeconds / 60)} min`;
+export function callRecapLabel(durationSeconds: number | undefined, requests = 0): string {
+  const length =
+    durationSeconds === undefined
+      ? null
+      : durationSeconds < 60
+        ? "under a minute"
+        : `${Math.round(durationSeconds / 60)} min`;
+  const asked = requests === 0 ? null : requests === 1 ? "1 request" : `${requests} requests`;
+  return ["Call", length, asked].filter((part) => part !== null).join(" · ");
 }
 
 export type CallRecapLine = {

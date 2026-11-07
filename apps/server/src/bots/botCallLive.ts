@@ -5,27 +5,9 @@
  * rebuilt from the call's transcript.
  */
 
+import type { BotCallLanguage } from "@t3tools/contracts";
+
 const LIVE_MODEL = "gpt-live-1";
-
-// Each bot keeps one voice, picked from its id, so it always sounds the same.
-const VOICES = [
-  "marin",
-  "cedar",
-  "coral",
-  "sage",
-  "verse",
-  "ballad",
-  "ash",
-  "alloy",
-  "shimmer",
-  "echo",
-] as const;
-
-export function voiceFor(projectId: string): (typeof VOICES)[number] {
-  let hash = 0;
-  for (const char of projectId) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return VOICES[hash % VOICES.length]!;
-}
 
 export interface CallContext {
   readonly name: string;
@@ -33,6 +15,8 @@ export interface CallContext {
   readonly memoryIndex: string | null;
   /** A turn was already running when the call began. */
   readonly working: boolean;
+  /** Null: speak whatever language the user speaks. */
+  readonly language: BotCallLanguage | null;
 }
 
 export interface RecentMessage {
@@ -40,13 +24,13 @@ export interface RecentMessage {
   readonly text: string;
 }
 
-const GREETING =
-  "The call just connected. Pick up like answering a call from a friend: one short greeting in character, then listen.";
+const greeting = (language: BotCallLanguage | null) =>
+  `The call just connected. Pick up like answering a call from a friend: one short greeting in character${language === null ? "" : `, in ${language}`}, then listen.`;
 
 export function callInstructions(context: CallContext): string {
   const sections = [
     `You are ${context.name}, on a live voice call with the person you work for. They know you from your chat in Boops; this call is that same conversation, and you are its voice.
-Talk like a phone call: warm, natural, one to three short sentences at a time. No lists, markdown or URLs read aloud. Speak the user's language.
+Talk like a phone call: warm, natural, one to three short sentences at a time. No lists, markdown or URLs read aloud. ${context.language === null ? "Speak the user's language." : `Always speak ${context.language}, even when the user speaks another language, unless they ask you to switch.`}
 Backchannel policy: Use light backchannels. Acknowledge naturally without competing with the user.
 Interruption policy: Stop speaking when the user interrupts. Listen to what they say.
 Delegation policy:
@@ -88,6 +72,7 @@ const CLIENT_SERVER_EVENTS = [
 export function callSessionConfig(input: {
   readonly instructions: string;
   readonly voice: string;
+  readonly language: BotCallLanguage | null;
   /** The conversation's latest messages, oldest first. */
   readonly recent: ReadonlyArray<RecentMessage>;
 }) {
@@ -115,7 +100,11 @@ export function callSessionConfig(input: {
               ],
             },
       ),
-      { type: "message", role: "developer", content: [{ type: "input_text", text: GREETING }] },
+      {
+        type: "message",
+        role: "developer",
+        content: [{ type: "input_text", text: greeting(input.language) }],
+      },
     ],
     // The client only plays audio and shows captions; the server steers the call.
     client: {
@@ -150,17 +139,18 @@ export interface CallState {
   readonly delegatedUntilMs: number;
   /** Delegations waiting for the user to finish what they were saying. */
   readonly waiting: ReadonlyArray<{ readonly id: string; readonly offsetMs: number }>;
-  readonly greeted: boolean;
+  /** What the model is told to say when the session starts; null once greeted. */
+  readonly greeting: string | null;
 }
 
-export const initialCallState: CallState = {
+export const initialCallState = (language: BotCallLanguage | null): CallState => ({
   fragments: [],
   heardUntilMs: 0,
   userUntilMs: 0,
   delegatedUntilMs: 0,
   waiting: [],
-  greeted: false,
-};
+  greeting: greeting(language),
+});
 
 export type CallEffect =
   | { readonly type: "send"; readonly event: Readonly<Record<string, unknown>> }
@@ -207,6 +197,8 @@ const spoken = (fragments: ReadonlyArray<Fragment>) =>
     .join("")
     .replace(/([.!?])(?=\p{Lu})/gu, "$1 ")
     .replace(/\s+/g, " ")
+    // A transcript split mid-sentence can leave the next part starting with its punctuation.
+    .replace(/^[\s.,;:!?]+/, "")
     .trim();
 
 function transcriptLines(fragments: ReadonlyArray<Fragment>): Array<TranscriptLine> {
@@ -270,12 +262,12 @@ const number = (value: unknown, fallback: number) =>
 export function onServerEvent(state: CallState, event: ServerEvent): Step {
   switch (event.type) {
     case "session.started":
-      return state.greeted
+      return state.greeting === null
         ? { state, effects: [] }
         : {
-            state: { ...state, greeted: true },
+            state: { ...state, greeting: null },
             effects: [
-              { type: "send", event: appendEvent("commentary", null, GREETING, "greeting") },
+              { type: "send", event: appendEvent("commentary", null, state.greeting, "greeting") },
             ],
           };
     case "session.input_transcript.delta":
@@ -287,7 +279,7 @@ export function onServerEvent(state: CallState, event: ServerEvent): Step {
       const next: CallState = {
         ...state,
         // Hearing the user means the call is underway; a greeting now would talk over them.
-        greeted: true,
+        greeting: null,
         fragments: [
           ...state.fragments,
           { speaker: user ? "user" : "bot", text: event.delta, startMs },

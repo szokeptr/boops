@@ -97,6 +97,7 @@ const harness = Effect.fn(function* (openaiApiKey: string) {
     title: "Wren",
     workspaceRoot: home,
     mainThreadId: threadId,
+    callSettings: { voice: "stone", language: "Hungarian" },
   } as Project;
   const run = (status: OrchestrationV2Run["status"]) =>
     ({ id: runId, status }) as OrchestrationV2Run;
@@ -177,6 +178,8 @@ it.effect(
         assert.deepStrictEqual(started, { callId: "live_1", sdpAnswer: "answer-for:offer" });
         const session = sessions[0]!;
         assert.strictEqual(session.model, "gpt-live-1");
+        assert.deepStrictEqual(session.audio, { output: { voice: "stone" } });
+        assert.include(String(session.instructions), "Always speak Hungarian");
         assert.include(String(session.instructions), "Wren: dry humour");
         assert.include(JSON.stringify(session.input), "Find me a dentist");
 
@@ -185,6 +188,7 @@ it.effect(
         openai.emit({ type: "session.started" });
         const greeting = yield* nextSent(sent, "session.commentary.append");
         assert.strictEqual(greeting.delegation_id, null);
+        assert.include(String(greeting.content), "in Hungarian");
 
         openai.emit({
           type: "session.output_transcript.delta",

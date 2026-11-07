@@ -1,3 +1,4 @@
+import { type BotCallWorkEntry, foldBotCallMessages } from "@t3tools/client-runtime/bot-call";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import {
   resolveUserMessagePresentation,
@@ -609,6 +610,8 @@ type MessagesTimelineRowContent =
       groupedWithPrevious?: boolean;
       /** Set when the message above is a steer too, so the label shows once. */
       continuesSteer?: boolean;
+      /** On a call's transcript: what the bot did on the call, folded out of the conversation. */
+      callWork?: ReadonlyArray<BotCallWorkEntry<ChatMessage>>;
     }
   | {
       kind: "assistant-meta";
@@ -2376,24 +2379,34 @@ function directMessageRows(
   sent: ReadonlyArray<SentBotMessage>,
   activity: { readonly typing: boolean; readonly startedAt: string | null },
 ): MessagesTimelineRow[] {
-  const kept = rows.filter((row) => {
-    switch (row.kind) {
-      case "message":
-        return (
-          row.message.role === "assistant" ||
-          (row.message.role === "user" &&
-            resolveUserMessagePresentation(row.message).attribution !== "system")
-        );
-      case "event":
-        return DIRECT_MESSAGE_EVENT_TYPES.has(row.projectedItem.item.type);
-      case "proposed-plan":
-      case "html-render":
-      case "mcp-app":
-        return true;
-      default:
-        return false;
-    }
-  });
+  const calls = foldBotCallMessages(
+    rows.flatMap((row) => (row.kind === "message" ? [row.message] : [])),
+  );
+  const kept = rows
+    .flatMap((row): MessagesTimelineRow[] => {
+      if (row.kind !== "message") return [row];
+      if (calls.hidden.has(row.message.id)) return [];
+      const callWork = calls.workByRecapId.get(row.message.id);
+      return [callWork === undefined ? row : { ...row, callWork }];
+    })
+    .filter((row) => {
+      switch (row.kind) {
+        case "message":
+          return (
+            row.message.role === "assistant" ||
+            (row.message.role === "user" &&
+              resolveUserMessagePresentation(row.message).attribution !== "system")
+          );
+        case "event":
+          return DIRECT_MESSAGE_EVENT_TYPES.has(row.projectedItem.item.type);
+        case "proposed-plan":
+        case "html-render":
+        case "mcp-app":
+          return true;
+        default:
+          return false;
+      }
+    });
   const side = (row: MessagesTimelineRow | undefined) =>
     row?.kind !== "message"
       ? null
@@ -2607,16 +2620,28 @@ function replaceStreamingMessageRows(
     replacements.set(previousEntry.message, entry);
   }
   if (replacements.size === 0) return previous.rows;
+  const replaced = (message: ChatMessage) => replacements.get(message)?.message ?? message;
   return previous.rows.map((row) => {
     if (row.kind !== "message" && row.kind !== "assistant-meta") return row;
     const entry = replacements.get(row.message);
-    return entry
-      ? {
-          ...row,
-          message: entry.message,
-          ...(entry.projectedItem === undefined ? {} : { projectedItem: entry.projectedItem }),
-        }
-      : row;
+    const callWork =
+      row.kind === "message" && row.callWork !== undefined
+        ? row.callWork.map((work) => ({
+            request: work.request,
+            replies: work.replies.map(replaced),
+          }))
+        : undefined;
+    if (entry === undefined && callWork === undefined) return row;
+    return {
+      ...row,
+      ...(entry === undefined
+        ? {}
+        : {
+            message: entry.message,
+            ...(entry.projectedItem === undefined ? {} : { projectedItem: entry.projectedItem }),
+          }),
+      ...(callWork === undefined ? {} : { callWork }),
+    };
   });
 }
 
@@ -2650,6 +2675,22 @@ export function computeStableMessagesTimelineRows(
   });
 
   return anyChanged ? { byId: next, result } : previous;
+}
+
+function sameCallWork(
+  a: ReadonlyArray<BotCallWorkEntry<ChatMessage>> | undefined,
+  b: ReadonlyArray<BotCallWorkEntry<ChatMessage>> | undefined,
+): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined || a.length !== b.length) return false;
+  return a.every((entry, index) => {
+    const other = b[index]!;
+    return (
+      entry.request === other.request &&
+      entry.replies.length === other.replies.length &&
+      entry.replies.every((reply, replyIndex) => reply === other.replies[replyIndex])
+    );
+  });
 }
 
 function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean {
@@ -2793,7 +2834,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.revertTurnCount === bm.revertTurnCount &&
         a.groupedWithNext === bm.groupedWithNext &&
         a.groupedWithPrevious === bm.groupedWithPrevious &&
-        a.continuesSteer === bm.continuesSteer
+        a.continuesSteer === bm.continuesSteer &&
+        sameCallWork(a.callWork, bm.callWork)
       );
     }
   }

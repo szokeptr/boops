@@ -7,6 +7,7 @@ import {
   type EventId,
   MAX_SCRIPT_ID_LENGTH,
   type ModelSelection,
+  type BotCallSettings,
   type ProjectAvatar,
   type ProjectIconOverride,
   ProjectId,
@@ -47,6 +48,7 @@ export interface ProjectMetaUpdateCommand {
   readonly pinned?: boolean;
   readonly archived?: boolean;
   readonly avatar?: ProjectAvatar | null;
+  readonly callSettings?: BotCallSettings | null;
   readonly mainThreadId?: ThreadId | null;
   readonly autonomy?: BotAutonomy | null;
   readonly parentBotProjectId?: ProjectId | null;
@@ -234,6 +236,7 @@ export function planProjectCommand(input: {
             ? {}
             : { archivedAt: command.archived ? (project.archivedAt ?? occurredAt) : null }),
           ...(command.avatar === undefined ? {} : { avatar: command.avatar }),
+          ...(command.callSettings === undefined ? {} : { callSettings: command.callSettings }),
           ...(command.mainThreadId === undefined ? {} : { mainThreadId: command.mainThreadId }),
           ...(command.autonomy === undefined
             ? {}

@@ -257,6 +257,7 @@ function makeHarness(options: HarnessOptions = {}) {
               pinnedAt: null,
               archivedAt: null,
               avatar: null,
+              callSettings: null,
               mainThreadId: null,
               autonomy: "full",
               parentBotProjectId: null,

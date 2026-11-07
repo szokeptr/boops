@@ -1,3 +1,4 @@
+import { type BotCallWorkEntry, foldBotCallMessages } from "@t3tools/client-runtime/bot-call";
 import type {
   ThreadPendingApproval,
   ThreadPendingUserInput,
@@ -167,6 +168,8 @@ type RawThreadFeedEntry =
       readonly id: string;
       readonly createdAt: string;
       readonly message: ThreadFeedMessage;
+      /** On a call's transcript: what the bot did on the call, folded out of the conversation. */
+      readonly callWork?: ReadonlyArray<BotCallWorkEntry<ThreadFeedMessage>>;
     }
   | {
       readonly type: "activity";
@@ -1679,9 +1682,16 @@ export function deriveDirectMessageFeed(
   typingSince: string | null,
   parentProjectId: ProjectId | null = null,
 ): ThreadFeedEntry[] {
+  const calls = foldBotCallMessages(
+    feed.flatMap((entry) => (entry.type === "message" ? [entry.message] : [])),
+  );
   const kept = feed.flatMap((entry): ThreadFeedEntry[] => {
     switch (entry.type) {
       case "message":
+        if (calls.hidden.has(entry.message.id)) return [];
+        if (calls.workByRecapId.has(entry.message.id)) {
+          return [withCallWork(entry, calls.workByRecapId.get(entry.message.id)!)];
+        }
         return entry.message.role === "assistant" ||
           (!isCompactionCommandMessage(entry.message) &&
             resolveUserMessagePresentation(entry.message).attribution !== "system")
@@ -1781,6 +1791,31 @@ interface OpenBotExchange {
   readonly first: ThreadFeedEntry | ThreadFeedSentBotMessage;
   readonly peers: Array<ThreadFeedBotExchange["peers"][number]>;
   readonly entries: ThreadFeedBotExchangeEntry[];
+}
+
+type ThreadFeedMessageEntry = Extract<ThreadFeedEntry, { readonly type: "message" }>;
+const callRows = new WeakMap<ThreadFeedMessage, ThreadFeedMessageEntry>();
+
+// Reusing the row keeps the list from re-rendering a call whose work did not change.
+function withCallWork(
+  entry: ThreadFeedMessageEntry,
+  work: ReadonlyArray<BotCallWorkEntry<ThreadFeedMessage>>,
+): ThreadFeedMessageEntry {
+  const previous = callRows.get(entry.message);
+  const same =
+    previous?.callWork !== undefined &&
+    previous.id === entry.id &&
+    previous.callWork.length === work.length &&
+    previous.callWork.every(
+      (item, index) =>
+        item.request === work[index]!.request &&
+        item.replies.length === work[index]!.replies.length &&
+        item.replies.every((reply, replyIndex) => reply === work[index]!.replies[replyIndex]),
+    );
+  if (same) return previous;
+  const row = { ...entry, callWork: work };
+  callRows.set(entry.message, row);
+  return row;
 }
 
 const botExchangeRows = new WeakMap<object, ThreadFeedBotExchange>();

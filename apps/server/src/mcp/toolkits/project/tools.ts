@@ -91,6 +91,7 @@ const ProjectCreateTool = Tool.make("boops_project_create", {
 // Archiving goes through boops_bot_archive, which pauses routines and asks the user first.
 const {
   avatar: _avatar,
+  callSettings: _callSettings,
   mainThreadId: _mainThreadId,
   autonomy: _autonomy,
   parentBotProjectId: _parentBotProjectId,

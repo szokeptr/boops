@@ -192,6 +192,7 @@ export const make = Effect.gen(function* () {
     pinnedAt: row.pinnedAt,
     archivedAt: row.archivedAt,
     avatar: row.avatar,
+    callSettings: row.callSettings,
     mainThreadId: row.mainThreadId,
     autonomy: row.autonomy,
     parentBotProjectId: row.parentBotProjectId,
@@ -435,6 +436,7 @@ export const make = Effect.gen(function* () {
         ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
         ...(input.archived === undefined ? {} : { archived: input.archived }),
         ...(input.avatar === undefined ? {} : { avatar: input.avatar }),
+        ...(input.callSettings === undefined ? {} : { callSettings: input.callSettings }),
         ...(input.mainThreadId === undefined ? {} : { mainThreadId: input.mainThreadId }),
         ...(input.autonomy === undefined ? {} : { autonomy: input.autonomy }),
         ...(input.parentBotProjectId === undefined
