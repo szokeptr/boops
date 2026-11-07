@@ -23,7 +23,7 @@ import { cn } from "../../lib/cn";
 import { rootNavigationRef, whenRootNavigationReady } from "../../lib/rootNavigation";
 import { useQuietThreadShell } from "../../state/entities";
 import { BotAvatarSlot } from "../bots/BotAvatarSlot";
-import { visorColors } from "@t3tools/client-runtime/bot-avatar";
+import { avatarColors } from "@t3tools/client-runtime/bot-avatar";
 import { specFor } from "@t3tools/shared/botAvatar";
 import { CallEqualizer } from "./CallEqualizer";
 import { callAudioLevel, useBotCall } from "./BotCallProvider";
@@ -67,7 +67,7 @@ function useViewingCallConversation(call: ActiveBotCall | null): boolean {
 }
 
 const callColor = (call: ActiveBotCall) =>
-  visorColors(call.botAvatar ?? specFor(call.botName)).body;
+  avatarColors(call.botAvatar ?? specFor(call.botName)).body;
 
 /** The app-wide call pill: floats over every screen while a call is on and its screen is closed. */
 export function GlobalBotCallPill(props: { readonly children: ReactNode }) {
