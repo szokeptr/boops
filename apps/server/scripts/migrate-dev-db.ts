@@ -384,6 +384,11 @@ const pruneSnapshot = Effect.fn("pruneDevDbSnapshot")(function* (input: RunMigra
       for (const table of CLEARED_TABLES) {
         yield* sql`DELETE FROM ${sql(table)}`;
       }
+      // Credentials stay in the source's secrets dir: a copy would share OAuth refresh tokens,
+      // and a provider that rotates them would sign the source install out on the first refresh.
+      yield* sql`UPDATE connector_connections
+        SET status = 'needs_auth', status_detail = 'Sign in again on this dev server'
+        WHERE auth_kind <> 'none' AND status <> 'needs_auth'`;
     }),
   );
 

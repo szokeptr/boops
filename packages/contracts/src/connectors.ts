@@ -248,6 +248,8 @@ const CONNECTOR_ERROR_MESSAGES = {
   unknown_project: "That bot no longer exists.",
   auth_kind_mismatch: "That connector signs in another way.",
   not_connected: "Sign in to this connection first.",
+  not_enabled: "This connection is off for this bot.",
+  credential_missing: "This server has no saved sign-in for this connection. Sign in again.",
   unreachable: "The server did not answer.",
   oauth_unsupported: "This server's sign-in can't be used by Boops.",
   oauth_client_required: "This server needs an OAuth client you create. Enter its client ID.",

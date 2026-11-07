@@ -122,6 +122,40 @@ const jsonError = (status: number, error: string, message: string) =>
     { status, headers: { "cache-control": "no-store" } },
   );
 
+const ASK_TO_CONNECT = "Ask the user to connect it with request_connection.";
+
+// 403 even for an unknown name: MCP clients read a 404 as an expired session and loop.
+const upstreamError = (error: ConnectorError) => {
+  switch (error.reason) {
+    case "unreachable":
+      return jsonError(502, "connector_unreachable", "The connector's server did not answer.");
+    case "storage":
+      return jsonError(500, "connector_storage_error", "Could not read this connection.");
+    case "unknown_connection":
+      return jsonError(403, "unknown_connection", `No connection has this name. ${ASK_TO_CONNECT}`);
+    case "not_enabled":
+      return jsonError(403, "not_enabled", `This connector is off for this bot. ${ASK_TO_CONNECT}`);
+    case "credential_missing":
+      return jsonError(
+        403,
+        "credential_missing",
+        `This server has no saved sign-in for this connector. ${ASK_TO_CONNECT}`,
+      );
+    case "not_connected":
+      return jsonError(
+        403,
+        "needs_auth",
+        `This connector needs signing in again. ${ASK_TO_CONNECT}`,
+      );
+    default:
+      return jsonError(
+        403,
+        "connector_unavailable",
+        `This connector is not connected for this bot. ${ASK_TO_CONNECT}`,
+      );
+  }
+};
+
 /**
  * `/mcp-connectors/<serverName>`: forwards a provider's MCP request to the connector's server
  * with the stored credentials. The provider authenticates with its thread's T3 MCP credential,
@@ -201,16 +235,7 @@ const proxy = Effect.fn("ConnectorHttp.proxy")(function* (services: {
     yield* connectors.markNeedsAuth(target.connectionId);
     return Option.getOrElse(retried, () => first);
   }).pipe(Effect.result);
-  if (outcome._tag === "Failure") {
-    const error = outcome.failure;
-    return error.reason === "unreachable"
-      ? jsonError(502, "connector_unreachable", "The connector's server did not answer.")
-      : jsonError(
-          403,
-          "connector_unavailable",
-          "This connector is not connected for this bot. Ask the user to connect it.",
-        );
-  }
+  if (outcome._tag === "Failure") return upstreamError(outcome.failure);
   const response = outcome.success;
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(response.headers)) {

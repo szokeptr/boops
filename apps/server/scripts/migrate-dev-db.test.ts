@@ -99,6 +99,11 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
         (environment_id, secret_name, label, urls_json, access, linked_at, expires_at)
         VALUES ('environment-box', 'peer-link-box', 'Box', '["https://box.example"]', 'auto',
           '2026-08-01', '2027-08-01')`;
+      yield* sql`INSERT INTO connector_connections
+        (connection_id, display_name, url, auth_kind, server_name, status, created_at, updated_at)
+        VALUES
+        ('connection-oauth', 'Acme', 'https://mcp.acme.test', 'oauth', 'acme_1', 'connected', '2026-08-01', '2026-08-01'),
+        ('connection-open', 'Open', 'https://open.test', 'none', 'open_1', 'connected', '2026-08-01', '2026-08-01')`;
     }),
   );
   return databasePath;
@@ -143,7 +148,9 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
                 (SELECT COUNT(*) FROM scheduled_task_webhook_pending) AS webhooks,
               (SELECT COUNT(*) FROM orchestration_v2_projection_context_transfers) AS transfers,
               (SELECT COUNT(*) FROM peer_environment_links) AS links`;
-          return { threads, events, sessions, leftovers };
+          const connections = yield* sql<{ connection_id: string; status: string }>`
+            SELECT connection_id, status FROM connector_connections ORDER BY connection_id`;
+          return { threads, events, sessions, leftovers, connections };
         }),
       );
       assert.deepStrictEqual(
@@ -165,6 +172,11 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         transfers: 0,
         links: 0,
       });
+      // Credentials stay in the source's secret store, so signed-in connections must sign in again.
+      assert.deepStrictEqual(kept.connections, [
+        { connection_id: "connection-oauth", status: "needs_auth" },
+        { connection_id: "connection-open", status: "connected" },
+      ]);
     }),
   );
 

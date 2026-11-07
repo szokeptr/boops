@@ -277,7 +277,8 @@ export class Connectors extends Context.Service<
     ) => Effect.Effect<OrchestratorMcpRequestConnectionResult, OrchestratorMcpFailure>;
     /**
      * Where the proxy sends a thread's request for `serverName`, with fresh credentials. Fails
-     * with `not_connected` unless the connection is connected and on for the thread's bot.
+     * with `not_enabled` when it is off for the thread's bot, `not_connected` when it needs
+     * sign-in, and `credential_missing` when this server holds no credential for it.
      * `forceRefresh` follows an upstream 401.
      */
     readonly upstream: (input: {
@@ -401,18 +402,26 @@ const make = Effect.gen(function* () {
     return yield* requireRow(row.connection_id);
   });
 
+  const hasUsableCredential = (
+    credential: StoredCredential | undefined,
+  ): credential is StoredCredential =>
+    credential !== undefined && !(credential.kind === "oauth" && credential.tokens === undefined);
+  // A row copied without its secret file would otherwise claim `connected` forever.
+  const markCredentialMissing = (row: ConnectionRow) =>
+    row.status === "needs_auth"
+      ? Effect.void
+      : setStatus(row.connection_id, "needs_auth", "No saved sign-in on this server");
+
   /** Headers for the connection's server, refreshing an OAuth token near (or past) expiry. */
   const headersFor = (row: ConnectionRow, forceRefresh = false) =>
     credentialLocks.withLock(
       row.connection_id,
       Effect.gen(function* () {
-        const credential = yield* readCredential(row.connection_id);
         if (row.auth_kind === "none") return {};
-        if (
-          credential === undefined ||
-          (credential.kind === "oauth" && credential.tokens === undefined)
-        ) {
-          return yield* new ConnectorError({ reason: "not_connected" });
+        const credential = yield* readCredential(row.connection_id);
+        if (!hasUsableCredential(credential)) {
+          yield* markCredentialMissing(row);
+          return yield* new ConnectorError({ reason: "credential_missing" });
         }
         if (credential.kind !== "oauth") return credentialHeaders(row, credential);
         const now = yield* Clock.currentTimeMillis;
@@ -1076,20 +1085,29 @@ const make = Effect.gen(function* () {
     const rows = yield* readRows.pipe(
       Effect.mapError((error) => mcpFailure("orchestration_error", error.message)),
     );
-    const usable = rows.find(
-      (row) =>
-        enabled.has(row.connection_id) &&
-        row.status === "connected" &&
-        (entry === undefined ? sameServer(row.url, url) : row.catalog_id === entry.id),
-    );
-    if (usable !== undefined) {
-      return { status: "already_connected", serverName: usable.server_name } as const;
-    }
     const unreadable = (error: unknown) =>
       mcpFailure(
         "orchestration_error",
         `Could not record the connection request: ${error instanceof Error ? error.message : "unknown error"}`,
       );
+    const candidates = rows.filter(
+      (row) =>
+        enabled.has(row.connection_id) &&
+        row.status === "connected" &&
+        (entry === undefined ? sameServer(row.url, url) : row.catalog_id === entry.id),
+    );
+    for (const row of candidates) {
+      if (row.auth_kind !== "none") {
+        const credential = yield* readCredential(row.connection_id).pipe(
+          Effect.mapError(unreadable),
+        );
+        if (!hasUsableCredential(credential)) {
+          yield* markCredentialMissing(row).pipe(Effect.mapError(unreadable));
+          continue;
+        }
+      }
+      return { status: "already_connected", serverName: row.server_name } as const;
+    }
     const key = input.clientRequestId ?? (yield* random.uuidV4());
     const turnItemId = cardId(threadId, scope.requestNamespace, key);
     if (input.clientRequestId !== undefined) {
@@ -1145,7 +1163,8 @@ const make = Effect.gen(function* () {
         Option.getOrUndefined(project)?.connectionIds?.includes(
           row.connection_id as ConnectorConnectionId,
         ) === true;
-      if (!enabled || row.status === "needs_auth") {
+      if (!enabled) return yield* new ConnectorError({ reason: "not_enabled" });
+      if (row.status === "needs_auth") {
         return yield* new ConnectorError({ reason: "not_connected" });
       }
       const headers = yield* headersFor(row, input.forceRefresh === true);
