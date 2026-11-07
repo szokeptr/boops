@@ -12,8 +12,10 @@ import { _electron, type ElectronApplication } from "playwright-core";
 // A snapshot from an older build on purpose: the packaged server must migrate it forward, as it
 // does for every upgrading user. It holds one project and two threads, nothing else.
 const FIXTURE_DB = NodePath.join(import.meta.dirname, "fixtures/desktop-launch/statev2.sqlite");
-const THREAD_TITLE = "Release launch check";
-const THREAD_MESSAGE = "The release opens and shows this thread.";
+// Boops lists the fixture's project as a bot; opening it shows one of its two threads.
+const BOT_NAME = "Launch Check";
+const THREAD_MESSAGES =
+  /^(The release opens and shows this thread\.|A second thread so the sidebar has a list\.)$/;
 const STEP_TIMEOUT_MS = 60_000;
 
 const { values } = NodeUtil.parseArgs({
@@ -56,12 +58,17 @@ try {
   step = "waiting for the first window";
   const page = await app.firstWindow({ timeout: STEP_TIMEOUT_MS });
   try {
-    step = `finding "${THREAD_TITLE}" in the sidebar`;
-    const thread = page.locator("li[data-thread-item]", { hasText: THREAD_TITLE });
-    await thread.waitFor({ timeout: STEP_TIMEOUT_MS });
-    step = "opening the thread";
-    await thread.click();
-    await page.getByText(THREAD_MESSAGE).waitFor({ timeout: STEP_TIMEOUT_MS });
+    step = `finding the "${BOT_NAME}" bot in the sidebar`;
+    const bot = page.locator("li", { hasText: BOT_NAME }).first();
+    await bot.waitFor({ timeout: STEP_TIMEOUT_MS });
+    step = "opening the bot's conversation";
+    await bot.getByText(BOT_NAME, { exact: true }).click();
+    // The sidebar row previews the last message too; only the chat pane proves the thread opened.
+    await page
+      .locator('main[data-slot="sidebar-inset"]')
+      .getByText(THREAD_MESSAGES)
+      .first()
+      .waitFor({ timeout: STEP_TIMEOUT_MS });
   } catch (error) {
     NodeFS.mkdirSync(artifactsDir, { recursive: true });
     await page
@@ -69,7 +76,7 @@ try {
       .catch(() => {});
     throw error;
   }
-  console.log("Desktop launch check passed: the app opened and showed the seeded thread.");
+  console.log("Desktop launch check passed: the app opened and showed the seeded bot's thread.");
 } catch (error) {
   console.error(`Desktop launch check failed while ${step}.`);
   NodeFS.mkdirSync(artifactsDir, { recursive: true });
