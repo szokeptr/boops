@@ -34,7 +34,7 @@ it.each([
   const config = await loadConfig(value);
   expect(config.ios?.bundleIdentifier).toBe(iosId);
   expect(config.android?.package).toBe(androidId);
-  // Copied thread links open this app only while app.t3.codes lists it.
+  // Copied thread links open this app only while app.getboops.com lists it.
   const host = new URL(DEFAULT_HOSTED_APP_URL).host;
   expect(config.ios?.associatedDomains).toContain(`applinks:${host}`);
   expect(appleAppSiteAssociation.applinks.details[0]?.appIDs).toContain(
@@ -44,4 +44,12 @@ it.each([
     { scheme: "https", host, pathPrefix: "/threads/" },
   ]);
   expect(assetLinks.map((link) => link.target.package_name)).toContain(androidId);
+});
+
+it("ships without OTA updates until Boops has its own EAS project", async () => {
+  const config = await loadConfig("production");
+  expect(config.updates?.enabled).toBe(false);
+  expect(config.updates?.url).toBeUndefined();
+  expect(config.extra?.eas?.projectId).toBeUndefined();
+  expect(config.owner).toBeUndefined();
 });

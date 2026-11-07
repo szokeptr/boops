@@ -495,7 +495,7 @@ const layerTest = (
             platform,
             displayName: "Boops (Dev)",
             stateDir: "/state",
-            linuxDesktopEntryName: "com.getboops.app.desktop",
+            linuxDesktopEntryName: "com.getboops.desktop.desktop",
             appRoot: "/repo",
             linuxApplicationsDir: "/test-data/applications",
           } as DesktopEnvironment.DesktopEnvironment["Service"]),

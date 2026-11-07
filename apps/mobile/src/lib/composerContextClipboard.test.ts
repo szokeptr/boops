@@ -342,7 +342,7 @@ describe("mobile context clipboard imports", () => {
 
   it("pastes a thread link as a chip only where the destination's agent reads its machine", async () => {
     const text = [
-      "https://app.t3.codes/threads/destination/local-thread",
+      "https://app.getboops.com/threads/destination/local-thread",
       "<boops-thread://v2/source/foreign-thread>",
     ].join(" ");
     const result = await importComposerContextClipboard(
