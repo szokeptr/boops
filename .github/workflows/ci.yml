@@ -273,7 +273,7 @@ jobs:
           TEST_PACKAGES: ${{ needs.changes.outputs.test_packages }}
         run: |
           set -o pipefail
-          filters=(--filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web')
+          filters=(--filter '!boops' --filter '!@t3tools/monorepo' --filter '!@t3tools/web')
           if [[ -n "$TEST_PACKAGES" ]]; then
             filters=()
             for package in $TEST_PACKAGES; do filters+=(--filter "$package"); done
