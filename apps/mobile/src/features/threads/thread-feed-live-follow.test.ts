@@ -131,27 +131,16 @@ describe("resolveThreadFeedSubmissionAnchor", () => {
 
   // regression: #7897 stop pushing follow-up messages to the top
   it("does not anchor a thread that has already started a turn", () => {
-    const followUp = {
-      currentAnchorMessageId: null,
-      submittedMessageId: "second-message",
-      hasStartedTurn: true,
-      hasUserMessage: true,
-      deliveryDeferred: false,
-      queuedMessageCount: 0,
-    };
-    expect(resolveThreadFeedSubmissionAnchor(followUp)).toBeNull();
-    // A bot's DM lifts every follow-up, unless it queues behind a reply still being written.
-    expect(resolveThreadFeedSubmissionAnchor({ ...followUp, directMessage: true })).toBe(
-      "second-message",
-    );
     expect(
       resolveThreadFeedSubmissionAnchor({
-        ...followUp,
-        currentAnchorMessageId: "first-message",
-        queuedMessageCount: 1,
-        directMessage: true,
+        currentAnchorMessageId: null,
+        submittedMessageId: "second-message",
+        hasStartedTurn: true,
+        hasUserMessage: false,
+        deliveryDeferred: false,
+        queuedMessageCount: 0,
       }),
-    ).toBe("first-message");
+    ).toBeNull();
   });
 });
 

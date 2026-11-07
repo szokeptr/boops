@@ -56,18 +56,8 @@ export function resolveThreadFeedSubmissionAnchor<AnchorId>(input: {
   readonly hasUserMessage: boolean;
   readonly queuedMessageCount: number;
   readonly deliveryDeferred: boolean;
-  /** A bot's DM lifts every message you send near the top, like a chat app. */
-  readonly directMessage?: boolean;
 }): AnchorId | null {
-  if (input.deliveryDeferred) {
-    return null;
-  }
-
-  if (input.directMessage) {
-    return input.queuedMessageCount > 0 ? input.currentAnchorMessageId : input.submittedMessageId;
-  }
-
-  if (input.hasStartedTurn || input.hasUserMessage) {
+  if (input.deliveryDeferred || input.hasStartedTurn || input.hasUserMessage) {
     return null;
   }
 

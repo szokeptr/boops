@@ -1411,7 +1411,6 @@ function ThreadDetailBody(
       hasUserMessage,
       queuedMessageCount: props.selectedThreadQueueCount,
       deliveryDeferred: props.connectionStateLabel !== "connected",
-      directMessage,
     });
     feedRef.current?.resetEndFollow();
     setAnchorMessageId(nextAnchorMessageId);

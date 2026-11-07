@@ -157,8 +157,6 @@ interface TimelineFollowInput {
   readonly timelineEntries: ReadonlyArray<TimelineEntry>;
   readonly timelineAnchorMessageId: MessageId | null;
   readonly setTimelineAnchor: Dispatch<SetStateAction<TimelineAnchor>>;
-  /** A bot's DM hides tool and reasoning rows, so they must not release the anchor. */
-  readonly directMessage?: boolean;
 }
 
 /**
@@ -181,7 +179,6 @@ export function useTimelineFollow(input: TimelineFollowInput) {
     timelineEntries,
     timelineAnchorMessageId,
     setTimelineAnchor,
-    directMessage = false,
   } = input;
   const [visitState, setVisit] = useState<TimelineFollowVisit>({
     threadKey: activeThreadKey,
@@ -524,7 +521,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
   // be 0, so dropping it changes no size and no list event fires.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the timeline to the end after the commit that drops anchored end space
   useLayoutEffect(() => {
-    if (timelineAnchorMessageId === null || !timelineLiveFollowEnabled || directMessage) return;
+    if (timelineAnchorMessageId === null || !timelineLiveFollowEnabled) return;
     if (
       runningTurnHasReasoning ||
       shouldReleaseTimelineAnchorForToolActivity({
@@ -538,7 +535,6 @@ export function useTimelineFollow(input: TimelineFollowInput) {
     }
   }, [
     activeRunningTurnId,
-    directMessage,
     runningTurnHasReasoning,
     scrollToEndStable,
     timelineAnchorMessageId,

@@ -840,7 +840,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     rows,
     anchorMessageId,
     (row) => (row.kind === "message" && row.message.role === "user" ? row.message.id : null),
-    { anchorOffset: CHAT_TIMELINE_ANCHOR_OFFSET, anyMessage: directMessage },
+    { anchorOffset: CHAT_TIMELINE_ANCHOR_OFFSET },
   );
   const anchoredEndSpace = anchoredEndSpaceConfig
     ? {

@@ -3589,10 +3589,7 @@ export const ThreadFeed = memo(function ThreadFeed({
     presentedFeed,
     props.anchorMessageId,
     (entry) => (entry.type === "message" ? entry.id : null),
-    {
-      anchorOffset: anchorTopInset + CHAT_LIST_ANCHOR_OFFSET,
-      anyMessage: Boolean(props.directMessage),
-    },
+    { anchorOffset: anchorTopInset + CHAT_LIST_ANCHOR_OFFSET },
   );
   // The blank is a scroll inset, so growing it moves nothing; lift the sent message once it is sized.
   const handleAnchoredEndSpaceReady = useEffectEvent(
