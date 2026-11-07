@@ -25,7 +25,7 @@ import {
 import { contextChipIconUri } from "../lib/contextChipIconSource";
 import { useUniwindTheme } from "../lib/useUniwindTheme";
 import { createNativeComposerTheme } from "../lib/nativeComposerTheme";
-import { FONT_FAMILIES } from "../lib/fontFamilies";
+import { SYSTEM_FONT_FAMILY } from "../lib/fontFamilies";
 import { useScaledTextRole } from "../features/settings/appearance/useScaledTextRole";
 import {
   acknowledgeComposerNativeEvent,
@@ -161,7 +161,6 @@ export function ComposerEditor({
   }
   const bodyText = useScaledTextRole("body");
   const theme = useUniwindTheme();
-  const fontFamily = FONT_FAMILIES.regular;
 
   useImperativeHandle(
     ref,
@@ -292,7 +291,9 @@ export function ComposerEditor({
       themeJson={themeJson}
       placeholder={props.placeholder ?? ""}
       fontFamily={
-        typeof resolvedTextStyle.fontFamily === "string" ? resolvedTextStyle.fontFamily : fontFamily
+        typeof resolvedTextStyle.fontFamily === "string"
+          ? resolvedTextStyle.fontFamily
+          : SYSTEM_FONT_FAMILY
       }
       fontSize={
         typeof resolvedTextStyle.fontSize === "number"

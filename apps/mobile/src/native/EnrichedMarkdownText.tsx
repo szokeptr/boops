@@ -49,6 +49,7 @@ function enrichedStyle(
   const body = {
     color: style.color,
     fontFamily: style.fontFamily,
+    fontWeight: style.fontWeight ?? "normal",
     fontSize: style.fontSize,
     lineHeight: style.lineHeight,
     marginTop: 0,
@@ -59,7 +60,7 @@ function enrichedStyle(
     return {
       ...body,
       color: style.strongColor,
-      fontFamily: style.headingFontFamily,
+      fontWeight: "bold",
       fontSize,
       lineHeight: fontSize * 1.35,
       marginTop: 8,
@@ -82,7 +83,7 @@ function enrichedStyle(
     h4: heading(4),
     h5: heading(5),
     h6: heading(6),
-    strong: { color: style.strongColor, fontFamily: style.boldFontFamily, fontWeight: "normal" },
+    strong: { color: style.strongColor, fontWeight: "bold" },
     link: { color: style.linkColor, underline: false },
     code: {
       fontFamily: monospace,
@@ -144,7 +145,6 @@ function enrichedStyle(
     table: {
       ...body,
       ...block,
-      headerFontFamily: style.boldFontFamily,
       headerTextColor: style.strongColor,
       headerBackgroundColor: style.codeBlockBackgroundColor,
       rowEvenBackgroundColor: "transparent",

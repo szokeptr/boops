@@ -83,7 +83,7 @@ export function QuestionText(props: {
           ? {
               ...styles.nativeTextStyle,
               color: styles.nativeTextStyle.strongColor,
-              fontFamily: styles.nativeTextStyle.boldFontFamily,
+              fontWeight: "bold",
             }
           : styles.nativeTextStyle
       }

@@ -220,7 +220,7 @@ export function PinnedBotTiles(
       {props.rows.map((row) => {
         const selected = row.key === props.selectedKey;
         return (
-          <View key={row.key} className="w-20 p-0.5">
+          <View key={row.key} className="w-1/3 max-w-36 p-0.5">
             <BotEntryMenu {...props} row={row}>
               <Pressable
                 accessibilityRole="button"
@@ -237,16 +237,16 @@ export function PinnedBotTiles(
                     avatar={row.avatar}
                     name={row.name}
                     status={row.status}
-                    size={52}
+                    size={96}
                   />
                   {row.unread ? (
-                    <View className="absolute top-0 right-0 size-2.5 rounded-full bg-primary" />
+                    <View className="absolute top-1 right-1 size-3 rounded-full bg-primary" />
                   ) : null}
                 </View>
                 <Text
                   numberOfLines={1}
                   className={cn(
-                    "-mt-1 text-xs",
+                    "-mt-1 text-base",
                     row.unread ? "font-t3-bold" : "font-t3-medium",
                     selected ? "text-thread-selected-foreground" : "text-foreground",
                   )}

@@ -26,7 +26,7 @@ import {
 import { contextChipIconUri } from "../lib/contextChipIconSource";
 import { MOBILE_TYPOGRAPHY } from "../lib/typography";
 import { useNativePaste } from "../lib/useNativePaste";
-import { FONT_FAMILIES } from "../lib/fontFamilies";
+import { SYSTEM_FONT_FAMILY } from "../lib/fontFamilies";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import { useUniwindTheme } from "../lib/useUniwindTheme";
 import { createNativeComposerTheme } from "../lib/nativeComposerTheme";
@@ -285,7 +285,6 @@ export function ComposerEditor({
     selection: Platform.OS === "android" || systemColorsActive ? theme["--color-focus"] : null,
   });
   const resolvedTextStyle = StyleSheet.flatten(textStyle) ?? {};
-  const regularFontFamily = FONT_FAMILIES.regular;
   return (
     <TextInputWrapper onPaste={handlePaste} style={[{ minHeight: 0 }, style]}>
       <NativeView
@@ -297,7 +296,7 @@ export function ComposerEditor({
         fontFamily={
           typeof resolvedTextStyle.fontFamily === "string"
             ? resolvedTextStyle.fontFamily
-            : regularFontFamily
+            : SYSTEM_FONT_FAMILY
         }
         fontSize={
           typeof resolvedTextStyle.fontSize === "number"
