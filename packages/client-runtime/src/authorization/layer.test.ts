@@ -182,9 +182,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
     unlinkEnvironment: unexpected,
     acceptEnvironmentInvite: unexpected,
     declineEnvironmentInvite: unexpected,
-    getT3ChatLink: unexpected,
-    createT3ChatLinkRequest: unexpected,
-    unlinkT3Chat: unexpected,
+    getManagedTunnelLimit: unexpected,
     getEnvironmentStatus: unexpected,
     connectEnvironment: (request) =>
       Effect.gen(function* () {

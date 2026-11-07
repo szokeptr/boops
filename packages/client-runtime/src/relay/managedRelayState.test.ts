@@ -68,9 +68,7 @@ function createClient(overrides?: Partial<ManagedRelay.ManagedRelayClient["Servi
     unlinkEnvironment: () => Effect.die("unused"),
     acceptEnvironmentInvite: () => Effect.die("unused"),
     declineEnvironmentInvite: () => Effect.die("unused"),
-    getT3ChatLink: () => Effect.die("unused"),
-    createT3ChatLinkRequest: () => Effect.die("unused"),
-    unlinkT3Chat: () => Effect.die("unused"),
+    getManagedTunnelLimit: () => Effect.die("unused"),
     getEnvironmentStatus: () =>
       Effect.succeed({
         environmentId: environment.environmentId,

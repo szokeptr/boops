@@ -117,9 +117,8 @@ an active link between your account and the host.
   Boops retries on its own. If it keeps waiting, reload or restart Boops on
   this device.
 - **Your account reached its tunnel limit.** Remove an environment you do not
-  use from your Boops account's Boops Connect page, or
-  [link a paid T3 Chat account](./remote-access.md#more-machines-with-t3-chat)
-  for a higher limit. Then restart Boops on the host.
+  use from your Boops account's Boops Connect page, then restart Boops on the
+  host. See [machine limit](./remote-access.md#machine-limit).
 
 ## The clock is off
 
@@ -136,7 +135,7 @@ This app needs a newer Boops on the host. Update Boops on the host. See
 
 | Error                                                     | Fix                                                                                                                                                  |
 | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `environment_link_limit_exceeded` or managed tunnel limit | Remove an unused environment or link a paid T3 Chat account, then restart Boops on the host.                                                         |
+| `environment_link_limit_exceeded` or managed tunnel limit | Remove an unused environment, then restart Boops on the host.                                                                                        |
 | `auth_invalid` or `invalid_bearer`                        | Run `boops connect login`. If credentials were revoked, run `boops connect logout`, then `boops connect` again. Restart the server after signing in. |
 | Expired or invalid link proof                             | Check the host's date and time, update Boops, then restart it.                                                                                       |
 | HTTP 403 without a recognized error                       | Check relay access, proxies, and firewall rules. Keep any Cloudflare Ray ID for a bug report.                                                        |
@@ -151,7 +150,7 @@ If Boops on the host disappears when SSH closes, see
 ## Report a problem
 
 If none of this helps, open an issue on
-[GitHub](https://github.com/pingdotgg/t3code/issues). Include:
+[GitHub](https://github.com/szokeptr/boops/issues). Include:
 
 - The text from **Copy diagnostics** in the environment's **Details**.
 - The output of `boops connect status` on the host.

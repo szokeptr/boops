@@ -40,7 +40,7 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/men
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { Button, InlineButton } from "../ui/button";
+import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import {
   resolveServerConfigVersionMismatch,
@@ -468,7 +468,7 @@ function CloudLinkSwitch({
   );
 }
 
-/** Tunnel meter, plus the upgrade prompt after the relay refuses a tunnel at the cap. */
+/** Tunnel meter, plus an alert after the relay refuses a tunnel at the cap. */
 function T3ConnectTunnelUsage({ tunnelLimit }: { readonly tunnelLimit: number | null }) {
   const usage = useManagedTunnelUsage();
   const accountPage = useT3ConnectAccountPage();
@@ -487,16 +487,7 @@ function T3ConnectTunnelUsage({ tunnelLimit }: { readonly tunnelLimit: number | 
     !(usage.limit !== null && usage.limit > tunnelLimit);
   const meter =
     usage.used !== null && usage.limit !== null ? (
-      <TunnelUsageMeter
-        used={usage.used}
-        limit={usage.limit}
-        action={
-          // At the cap the alert below carries the same action.
-          usage.upgrade && openAccountPage && !showLimitAlert ? (
-            <InlineButton onClick={() => openAccountPage("t3-chat")}>Get more tunnels</InlineButton>
-          ) : null
-        }
-      />
+      <TunnelUsageMeter used={usage.used} limit={usage.limit} />
     ) : null;
   return (
     <>
@@ -505,8 +496,6 @@ function T3ConnectTunnelUsage({ tunnelLimit }: { readonly tunnelLimit: number | 
           {meter}
           {showLimitAlert ? (
             <TunnelLimitAlert
-              upgrade={usage.upgrade}
-              onLinkT3Chat={openAccountPage ? () => openAccountPage("t3-chat") : null}
               onManageTunnels={openAccountPage ? () => openAccountPage("t3-connect") : null}
             />
           ) : null}

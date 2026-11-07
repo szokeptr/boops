@@ -1272,9 +1272,7 @@ describe("EnvironmentSupervisor", () => {
         unlinkEnvironment: unused,
         acceptEnvironmentInvite: unused,
         declineEnvironmentInvite: unused,
-        getT3ChatLink: unused,
-        createT3ChatLinkRequest: unused,
-        unlinkT3Chat: unused,
+        getManagedTunnelLimit: unused,
         getEnvironmentStatus: unused,
         connectEnvironment: Effect.fn("TestConnectionHttp.connectEnvironment")(function* () {
           yield* Ref.update(bootstrapCalls, (count) => count + 1);

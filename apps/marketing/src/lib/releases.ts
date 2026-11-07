@@ -1,4 +1,3 @@
-// Boops has no release repository yet, so downloads still resolve to upstream T3 Code builds.
 const REPO = "szokeptr/boops";
 
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;

@@ -53,8 +53,8 @@ run a server there, build it from source with `vp`, which provides the Node vers
 ([Install vp](../../README.md#install-vp)):
 
 ```bash
-git clone https://github.com/pingdotgg/t3code
-cd t3code && vp i && vp run build:desktop
+git clone https://github.com/szokeptr/boops
+cd boops && vp i && vp run build:desktop
 node apps/server/dist/bin.mjs
 ```
 
@@ -63,43 +63,8 @@ update it with `git pull` and a rebuild.
 
 ## Desktop app
 
-Download a release from [GitHub Releases](https://github.com/pingdotgg/t3code/releases),
-or use a package manager:
-
-| Platform           | Install                                                      |
-| ------------------ | ------------------------------------------------------------ |
-| Windows            | `winget install T3Tools.T3Code`                              |
-| macOS              | `brew install --cask t3-code`                                |
-| Debian, Ubuntu     | `sudo apt install ./T3-Code-*.deb`                           |
-| Arch Linux         | `yay -S t3code-bin`                                          |
-| Arch Linux nightly | `yay -S t3code-nightly-bin`                                  |
-| Nix                | `nix profile add github:NixOS/nixpkgs/nixos-unstable#t3code` |
-
-The `.deb` updates itself like the other desktop builds. It asks for your
-password to install each update. If your desktop has no password prompt, the
-update fails. Download the new `.deb` and install it the same way.
-
-### Nix (nixpkgs)
-
-Boops is maintained in [nixpkgs](https://github.com/NixOS/nixpkgs/tree/nixos-unstable/pkgs/by-name/t3/t3code).
-The command above installs from `nixos-unstable` and requires Nix 2.30 or later with
-`nix-command` and `flakes` enabled. Launch the desktop app with `t3code-desktop`;
-the package also includes the `boops` command.
-
-On NixOS, you can instead add the package to your system configuration, using
-a nixpkgs revision that includes `t3code`:
-
-```nix
-environment.systemPackages = [ pkgs.t3code ];
-```
-
-Apply the change with `sudo nixos-rebuild switch`. For Home Manager, add
-`pkgs.t3code` to `home.packages` and run `home-manager switch`.
-
-Update a profile installation with `nix profile upgrade t3code`. For NixOS or
-Home Manager, update your configuration's nixpkgs input or channel and rebuild.
-Nix manages both the desktop app and the bundled
-`boops` command; use Nix to update them instead of the in-app updater or `boops update`.
+Download the desktop app from [getboops.com/download](https://getboops.com/download)
+or [GitHub Releases](https://github.com/szokeptr/boops/releases).
 
 ### The `boops` command
 
@@ -132,18 +97,10 @@ command cannot reach the app, start or update the desktop app and try again.
 
 ## Mobile app
 
-Install Boops from the
-[App Store](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) or
-[Google Play](https://play.google.com/store/apps/details?id=com.t3tools.t3code).
-The phone connects to a server on another machine. Follow
-[remote access](./remote-access.md) to link it through Boops Connect or a pairing URL.
-
-Store links and QR codes are also available in **Settings → About → Mobile app**
-on web and desktop. The store apps work with both stable and Nightly servers. Test builds are optional:
-
-- **iPhone and iPad:** TestFlight is invite-only.
-- **Android:** download an APK from the
-  [Android beta releases](https://github.com/pingdotgg/t3code/releases?q=android-beta-).
+Boops is not in the App Store or Google Play yet. The iPhone app is in an
+invite-only TestFlight beta. The phone connects to a server on another machine.
+Follow [remote access](./remote-access.md) to link it through Boops Connect or a
+pairing URL.
 
 If the app crashes during launch, open Settings → Diagnostics on the next launch
 that succeeds. It lists startup crashes from the last 7 days with the error and

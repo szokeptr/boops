@@ -712,16 +712,10 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "cli-command",
-    title: "t3 command",
+    title: "boops command",
     to: "/settings/about",
     searchTerms: ["cli terminal shell path install command line"],
     desktopOnly: true,
-  },
-  {
-    id: "mobile-app",
-    title: "Mobile app",
-    to: "/settings/about",
-    searchTerms: ["phone tablet iPhone iPad iOS Android App Store Google Play QR"],
   },
   {
     id: "privacy-policy",
@@ -1099,7 +1093,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Boops Connect",
     to: "/settings/access",
     targetId: "connections-environment",
-    searchTerms: ["managed tunnel cloud other devices remote tunnels limit t3 chat"],
+    searchTerms: ["managed tunnel cloud other devices remote tunnels limit"],
     desktopOnly: true,
     cloudOnly: true,
   },

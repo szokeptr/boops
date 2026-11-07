@@ -72,17 +72,11 @@ A bot's Connections are your accounts, so they are off for the people you share 
 them use one, turn it on under **Connections they can use** in that bot's **Share…** menu. The bot
 then acts as you in that account when they ask it to.
 
-### More machines with T3 Chat
+### Machine limit
 
 Each Boops Connect account can link up to 3 machines. Phones and browsers do not
-count. A paid T3 Chat plan raises the limit to 10 machines with Pro, or 100 with
-Premier.
-
-To link T3 Chat, open your account menu on the web or desktop app, go to
-**T3 Chat**, and select **Link T3 Chat**. Sign in to T3 Chat in the window that
-opens and approve. The new limit applies the next time you add a machine. If you
-cancel or downgrade T3 Chat, machines you already linked stay linked, but you
-cannot add more until you are under the limit again.
+count. To add another, remove one you no longer use from the Boops Connect page in
+your account menu, or reach the new machine over a LAN or Tailscale instead.
 
 ## Pair over a LAN or private network
 
