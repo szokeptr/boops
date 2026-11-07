@@ -1,0 +1,91 @@
+---
+import LegalPage from "../components/LegalPage.astro";
+---
+
+<LegalPage
+  title="Privacy Policy"
+  description="What data Boops collects, why, and how to turn it off."
+  updated="November 7, 2026"
+>
+  <p>
+    Boops is operated by Peter Szoke ("we", "us"). This policy covers the Boops desktop app, mobile
+    app, CLI, the hosted web app at app.getboops.com, the Boops Connect relay, and this website.
+  </p>
+
+  <h2>Your bots run on your machine</h2>
+  <p>
+    Boops runs on a computer or server you control. Your prompts, responses, files, and conversations
+    stay on that machine and go directly to the AI provider you choose, such as Anthropic or OpenAI,
+    under that provider's terms. They are not sent to us.
+  </p>
+
+  <h2>What we collect</h2>
+  <ul>
+    <li>
+      <strong>Account data.</strong> If you sign in to Boops Connect, we store your email address,
+      name, and profile picture from the sign-in method you use (email, Google, Apple, or a passkey). Accounts are managed by our authentication provider, Clerk.
+    </li>
+    <li>
+      <strong>Connection data.</strong> To link your devices, the relay stores the environments and
+      devices you register, push notification tokens, and connection metadata. Remote connections run
+      through a Cloudflare tunnel; the relay sets up the link but does not proxy your sessions.
+    </li>
+    <li>
+      <strong>Product usage events.</strong> The Boops server sends usage events such as the provider,
+      model, request results, durations, and token counts, tied to hashed identifiers. They never
+      include prompts, responses, file contents, or credentials. We process these with PostHog.
+    </li>
+    <li>
+      <strong>Diagnostics.</strong> Relay connection traces and mobile crash reports (error message,
+      stack trace, app version, device model, and OS version) help us fix problems. We process these
+      with Axiom.
+    </li>
+  </ul>
+
+  <h2>How we use it</h2>
+  <p>
+    We use this data to run Boops Connect, deliver notifications, keep the service secure, fix bugs,
+    and understand which features are used. We do not sell your data or use it for advertising.
+  </p>
+
+  <h2>Turning collection off</h2>
+  <p>
+    Set <code>T3CODE_TELEMETRY_ENABLED=false</code> on the machine running Boops to stop product
+    usage events and relay tracing. In the mobile app, turn off <strong>Send crash reports</strong>
+    under Settings → About Boops → Diagnostics. You can use Boops without a Boops Connect account
+    over your local network or Tailscale.
+  </p>
+
+  <h2>Service providers</h2>
+  <p>
+    We rely on Clerk (accounts), Cloudflare (hosting, relay, and tunnels), PlanetScale (relay
+    database), PostHog (product analytics), Axiom (diagnostics), and Apple and Google (push
+    notifications). They process data on our behalf, only to provide their services.
+  </p>
+
+  <h2>Retention and deletion</h2>
+  <p>
+    We keep account and connection data while your account is active. Usage and diagnostic data is
+    kept only as long as it is useful for running and improving Boops. To delete your account and
+    associated data, email us at the address below.
+  </p>
+
+  <h2>Your rights</h2>
+  <p>
+    Depending on where you live, including the EU under the GDPR, you can ask to access, correct,
+    export, or delete your personal data, or object to how we process it. Contact us and we will
+    respond within 30 days. You can also complain to your local data protection authority.
+  </p>
+
+  <h2>Children</h2>
+  <p>Boops is not directed at children under 16, and we do not knowingly collect their data.</p>
+
+  <h2>Changes</h2>
+  <p>
+    If we change this policy, we will update the date above. For significant changes, we will give
+    notice in the app or by email.
+  </p>
+
+  <h2>Contact</h2>
+  <p>Peter Szoke, <a href="mailto:szokeptr@gmail.com">szokeptr@gmail.com</a></p>
+</LegalPage>

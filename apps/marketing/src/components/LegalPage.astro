@@ -1,0 +1,76 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+interface Props {
+  title: string;
+  description: string;
+  updated: string;
+}
+
+const { title, description, updated } = Astro.props;
+---
+
+<Layout title={`${title} | Boops`} description={description}>
+  <article class="legal">
+    <h1>{title}</h1>
+    <p class="updated">Last updated {updated}</p>
+    <slot />
+  </article>
+</Layout>
+
+<style>
+  .legal {
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 9vh 1.5rem 5rem;
+    line-height: 1.65;
+  }
+
+  .legal h1 {
+    font-weight: 500;
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    letter-spacing: -0.035em;
+    line-height: 1.15;
+  }
+
+  .updated {
+    margin-top: 0.5rem;
+    color: var(--fg-dim);
+    font-size: 0.85rem;
+  }
+
+  .legal :global(h2) {
+    margin-top: 2.25rem;
+    font-weight: 600;
+    font-size: 1.1rem;
+    letter-spacing: -0.01em;
+  }
+
+  .legal :global(p),
+  .legal :global(ul) {
+    margin-top: 0.85rem;
+    color: var(--fg-muted);
+  }
+
+  .legal :global(ul) {
+    padding-left: 1.25rem;
+    list-style: disc;
+  }
+
+  .legal :global(li + li) {
+    margin-top: 0.35rem;
+  }
+
+  .legal :global(a) {
+    color: var(--fg);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  @media (max-width: 640px) {
+    .legal {
+      padding: 6vh 1.25rem 4rem;
+    }
+  }
+</style>
