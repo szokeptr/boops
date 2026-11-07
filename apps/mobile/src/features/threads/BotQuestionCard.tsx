@@ -71,7 +71,7 @@ export function BotQuestionCard(props: {
 
   return (
     <View className="gap-2">
-      <View className="max-w-[85%] gap-1 self-start rounded-[20px] bg-user-bubble px-2 pb-2 pt-1">
+      <View className="w-[85%] gap-1 self-start rounded-[20px] bg-user-bubble px-2 pb-2 pt-1">
         <View className="flex-row items-start gap-2 pl-2 pt-2.5">
           <View className="min-w-0 flex-1">
             <QuestionText

@@ -48,9 +48,11 @@ export function SecretRequestCard(props: {
         ? "checkmark"
         : "minus";
   return (
-    <View className="mb-3 min-h-9 flex-row items-center gap-2 px-1">
-      <SymbolView name={icon} size={13} tintColor={props.iconColor} type="monochrome" />
-      <Text className="flex-1 font-sans text-sm text-foreground-muted" numberOfLines={2}>
+    <View className="mb-3 flex-row items-start gap-2 px-1 py-2">
+      <View className="h-5 justify-center">
+        <SymbolView name={icon} size={13} tintColor={props.iconColor} type="monochrome" />
+      </View>
+      <Text className="flex-1 font-sans text-sm leading-5 text-foreground-muted" numberOfLines={2}>
         {item.label} · {display.label}
       </Text>
     </View>
