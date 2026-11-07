@@ -3,7 +3,6 @@ import { requestUrl } from "../requestUrl.ts";
 // Proxy with environment read scope for streams and operate scope for input and tuning.
 import { AuthOrchestrationReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import {
   HttpClient,
@@ -14,9 +13,9 @@ import {
   HttpServerResponse,
 } from "effect/http";
 import * as Socket from "effect/socket/Socket";
-import * as NodeSocket from "@effect/platform-node/NodeSocket";
 
 import { authenticateMediaRequest } from "../auth/http.ts";
+import { upstreamWebSocketConstructor } from "../outboundWebSocket.ts";
 import * as DeviceService from "./DeviceService.ts";
 import { repeatStillFrame } from "./mjpegStillFrame.ts";
 
@@ -80,20 +79,6 @@ const forwardHeaders = (request: HttpServerRequest.HttpServerRequest, origin: st
   if (request.headers.origin !== undefined) headers.origin = origin;
   return headers;
 };
-
-// Effect drops its listeners before closing a socket that is still connecting, and `ws` then
-// emits an `error` nobody handles, which exits the server.
-export const upstreamWebSocketConstructor = Layer.effect(
-  Socket.WebSocketConstructor,
-  Effect.gen(function* () {
-    const make = yield* Socket.WebSocketConstructor;
-    return (url, options) => {
-      const socket = make(url, options);
-      socket.addEventListener("error", () => undefined);
-      return socket;
-    };
-  }),
-).pipe(Layer.provide(NodeSocket.layerWebSocketConstructor));
 
 const proxyWebSocket = Effect.fn("DeviceHubProxy.proxyWebSocket")(function* (
   request: HttpServerRequest.HttpServerRequest,

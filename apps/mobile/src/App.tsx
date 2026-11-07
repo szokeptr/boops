@@ -75,6 +75,7 @@ import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { installUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
 import { installSubscriptionUsageRefresh } from "./widgets/useSubscriptionUsage";
+import { GlobalBotCallPill } from "./features/bot-call/BotCallPill";
 import { GlobalVoiceInputControl } from "./features/voice-input/GlobalVoiceInputControl";
 import { restoreSettingsLinkState } from "./features/settings/settings-navigation";
 import {
@@ -239,18 +240,20 @@ function AppContent() {
             <StatusBar barStyle={themeAppearance === "dark" ? "light-content" : "dark-content"} />
             {/* native-stack needs the theme's dark flag to select dark native headers. */}
             <GlobalVoiceInputControl>
-              <NativeLayoutMetricsProvider>
-                <Navigation
-                  ref={attachRootNavigation}
-                  linking={appLinking}
-                  onReady={handleNavigationReady}
-                  theme={navigationTheme}
-                  onStateChange={handleNavigationStateChange}
-                />
-                <Dialog.Host />
-                <ThreadArrangementHost />
-                <ProjectChipIconRasterizer />
-              </NativeLayoutMetricsProvider>
+              <GlobalBotCallPill>
+                <NativeLayoutMetricsProvider>
+                  <Navigation
+                    ref={attachRootNavigation}
+                    linking={appLinking}
+                    onReady={handleNavigationReady}
+                    theme={navigationTheme}
+                    onStateChange={handleNavigationStateChange}
+                  />
+                  <Dialog.Host />
+                  <ThreadArrangementHost />
+                  <ProjectChipIconRasterizer />
+                </NativeLayoutMetricsProvider>
+              </GlobalBotCallPill>
             </GlobalVoiceInputControl>
             <OverlayPortalHost />
           </SafeAreaProvider>

@@ -815,6 +815,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "voice-calls",
+    title: "Voice calls",
+    to: "/settings/providers",
+    searchTerms: ["call bot phone voice talk speak realtime openai api key microphone audio"],
+    providerSettingsOnly: true,
+  },
+  {
     id: "usage-providers",
     title: "Usage providers",
     to: "/settings/providers",

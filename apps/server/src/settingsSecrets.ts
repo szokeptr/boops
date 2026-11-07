@@ -8,6 +8,7 @@ import {
   type SettingsSecretValue,
   SimlockDeviceHostConfig,
   UsageLimitSourceConfig,
+  VoiceCallSettings,
   isSecretReference,
   secretSettingsFields,
 } from "@t3tools/contracts";
@@ -47,6 +48,7 @@ const providerSecretFields = new Map([
 const usageLimitSecretFields = secretSettingsFields(UsageLimitSourceConfig);
 const easDeviceHostSecretFields = secretSettingsFields(EasDeviceHostConfig);
 const simlockDeviceHostSecretFields = secretSettingsFields(SimlockDeviceHostConfig);
+const voiceCallSecretFields = secretSettingsFields(VoiceCallSettings);
 const encode = (value: string) => Buffer.from(value, "utf8").toString("base64url");
 
 export interface SettingsSecret {
@@ -230,6 +232,13 @@ function mapSecretFieldGroups(
       ) as SimlockDeviceHostConfig,
   );
 
+  const voiceCalls = mapFields(
+    settings.voiceCalls,
+    voiceCallSecretFields,
+    (field, serverHost) =>
+      `voice-calls-${encode(field)}` + (serverHost === null ? "" : `-${encode(serverHost)}`),
+  ) as ServerSettings["voiceCalls"];
+
   return {
     ...settings,
     providerInstances,
@@ -237,5 +246,6 @@ function mapSecretFieldGroups(
     usageLimitSources,
     easDeviceHosts,
     simlockDeviceHosts,
+    voiceCalls,
   };
 }

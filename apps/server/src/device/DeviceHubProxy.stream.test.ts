@@ -16,6 +16,7 @@ import {
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as DeviceService from "./DeviceService.ts";
 import * as DeviceHubProxy from "./DeviceHubProxy.ts";
+import { upstreamWebSocketConstructor } from "../outboundWebSocket.ts";
 
 it.effect("preserves binary input and admission frames through the real socket proxy", () =>
   Effect.gen(function* () {
@@ -111,7 +112,7 @@ it.live("closes an upstream socket that is still connecting without an unhandled
     // Handshake headers, as Simlock's routes send, select the `ws` package over the global WebSocket.
     const upstream = yield* Socket.makeWebSocket(`ws://127.0.0.1:${address.port}`, {
       headers: { authorization: "Bearer test" },
-    }).pipe(Effect.provide(DeviceHubProxy.upstreamWebSocketConstructor));
+    }).pipe(Effect.provide(upstreamWebSocketConstructor));
     const reading = yield* Effect.forkChild(
       Effect.scoped(Effect.flatMap(upstream.reader, ({ pull }) => pull)),
     );

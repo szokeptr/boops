@@ -1354,8 +1354,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
               maxConcurrentSessions: 2,
             },
           ],
+          voiceCalls: { openaiApiKey: "openai-secret" },
         });
         const values = [
+          "openai-secret",
           "config-secret",
           "env-secret",
           "github-secret",
@@ -1380,6 +1382,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
           sourceControlHosts: client.sourceControlHosts,
           usageLimitSources: client.usageLimitSources,
           easDeviceHosts: client.easDeviceHosts,
+          voiceCalls: client.voiceCalls,
         });
         for (const value of values) assert.include(JSON.stringify(echoed), value);
         const renamed = yield* service.updateProviderInstance({
@@ -1626,8 +1629,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
           provider: SecretProviderId.make("personal"),
           reference: "op://Private/Expo/token",
         };
+        const openAiReference = {
+          provider: SecretProviderId.make("personal"),
+          reference: "op://Private/OpenAI/key",
+        };
         const hub = UsageLimitSourceId.make("hub");
         const withUsage = yield* serverSettings.updateSettings({
+          voiceCalls: { openaiApiKey: openAiReference },
           usageLimitSources: {
             [hub]: {
               kind: "cliproxy",
@@ -1655,7 +1663,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         assert.equal(legacy.sourceControlHosts.bitbucket?.accessToken, SECRET_REDACTED);
         assert.equal(legacy.usageLimitSources[hub]?.managementKey, SECRET_REDACTED);
         assert.equal(legacy.easDeviceHosts[0]?.accessToken, SECRET_REDACTED);
+        assert.equal(legacy.voiceCalls.openaiApiKey, SECRET_REDACTED);
         const echoed = yield* serverSettings.updateSettings({
+          voiceCalls: legacy.voiceCalls,
           sourceControlHosts: legacy.sourceControlHosts,
           usageLimitSources: legacy.usageLimitSources,
           easDeviceHosts: legacy.easDeviceHosts,
@@ -1667,6 +1677,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         });
         assert.deepEqual(echoed.usageLimitSources[hub]?.managementKey, usageReference);
         assert.deepEqual(echoed.easDeviceHosts[0]?.accessToken, easReference);
+        assert.deepEqual(echoed.voiceCalls.openaiApiKey, openAiReference);
         assert.isTrue(Option.isSome(yield* stored("github", "tokens", "ghe.acme.test")));
       }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
   );
@@ -1677,6 +1688,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       assert.deepEqual(strictSecretReferencePaths(ServerSettings.ast), [
         "easDeviceHosts.[].accessToken",
         "usageLimitSources.*.managementKey",
+        "voiceCalls.openaiApiKey",
       ]);
     }),
   );

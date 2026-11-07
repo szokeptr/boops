@@ -295,11 +295,24 @@ export const BotMessageOrigin = Schema.Struct({
 });
 export type BotMessageOrigin = typeof BotMessageOrigin.Type;
 
+/**
+ * Marks a message a voice call put in a bot conversation: a request the bot's voice handed over,
+ * or the call's transcript once it ended. Only the server sets it.
+ */
+export const BotCallMessageOrigin = Schema.Struct({
+  callId: TrimmedNonEmptyString,
+  kind: Schema.Literals(["request", "recap"]),
+  /** On a recap: how long the call lasted. */
+  durationSeconds: Schema.optional(NonNegativeInt),
+});
+export type BotCallMessageOrigin = typeof BotCallMessageOrigin.Type;
+
 /** Structured context riding on a user message. Undecodable records are dropped, not fatal. */
 export const OrchestrationMessageContext = Schema.Struct({
   version: Schema.Literal(1),
   guest: Schema.optional(GuestMessageAttribution),
   bot: Schema.optional(BotMessageOrigin),
+  call: Schema.optional(BotCallMessageOrigin),
   records: Schema.Array(Schema.Unknown)
     .check(
       Schema.isMaxLength(COMPOSER_CONTEXT_MAX_RECORDS),

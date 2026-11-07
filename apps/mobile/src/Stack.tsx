@@ -39,6 +39,7 @@ import {
   HardwareKeyboardCommandProvider,
 } from "./features/keyboard/HardwareKeyboardCommandProvider";
 import { ThreadTerminalRouteScreen } from "./features/terminal/ThreadTerminalRouteScreen";
+import { BotCallScreen } from "./features/bot-call/BotCallScreen";
 import { DevicePreviewRouteScreen } from "./features/devices/DevicePreviewRouteScreen";
 import { BrowserPreviewRouteScreen } from "./features/browser/BrowserPreviewRouteScreen";
 import { ThreadAgentsSheet } from "./features/threads/ThreadAgentsSheet";
@@ -658,6 +659,16 @@ const RootStackConfig = createWorkspaceStackNavigator({
         gestureEnabled: false,
         autoHideHomeIndicator: true,
         navigationBarHidden: true,
+      },
+    }),
+    // One app-wide call, so the route has no params; it shows whichever call is on.
+    BotCall: createNativeStackScreen({
+      screen: BotCallScreen,
+      // A sheet: swiping it down collapses the call back into its pill.
+      options: {
+        presentation: "modal",
+        headerShown: false,
+        gestureEnabled: true,
       },
     }),
     ThreadBrowserPreview: createNativeStackScreen({

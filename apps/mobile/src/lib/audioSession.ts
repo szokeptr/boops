@@ -1,7 +1,8 @@
 import { AudioModule, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
 
 type AudioSessionToken = {
-  readonly kind: "playback" | "recording";
+  /** A call's session is configured by WebRTC and, on iOS, CallKit; it is only owned here. */
+  readonly kind: "playback" | "recording" | "call";
   readonly onCancel?: () => void;
   readonly onRelease?: () => void;
   released: boolean;
@@ -48,6 +49,8 @@ export function acquireAudioSession(
 ) {
   const token: AudioSessionToken = { kind, onCancel, onRelease, released: false };
   if (kind === "playback" && owner?.kind === "recording" && !owner.released) return token;
+  // Nothing interrupts a call: playback and dictation wait until it ends.
+  if (kind !== "call" && owner?.kind === "call" && !owner.released) return token;
   const previous = owner;
   // Publish before cancelling the old player, including callbacks already queued by Expo.
   AudioModule.setAudioSessionOwner?.(true);

@@ -112,6 +112,37 @@ export const BotDeleteInput = Schema.Struct({
 });
 export type BotDeleteInput = typeof BotDeleteInput.Type;
 
+/** A microphone close to the mouth (phone, headset) or across the room (laptop). */
+export const BotCallNoiseReduction = Schema.Literals(["near_field", "far_field"]);
+export type BotCallNoiseReduction = typeof BotCallNoiseReduction.Type;
+
+export const BotCallStartInput = Schema.Struct({
+  projectId: ProjectId,
+  /** The bot conversation the call joins: requests land there, and so does the call's recap. */
+  threadId: ThreadId,
+  /** The client's WebRTC offer. Audio flows between the client and OpenAI, never through the server. */
+  sdpOffer: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100_000)),
+  noiseReduction: Schema.optional(BotCallNoiseReduction),
+});
+export type BotCallStartInput = typeof BotCallStartInput.Type;
+
+export const BotCallStartResult = Schema.Struct({
+  callId: TrimmedNonEmptyString,
+  sdpAnswer: Schema.String,
+});
+export type BotCallStartResult = typeof BotCallStartResult.Type;
+
+export const BotCallEndInput = Schema.Struct({
+  callId: TrimmedNonEmptyString,
+});
+export type BotCallEndInput = typeof BotCallEndInput.Type;
+
+export class BotCallError extends Schema.TaggedError<BotCallError>()("BotCallError", {
+  /** `not-configured`: no OpenAI API key. `rejected`: OpenAI refused the call. */
+  reason: Schema.Literals(["not-configured", "not-found", "rejected", "unavailable"]),
+  message: TrimmedNonEmptyString,
+}) {}
+
 /** The background thread a bot's Heartbeat routine runs in, out of its conversations. */
 export const botHeartbeatThreadId = (projectId: ProjectId) =>
   ThreadId.make(`heartbeat:${projectId}`);

@@ -54,6 +54,7 @@ import {
   ArchiveRestoreIcon,
   ArrowLeftIcon,
   BotIcon,
+  PhoneIcon,
   BugIcon,
   ChartNoAxesColumnIcon,
   CheckIcon,
@@ -113,6 +114,7 @@ import { readLocalApi } from "../localApi";
 import { configuredHostedAppUrl } from "../hostedPairing";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
 import { filesystemEnvironment, useFilesystemReadAccess } from "../state/filesystem";
+import { startBotCall } from "../state/botCall";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
@@ -162,7 +164,10 @@ import {
   useCommandPaletteMount,
   useCommandPaletteStore,
 } from "../commandPaletteStore";
-import { resolveBotMainThreadId } from "@t3tools/client-runtime/state/bot-list";
+import {
+  isBotConversationThread,
+  resolveBotMainThreadId,
+} from "@t3tools/client-runtime/state/bot-list";
 import {
   cn,
   getLocalFileManagerName,
@@ -472,6 +477,11 @@ function OpenCommandPaletteDialog(props: {
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(referenceThreadRef);
   const canShareActiveThreadWithGuest = useAtomValue(
     canShareWithGuestAtom(activeThread?.environmentId ?? ("" as EnvironmentId)),
+  );
+  const canCallBot = useAtomValue(
+    projectEnvironment.startBotCall.permissionAtom(
+      activeThread?.environmentId ?? ("" as EnvironmentId),
+    ),
   );
   const activeThreadReferenceCopyTarget =
     referenceThreadRef === null
@@ -1359,6 +1369,37 @@ function OpenCommandPaletteDialog(props: {
       icon: <LinkIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "thread.copyReference",
       run: copyActiveThreadReference,
+    });
+  }
+
+  const callableBot =
+    activeThread !== null &&
+    canCallBot &&
+    currentProject?.mainThreadId != null &&
+    isBotConversationThread(activeThread, currentProject.mainThreadId)
+      ? currentProject
+      : null;
+  if (activeThread !== null && callableBot !== null) {
+    const thread = activeThread;
+    actionItems.push({
+      kind: "action",
+      value: "action:call-bot",
+      searchTerms: ["call", "phone", "voice", "talk", "speak", callableBot.title],
+      title: (
+        <>
+          Call <span className="font-semibold">{callableBot.title}</span>
+        </>
+      ),
+      searchTitle: `Call ${callableBot.title}`,
+      icon: <PhoneIcon className={ITEM_ICON_CLASS} />,
+      run: async () =>
+        startBotCall({
+          environmentId: thread.environmentId,
+          projectId: callableBot.id,
+          threadId: thread.id,
+          name: callableBot.title,
+          avatar: callableBot.avatar ?? null,
+        }),
     });
   }
 

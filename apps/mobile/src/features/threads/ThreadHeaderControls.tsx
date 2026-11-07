@@ -1,3 +1,5 @@
+import type { ColorValue } from "react-native";
+
 import { Toolbar } from "../../components/ui/Toolbar";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useNavigation } from "@react-navigation/native";
@@ -29,7 +31,27 @@ export type ThreadHeaderControlsProps = {
   readonly showDirectFileControl?: boolean;
   readonly onOpenTerminal: (terminalId?: string | null) => void;
   readonly onOpenNewTerminal: () => void;
+  /** Calls the bot heading this conversation, or returns to the call already on. */
+  readonly call?: {
+    readonly accessibilityLabel: string;
+    readonly icon: "phone" | "phone.fill";
+    readonly tintColor?: ColorValue;
+    readonly onPress: () => void;
+  };
 };
+
+function callHeaderItem(call: NonNullable<ThreadHeaderControlsProps["call"]>): HeaderItem {
+  return {
+    accessibilityLabel: call.accessibilityLabel,
+    icon: { name: call.icon, type: "sfSymbol" },
+    identifier: "thread-right-call",
+    onPress: call.onPress,
+    sharesBackground: true,
+    ...(call.tintColor === undefined ? {} : { tintColor: call.tintColor }),
+    type: "button",
+    variant: "plain",
+  };
+}
 
 function useOpenFiles(props: ThreadHeaderControlsProps) {
   const navigation = useNavigation();
@@ -108,8 +130,10 @@ function useThreadHeaderActionItems(props: ThreadHeaderControlsProps) {
 /** One "…" menu for phones, where the conversation keeps the bar to itself. */
 export function useThreadOverflowHeaderItems(props: ThreadHeaderControlsProps): HeaderItems {
   const { files, terminal } = useThreadHeaderActionItems(props);
-  if (props.member) return [];
+  const call = props.call === undefined ? [] : [callHeaderItem(props.call)];
+  if (props.member) return call;
   return [
+    ...call,
     {
       accessibilityLabel: "More",
       icon: { name: "ellipsis", type: "sfSymbol" },
@@ -144,18 +168,31 @@ export function useThreadOverflowHeaderItems(props: ThreadHeaderControlsProps): 
 
 export function useThreadCenterHeaderItems(props: ThreadHeaderControlsProps): HeaderItems {
   const actionItems = useThreadHeaderActionItems(props);
-  return props.member ? [] : [actionItems.files, actionItems.terminal];
+  const call = props.call === undefined ? [] : [callHeaderItem(props.call)];
+  return props.member ? call : [...call, actionItems.files, actionItems.terminal];
 }
 
 export function ThreadHeaderControls(props: ThreadHeaderControlsProps) {
   const openFiles = useOpenFiles(props);
 
-  if (props.member || !(props.showActionControls ?? true)) {
-    return null;
+  const callButton = props.call ? (
+    <Toolbar.Button
+      accessibilityLabel={props.call.accessibilityLabel}
+      icon={props.call.icon}
+      onPress={props.call.onPress}
+      separateBackground
+      {...(props.call.tintColor === undefined ? {} : { tintColor: props.call.tintColor })}
+    />
+  ) : null;
+
+  if (!(props.showActionControls ?? true)) return null;
+  if (props.member) {
+    return callButton === null ? null : <Toolbar placement="right">{callButton}</Toolbar>;
   }
 
   return (
     <Toolbar placement="right">
+      {callButton}
       {props.auxiliaryPaneControl ? (
         <Toolbar.Button
           accessibilityLabel={props.auxiliaryPaneControl.accessibilityLabel}

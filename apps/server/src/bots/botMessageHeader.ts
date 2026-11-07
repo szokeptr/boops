@@ -6,14 +6,22 @@ import type {
 } from "@t3tools/contracts";
 
 /**
- * The agent text of a message from a parent or child bot, or from one of the bot's background
- * threads: a routing line naming the sender and how to answer, then the sender's words. People
+ * The agent text of a message from a parent or child bot, one of the bot's background threads, or
+ * a voice call: a routing line naming the sender and how to answer, then the sender's words. People
  * see the sender on the message row.
  */
 export function withBotMessageHeader(
   text: string,
   context: OrchestrationMessageContext | undefined,
 ): string {
+  const call = context?.call;
+  if (call !== undefined) {
+    const header =
+      call.kind === "request"
+        ? "[Said on a voice call. Your voice passed it on and reads your reply to the user, so answer in a few plain spoken sentences, without markdown, tables or links unless they asked for one.]"
+        : "[The user's voice call with you just ended; your voice spoke for you. Its transcript is below, and requests from it already reached you as their own messages. Save anything durable to memory/, then reply in one short line.]";
+    return `${header}\n\n${text}`;
+  }
   const bot = context?.bot;
   if (bot === undefined) return text;
   const header =

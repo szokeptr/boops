@@ -236,6 +236,7 @@ import * as ProjectService from "./project/ProjectService.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "./project/ScratchThreadPromotion.ts";
+import * as BotCalls from "./bots/BotCalls.ts";
 import * as Bots from "./bots/Bots.ts";
 import { mutateProjectWithClone } from "./project/ProjectMutation.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
@@ -1420,6 +1421,7 @@ export const layerWsRpc = (
       const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
       const scratchThreadPromotion = yield* ScratchThreadPromotion.ScratchThreadPromotion;
       const bots = yield* Bots.Bots;
+      const botCalls = yield* BotCalls.BotCalls;
       const eventLoopMonitor = yield* EventLoopMonitor.EventLoopMonitor;
       const threadSearch = yield* ThreadSearch.ThreadSearch;
 
@@ -3090,6 +3092,8 @@ export const layerWsRpc = (
                 (cause) => new OrchestrationDispatchCommandError({ message: cause.message, cause }),
               ),
             ),
+        [WS_METHODS.botsCallStart]: (input) => botCalls.start(input),
+        [WS_METHODS.botsCallEnd]: (input) => botCalls.end(input),
         [WS_METHODS.projectsCreateFromThread]: (input) =>
           scratchThreadPromotion
             .promote(input)

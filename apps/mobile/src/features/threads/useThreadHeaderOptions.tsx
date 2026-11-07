@@ -8,6 +8,7 @@ import { useDeviceType } from "../../native/native-layout-metrics";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
+import { useBotCallHeaderAction } from "../bot-call/useBotCallHeaderAction";
 import {
   ThreadHeaderControls,
   useThreadCenterHeaderItems,
@@ -34,8 +35,11 @@ export function useThreadHeaderOptions(props: {
   const navigation = useNavigation();
   const { layout, addBot } = useAdaptiveWorkspaceLayout();
   const sidebarHeaderItem = useWorkspaceSidebarHeaderItem();
-  const threadCenterHeaderItems = useThreadCenterHeaderItems(props.controls);
-  const compactRightHeaderItems = useThreadOverflowHeaderItems(props.controls);
+  const call = useBotCallHeaderAction(props.controls.member ? null : (props.bot ?? null));
+  const controls: ThreadHeaderControlsProps =
+    call === null ? props.controls : { ...props.controls, call };
+  const threadCenterHeaderItems = useThreadCenterHeaderItems(controls);
+  const compactRightHeaderItems = useThreadOverflowHeaderItems(controls);
   const splitLeftHeaderItems: NativeHeaderItems = [
     ...(!usesDuoHeader
       ? [
@@ -99,7 +103,7 @@ export function useThreadHeaderOptions(props: {
     unstable_headerSubtitle: props.usesNativeHeaderGlass && !bot ? props.subtitle : undefined,
     contentStyle: undefined,
   };
-  const { environmentId, threadId } = props.controls;
+  const { environmentId, threadId } = controls;
   return {
     options,
     // Factories re-read only on version changes; include displayed items and hidden callback state.
@@ -113,10 +117,11 @@ export function useThreadHeaderOptions(props: {
       bot?.name,
       bot?.avatar,
       bot?.threadId,
+      call?.icon,
     ],
     fallback:
       !layout.usesSplitView && !props.usesNativeHeaderGlass ? (
-        <ThreadHeaderControls {...props.controls} showActionControls />
+        <ThreadHeaderControls {...controls} showActionControls />
       ) : null,
   };
 }

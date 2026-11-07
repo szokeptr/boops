@@ -18,6 +18,8 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "../project/ScratchThreadPromotion.ts";
+import * as BotCalls from "../bots/BotCalls.ts";
+import { upstreamWebSocketConstructor } from "../outboundWebSocket.ts";
 import * as Bots from "../bots/Bots.ts";
 import * as CheckpointCaptureService from "./CheckpointCaptureService.ts";
 import * as CheckpointService from "./CheckpointService.ts";
@@ -306,6 +308,15 @@ const layerScratchThreadPromotionProvided = ScratchThreadPromotion.layer.pipe(
     ),
   ),
 );
+const layerBotCallsProvided = BotCalls.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerProjectService,
+      layerThreadManagementProvided,
+      upstreamWebSocketConstructor,
+    ),
+  ),
+);
 const layerBotsProvided = Bots.layer.pipe(
   Layer.provide(
     Layer.mergeAll(layerProjectService, layerThreadManagementProvided, layerScheduledTaskProvided),
@@ -386,6 +397,7 @@ export const layerProduction = Layer.mergeAll(
   layerScheduledTaskProvided,
   layerScratchThreadPromotionProvided,
   layerBotsProvided,
+  layerBotCallsProvided,
   layerSecretRequestsProvided,
   GuestShareService.layer.pipe(
     Layer.provide(Layer.merge(layerOrchestratorProvided, layerCommandOutputHubProvided)),

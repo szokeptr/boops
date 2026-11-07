@@ -24,6 +24,7 @@ const LISTED_OVERLAY_ROUTES: ReadonlySet<string> = new Set([
   "ThreadBackgroundWork",
   "ThreadQueue",
   "ThreadDevicePreview",
+  "BotCall",
   "ThreadBrowserPreview",
   "ThreadSettingsSheet",
 ]);

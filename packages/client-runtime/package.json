@@ -139,6 +139,10 @@
       "types": "./src/providerUpdateRequiredModels.ts",
       "default": "./src/providerUpdateRequiredModels.ts"
     },
+    "./bot-call": {
+      "types": "./src/bot-call/index.ts",
+      "default": "./src/bot-call/index.ts"
+    },
     "./voice-input": {
       "types": "./src/voice-input/index.ts",
       "default": "./src/voice-input/index.ts"
