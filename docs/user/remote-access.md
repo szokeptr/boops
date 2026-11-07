@@ -63,7 +63,8 @@ They need their own Boops Connect account, and this machine must have Boops Conn
    only the bots you shared with them.
 
 They chat in their own conversations: you do not see their chats, and they do not see yours, your
-other projects, files, terminals or settings. Turn a bot on or off for them from its **Share…**
+other projects, terminals or settings. A shared bot keeps the same notes and files for both of
+you; only your conversations with it stay private. Turn a bot on or off for them from its **Share…**
 menu. **Remove** in **Settings → Members** signs them out at once and archives their
 conversations; they can also leave on their own.
 
