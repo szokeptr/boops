@@ -38,5 +38,16 @@ describe("cliRelease", () => {
     expect(newestCliReleaseVersion(releases, "nightly")).toBe("1.2.4-nightly.20260912.7");
     expect(newestCliReleaseVersion(releases, "stable")).toBe("1.2.3");
     expect(newestCliReleaseVersion([{ tag_name: "v1.2.3" }], "preview")).toBeUndefined();
+    // GitHub does not list releases newest first: a later nightly can follow an older one.
+    expect(
+      newestCliReleaseVersion(
+        [
+          { tag_name: "v0.1.8-preview.20261107.10" },
+          { tag_name: "v0.1.8-nightly.20261107.9" },
+          { tag_name: "v0.1.8-nightly.20261107.12" },
+        ],
+        "nightly",
+      ),
+    ).toBe("0.1.8-nightly.20261107.12");
   });
 });

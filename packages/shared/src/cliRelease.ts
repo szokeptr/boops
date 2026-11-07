@@ -145,13 +145,15 @@ export function newestCliReleaseVersion(
   }>,
   channel: CliReleaseChannel,
 ): string | undefined {
+  // GitHub's listing is not newest first, so compare every release on the channel.
+  let newest: string | undefined;
   for (const release of releases) {
     if (release.draft) continue;
     const version = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(release.tag_name)?.[1];
-    if (version === undefined) continue;
-    if (cliReleaseChannelOf(version) === channel) return version;
+    if (version === undefined || cliReleaseChannelOf(version) !== channel) continue;
+    if (newest === undefined || compareSemverVersions(version, newest) > 0) newest = version;
   }
-  return undefined;
+  return newest;
 }
 
 const NpmReleaseMigrationManifest = Schema.Struct({
