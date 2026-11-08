@@ -21,10 +21,7 @@ export function BotCallRecapRow(props: {
   readonly work?: ReadonlyArray<BotCallWorkEntry<{ readonly id: string; readonly text: string }>>;
   readonly renderMarkdown: (text: string) => ReactNode;
 }) {
-  const label = callRecapLabel(
-    props.durationSeconds,
-    props.work?.filter((entry) => entry.request !== null).length ?? 0,
-  );
+  const label = callRecapLabel(props.durationSeconds, props.work?.length ?? 0);
   return (
     <View className="mb-5 items-center">
       <Pressable
@@ -78,19 +75,12 @@ export function BotCallRecapRow(props: {
               </Text>
             </View>
           ))}
-          {props.work?.map((entry, index) => (
-            <View
-              key={entry.request?.id ?? `after:${index}`}
-              className="gap-1 border-t border-separator pt-2.5"
-            >
-              <Text className="font-t3-medium text-2xs text-foreground-muted">
-                {entry.request === null ? "After the call" : "You asked"}
+          {props.work?.map((entry) => (
+            <View key={entry.request.id} className="gap-1 border-t border-separator pt-2.5">
+              <Text className="font-t3-medium text-2xs text-foreground-muted">You asked</Text>
+              <Text selectable className="text-sm leading-5 text-foreground">
+                {botCallRequestWords(entry.request.text)}
               </Text>
-              {entry.request === null ? null : (
-                <Text selectable className="text-sm leading-5 text-foreground">
-                  {botCallRequestWords(entry.request.text)}
-                </Text>
-              )}
               {entry.replies.map((reply) => (
                 <View key={reply.id}>{props.renderMarkdown(reply.text)}</View>
               ))}

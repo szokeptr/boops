@@ -9,14 +9,14 @@ export interface BotCallFoldMessage {
 
 /** What the bot did on a call: each request the voice passed on, with the bot's replies to it. */
 export interface BotCallWorkEntry<M> {
-  /** Null for the bot's replies after the call, to its transcript. */
-  readonly request: M | null;
+  readonly request: M;
   readonly replies: ReadonlyArray<M>;
 }
 
 /**
  * A call's requests and the bot's replies to them fold into the call's row instead of filling the
- * conversation while the user talks. Messages arrive oldest first.
+ * conversation while the user talks. The reply to the transcript, after the call, stays in the
+ * conversation. Messages arrive oldest first.
  */
 export function foldBotCallMessages<M extends BotCallFoldMessage>(
   messages: ReadonlyArray<M>,
@@ -27,19 +27,22 @@ export function foldBotCallMessages<M extends BotCallFoldMessage>(
   readonly workByRecapId: ReadonlyMap<string, ReadonlyArray<BotCallWorkEntry<M>>>;
 } {
   const hidden = new Set<string>();
-  const entriesByCall = new Map<string, Array<{ request: M | null; replies: M[] }>>();
+  const entriesByCall = new Map<string, Array<{ request: M; replies: M[] }>>();
   const recapIdByCall = new Map<string, string>();
-  const entryByRun = new Map<string, { request: M | null; replies: M[] }>();
+  const entryByRun = new Map<string, { request: M; replies: M[] }>();
 
   for (const message of messages) {
     const call = message.role === "user" ? message.context?.call : undefined;
+    if (call?.kind === "recap") {
+      recapIdByCall.set(call.callId, message.id);
+      continue;
+    }
     if (call !== undefined) {
-      const entry = { request: call.kind === "request" ? message : null, replies: [] };
+      const entry = { request: message, replies: [] };
       const entries = entriesByCall.get(call.callId) ?? [];
       entries.push(entry);
       entriesByCall.set(call.callId, entries);
-      if (call.kind === "request") hidden.add(message.id);
-      else recapIdByCall.set(call.callId, message.id);
+      hidden.add(message.id);
       if (message.runId) entryByRun.set(message.runId, entry);
       continue;
     }
@@ -53,10 +56,8 @@ export function foldBotCallMessages<M extends BotCallFoldMessage>(
 
   const workByRecapId = new Map<string, ReadonlyArray<BotCallWorkEntry<M>>>();
   for (const [callId, recapId] of recapIdByCall) {
-    const work = (entriesByCall.get(callId) ?? []).filter(
-      (entry) => entry.request !== null || entry.replies.length > 0,
-    );
-    if (work.length > 0) workByRecapId.set(recapId, work);
+    const work = entriesByCall.get(callId);
+    if (work !== undefined) workByRecapId.set(recapId, work);
   }
   return { hidden, workByRecapId };
 }

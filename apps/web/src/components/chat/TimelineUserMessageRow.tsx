@@ -315,7 +315,7 @@ function CallRecapRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> 
   const revealRef = findRevealRef(() => setExpanded(true));
   const { text, call } = resolveUserMessagePresentation(row.message);
   const length = callLength(call?.durationSeconds);
-  const requests = row.callWork?.filter((work) => work.request !== null).length ?? 0;
+  const requests = row.callWork?.length ?? 0;
   const summary = [
     "Call",
     ...(length === null ? [] : [length]),
@@ -395,14 +395,11 @@ function CallWork({
   const ctx = use(TimelineRowCtx);
   return (
     <div className="mt-2 space-y-3 border-border/70 border-t pt-2">
-      {work.map((entry, index) => (
-        <div key={entry.request?.id ?? `after:${index}`} className="space-y-1">
+      {work.map((entry) => (
+        <div key={entry.request.id} className="space-y-1">
           <p className="text-muted-foreground">
-            <span className="font-medium text-foreground">
-              {entry.request === null ? "After the call" : "You asked"}
-              {entry.request === null ? null : ": "}
-            </span>
-            {entry.request === null ? null : botCallRequestWords(entry.request.text)}
+            <span className="font-medium text-foreground">You asked: </span>
+            {botCallRequestWords(entry.request.text)}
           </p>
           {entry.replies.map((reply) => (
             <ChatMarkdown

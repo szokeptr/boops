@@ -15,7 +15,7 @@ const user = (id: string, runId: string, call?: { kind: "request" | "recap"; cal
 });
 const bot = (id: string, runId: string) => ({ id, role: "assistant", runId });
 
-it("folds a call's requests and the bot's replies into its transcript row, and nothing else", () => {
+it("folds a call's requests and the bot's replies into its transcript row, but not the reply after the call", () => {
   const messages = [
     user("typed", "run-0"),
     bot("typed-reply", "run-0"),
@@ -35,17 +35,15 @@ it("folds a call's requests and the bot's replies into its transcript row, and n
     "ask-card",
     "card-reply-1",
     "card-reply-2",
-    "after-call",
     "ask-live",
   ]);
   expect(
     workByRecapId
       .get("recap")
-      ?.map((entry) => [entry.request?.id ?? null, entry.replies.map((reply) => reply.id)]),
+      ?.map((entry) => [entry.request.id, entry.replies.map((reply) => reply.id)]),
   ).toEqual([
     ["ask-mail", ["mail-reply"]],
     ["ask-card", ["card-reply-1", "card-reply-2"]],
-    [null, ["after-call"]],
   ]);
   // A call still going has no transcript yet; its requests stay out of the conversation.
   expect(workByRecapId.size).toBe(1);

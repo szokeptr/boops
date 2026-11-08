@@ -2858,7 +2858,7 @@ describe("v2 run and attempt history", () => {
     );
     expect(
       recapRow?.kind === "message" &&
-        recapRow.callWork?.map((work) => [work.request?.id, work.replies.map((reply) => reply.id)]),
+        recapRow.callWork?.map((work) => [work.request.id, work.replies.map((reply) => reply.id)]),
     ).toEqual([["ask-mail", ["mail"]]]);
   });
   it("collapses only output from a superseded V2 attempt within the active logical run", () => {
