@@ -13,7 +13,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("removeSharedWr
     try {
       const appOutDir = NodePath.join(root, "app");
       const modes = {
-        "app/t3code": [0o777, 0o755],
+        "app/boops": [0o777, 0o755],
         "app/resources.pak": [0o666, 0o644],
         "app/chrome-sandbox": [0o4777, 0o4755],
         "app/resources/app.asar": [0o644, 0o644],
