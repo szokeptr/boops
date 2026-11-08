@@ -77,6 +77,27 @@ export function resolveUserMessageFileCards(message: {
   return remaining.trim() === "" ? files : null;
 }
 
+/**
+ * A message an agent sent into its own thread, such as files it shared with
+ * `boops_thread_send_attachments` and no target thread. It is the agent speaking, so clients show it
+ * as the agent's own reply rather than folding it like a message from another agent.
+ */
+export function isAgentSelfSentMessage(
+  message: {
+    readonly role: string;
+    readonly createdBy?: OrchestrationV2Actor | undefined;
+    readonly senderThreadId?: string | undefined;
+  },
+  threadId: string,
+): boolean {
+  return (
+    message.role === "user" &&
+    message.createdBy === "agent" &&
+    message.senderThreadId !== undefined &&
+    message.senderThreadId === threadId
+  );
+}
+
 export function resolveUserMessagePresentation(message: {
   readonly id?: string;
   readonly role: string;

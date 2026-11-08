@@ -8,6 +8,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import {
+  isAgentSelfSentMessage,
   resolveUserMessagePresentation,
   routineLabelText,
 } from "@t3tools/client-runtime/user-message";
@@ -588,8 +589,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
   const userMessage = resolveUserMessagePresentation(row.message);
-  // Messages from other agents fold to one line so the user's own messages stay easy to find.
-  const folded = userMessage.attribution === "agent";
+  // Messages from other agents fold to one line so the user's own messages stay easy to find. What
+  // the agent sent into its own thread, such as a file it shared, stays open.
+  const folded =
+    userMessage.attribution === "agent" &&
+    !(ctx.threadRef !== null && isAgentSelfSentMessage(row.message, ctx.threadRef.threadId));
   const [expanded, setExpanded] = useState(false);
   const revealFoldRef = findRevealRef(() => setExpanded(true));
   const senderShell = useQuietThreadShell(

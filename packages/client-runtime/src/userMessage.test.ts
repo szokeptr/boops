@@ -4,6 +4,7 @@ import { ComposerContextId, GuestMessageId, ProjectId, ScheduledTaskId } from "@
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 
 import {
+  isAgentSelfSentMessage,
   resolveUserMessageFileCards,
   resolveUserMessageGrouping,
   resolveUserMessagePresentation,
@@ -160,6 +161,27 @@ describe("resolveUserMessageFileCards", () => {
       expect(resolveUserMessageFileCards({ text: "", attachments: [attachment] })).toBeNull();
       expect(resolveUserMessageFileCards({ text: "", attachments: [file, attachment] })).toBeNull();
     }
+  });
+});
+
+describe("isAgentSelfSentMessage", () => {
+  it("recognizes only an agent's message into its own thread", () => {
+    const base = { role: "user", createdBy: "agent" as const };
+    expect(isAgentSelfSentMessage({ ...base, senderThreadId: "thread-a" }, "thread-a")).toBe(true);
+    expect(isAgentSelfSentMessage({ ...base, senderThreadId: "thread-b" }, "thread-a")).toBe(false);
+    expect(isAgentSelfSentMessage(base, "thread-a")).toBe(false);
+    expect(
+      isAgentSelfSentMessage(
+        { role: "user", createdBy: "user", senderThreadId: "thread-a" },
+        "thread-a",
+      ),
+    ).toBe(false);
+    expect(
+      isAgentSelfSentMessage(
+        { ...base, role: "assistant", senderThreadId: "thread-a" },
+        "thread-a",
+      ),
+    ).toBe(false);
   });
 });
 
