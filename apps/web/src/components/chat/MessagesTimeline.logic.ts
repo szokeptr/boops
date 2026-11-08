@@ -1,6 +1,7 @@
 import { type BotCallWorkEntry, foldBotCallMessages } from "@t3tools/client-runtime/bot-call";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import {
+  foldRepeatedRoutineRuns,
   resolveUserMessagePresentation,
   withoutSilentRoutineWakes,
 } from "@t3tools/client-runtime/user-message";
@@ -60,6 +61,7 @@ import {
   type OrchestrationV2IdleCompaction,
   type WorktreeSetupSnapshot,
   type OrchestrationV2ProjectedTurnItem,
+  type OrchestrationV2RoutineLabel,
   type ProjectId,
   type RunAttemptId,
   type RuntimeRequestId,
@@ -659,6 +661,17 @@ type MessagesTimelineRowContent =
       /** A null name is a bot the client names from its project. */
       peers: ReadonlyArray<{ readonly name: string | null; readonly projectId: ProjectId | null }>;
       entries: ReadonlyArray<BotExchangeEntry>;
+    }
+  | {
+      /** Earlier back-to-back runs of one routine in a bot's DM, folded behind its newest run. */
+      kind: "routine-runs";
+      id: string;
+      createdAt: string;
+      routine: OrchestrationV2RoutineLabel;
+      runs: ReadonlyArray<{
+        readonly wake: ChatMessage;
+        readonly replies: ReadonlyArray<ChatMessage>;
+      }>;
     };
 
 export type BotExchangeEntry =
@@ -2421,9 +2434,31 @@ function directMessageRows(
   if (activity.typing && !replying) {
     exchanged.push({ kind: "working", id: "working-indicator-row", createdAt: activity.startedAt });
   }
-  const folded = withoutSilentRoutineWakes(exchanged, (row) =>
-    row.kind === "message" && row.message.role === "user" ? row.message : null,
-  );
+  const userMessageOf = (row: MessagesTimelineRow) =>
+    row.kind === "message" && row.message.role === "user" ? row.message : null;
+  const folded = foldRepeatedRoutineRuns(withoutSilentRoutineWakes(exchanged, userMessageOf), {
+    userMessageOf,
+    isSettledReply: (row) =>
+      row.kind === "message" && row.message.role === "assistant" && row.message.streaming !== true,
+    fold: ({ routine, runs }): MessagesTimelineRow => ({
+      kind: "routine-runs",
+      id: `routine-runs:${runs[0]!.wake.id}`,
+      createdAt: runs[0]!.wake.createdAt ?? "",
+      routine,
+      runs: runs.flatMap(({ wake, replies }) =>
+        wake.kind === "message"
+          ? [
+              {
+                wake: wake.message,
+                replies: replies.flatMap((reply) =>
+                  reply.kind === "message" ? [reply.message] : [],
+                ),
+              },
+            ]
+          : [],
+      ),
+    }),
+  });
   return folded.map((row, index): MessagesTimelineRow => {
     if (row.kind !== "message") return row;
     const own = side(row);
@@ -2719,6 +2754,22 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
           return entry.kind === "message"
             ? other?.kind === "message" && other.message === entry.message
             : other?.kind === "sent" && other.status === entry.status && other.text === entry.text;
+        })
+      );
+    }
+
+    case "routine-runs": {
+      const br = b as typeof a;
+      return (
+        a.routine.name === br.routine.name &&
+        a.runs.length === br.runs.length &&
+        a.runs.every((run, index) => {
+          const other = br.runs[index];
+          return (
+            other?.wake === run.wake &&
+            other.replies.length === run.replies.length &&
+            other.replies.every((reply, replyIndex) => reply === run.replies[replyIndex])
+          );
         })
       );
     }

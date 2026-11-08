@@ -212,6 +212,65 @@ export function withoutSilentRoutineWakes<Row>(
   });
 }
 
+export interface RoutineRun<Row> {
+  readonly wake: Row;
+  readonly replies: ReadonlyArray<Row>;
+}
+
+export interface RoutineRunFold<Row> {
+  readonly routine: OrchestrationV2RoutineLabel;
+  readonly runs: ReadonlyArray<RoutineRun<Row>>;
+}
+
+/**
+ * Back-to-back runs of one routine fold into a single row, and its newest run stays in view. Only
+ * a run that was just a wake and finished replies folds, so cards and live runs stay visible.
+ */
+export function foldRepeatedRoutineRuns<Row, Fold>(
+  rows: ReadonlyArray<Row>,
+  options: {
+    readonly userMessageOf: (
+      row: Row,
+    ) => Parameters<typeof resolveUserMessagePresentation>[0] | null;
+    readonly isSettledReply: (row: Row) => boolean;
+    readonly fold: (group: RoutineRunFold<Row>) => Fold;
+  },
+): Array<Row | Fold> {
+  const result: Array<Row | Fold> = [];
+  let streak: Array<RoutineRun<Row> & { readonly routine: OrchestrationV2RoutineLabel }> = [];
+  const flush = () => {
+    const last = streak.at(-1);
+    if (last === undefined) return;
+    if (streak.length > 1) {
+      result.push(options.fold({ routine: streak[0]!.routine, runs: streak.slice(0, -1) }));
+    }
+    result.push(last.wake, ...last.replies);
+    streak = [];
+  };
+  let index = 0;
+  while (index < rows.length) {
+    const row = rows[index]!;
+    const message = options.userMessageOf(row);
+    const routine = message === null ? undefined : resolveUserMessagePresentation(message).routine;
+    if (routine !== undefined) {
+      let end = index + 1;
+      while (end < rows.length && options.isSettledReply(rows[end]!)) end += 1;
+      const next = rows[end];
+      if (end > index + 1 && (next === undefined || options.userMessageOf(next) !== null)) {
+        if (streak[0] !== undefined && streak[0].routine.taskId !== routine.taskId) flush();
+        streak.push({ routine, wake: row, replies: rows.slice(index + 1, end) });
+        index = end;
+        continue;
+      }
+    }
+    flush();
+    result.push(row);
+    index += 1;
+  }
+  flush();
+  return result;
+}
+
 type GroupableUserMessage = Parameters<typeof resolveUserMessagePresentation>[0] & {
   readonly inputIntent?: OrchestrationV2UserMessageInputIntent;
 };

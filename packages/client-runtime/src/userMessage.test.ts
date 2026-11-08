@@ -9,6 +9,7 @@ import {
   resolveUserMessagePresentation,
   routineLabelText,
   withoutSilentRoutineWakes,
+  foldRepeatedRoutineRuns,
 } from "./userMessage.ts";
 
 describe("resolveUserMessageGrouping", () => {
@@ -369,5 +370,50 @@ describe("withoutSilentRoutineWakes", () => {
       typing,
     ]);
     expect(withoutSilentRoutineWakes([reply, wake], userMessageOf)).toEqual([reply]);
+  });
+});
+
+describe("foldRepeatedRoutineRuns", () => {
+  const wakeOf = (taskId: string) => ({
+    role: "user",
+    text: "Check.",
+    routine: { taskId: ScheduledTaskId.make(taskId), name: taskId, trigger: "interval" },
+  });
+  const a1 = wakeOf("a");
+  const a2 = wakeOf("a");
+  const a3 = wakeOf("a");
+  const b1 = wakeOf("b");
+  const reply = (text: string) => ({ role: "assistant", text });
+  const [r1, r2, r3, rb] = [reply("1"), reply("2"), reply("3"), reply("b")];
+  const own = { role: "user", text: "hi" };
+  const card = { role: "card", text: "" };
+  const streaming = { role: "assistant", text: "…", streaming: true };
+  const fold = (rows: ReadonlyArray<{ readonly role: string; readonly text: string }>) =>
+    foldRepeatedRoutineRuns(rows, {
+      userMessageOf: (row) => (row.role === "user" ? row : null),
+      isSettledReply: (row) => row.role === "assistant" && !("streaming" in row),
+      fold: (group) => ({ fold: group.runs.map((run) => run.wake), taskId: group.routine.taskId }),
+    });
+
+  it("folds earlier runs of one routine and keeps the newest in view", () => {
+    expect(fold([own, a1, r1, a2, r2, a3, r3, own])).toEqual([
+      own,
+      { fold: [a1, a2], taskId: "a" },
+      a3,
+      r3,
+      own,
+    ]);
+  });
+
+  it("leaves lone runs, other routines, and runs with more than replies alone", () => {
+    expect(fold([a1, r1, b1, rb, a2, r2])).toEqual([a1, r1, b1, rb, a2, r2]);
+    expect(fold([a1, r1, a2, r2, card, a3, r3])).toEqual([a1, r1, a2, r2, card, a3, r3]);
+    expect(fold([a1, r1, a2, r2, a3, streaming])).toEqual([
+      { fold: [a1], taskId: "a" },
+      a2,
+      r2,
+      a3,
+      streaming,
+    ]);
   });
 });

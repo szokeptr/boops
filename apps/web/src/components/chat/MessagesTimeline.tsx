@@ -1,6 +1,7 @@
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotExchangeTimelineRow } from "./TimelineBotExchangeRow";
+import { RoutineRunsTimelineRow } from "./TimelineRoutineRunsRow";
 import { botBubbleColors } from "@t3tools/client-runtime/bot-avatar";
 import { specFor } from "@t3tools/shared/botAvatar";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
@@ -1529,6 +1530,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "html-render" ? <HtmlRenderTimelineRow row={row} /> : null}
       {row.kind === "mcp-app" ? <McpAppTimelineRow row={row} /> : null}
       {row.kind === "bot-exchange" ? <BotExchangeTimelineRow row={row} /> : null}
+      {row.kind === "routine-runs" ? <RoutineRunsTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
       {row.kind === "event" ? <V2EventTimelineRow row={row} /> : null}

@@ -23,6 +23,7 @@ import {
 import { BotCallRecapRow } from "../bot-call/BotCallRecapRow";
 import { BotAvatarSlot } from "../bots/BotAvatarSlot";
 import { ThreadBotExchangeRow } from "./ThreadBotExchangeRow";
+import { ThreadRoutineRunsRow } from "./ThreadRoutineRunsRow";
 import { GuestBubbleTint, GuestMessageName } from "./guestMessageStyle";
 import { ThreadGuestPendingMessage, useThreadGuestShare } from "./ThreadGuestShareBar";
 import { ConnectionRequestCard } from "./ConnectionRequestCard";
@@ -1829,6 +1830,32 @@ function renderFeedEntry(
         revision={entry.revision}
         app={entry.app}
         width={props.contentWidth}
+      />
+    );
+  }
+
+  if (entry.type === "routine-runs") {
+    return (
+      <ThreadRoutineRunsRow
+        entry={entry}
+        expanded={props.expandedWorkRows[entry.id] ?? false}
+        onToggle={() => props.onToggleWorkRow(entry.id, entry.id)}
+        iconSubtleColor={iconSubtleColor}
+        formatTime={formatMessageTime}
+        renderMarkdown={(text) => (
+          // The card's border and padding.
+          <MarkdownImageAvailableWidthContext value={Math.max(0, props.contentWidth - 26)}>
+            <AssistantMarkdownContent
+              markdown={renderAssistantCitationsAsText(text)}
+              environmentId={props.environmentId}
+              markdownStyles={markdownStyles.assistant}
+              linkHandlers={props.markdownLinkHandlers}
+              onUseArtifactTemplate={props.onUseArtifactTemplate}
+              renderImage={props.renderMarkdownImage}
+              skills={props.skills}
+            />
+          </MarkdownImageAvailableWidthContext>
+        )}
       />
     );
   }

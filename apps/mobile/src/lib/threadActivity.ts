@@ -54,6 +54,7 @@ import type {
   ProjectId,
   RunAttemptId,
   TurnItemId,
+  OrchestrationV2RoutineLabel,
 } from "@t3tools/contracts";
 import { idleCompactionOf, isCompactionCommandMessage, RunId, ThreadId } from "@t3tools/contracts";
 import {
@@ -78,7 +79,9 @@ import * as DateTime from "effect/DateTime";
 import {
   IDLE_COMPACTION_TITLES,
   IDLE_COMPACTING_LABELS,
+  foldRepeatedRoutineRuns,
   resolveUserMessagePresentation,
+  type RoutineRunFold,
   withoutSilentRoutineWakes,
 } from "@t3tools/client-runtime/user-message";
 import { getQuestionAnswerExchange } from "@t3tools/client-runtime/work-log/user-input";
@@ -244,7 +247,20 @@ type ThreadFeedEntryContent =
       readonly createdAt: string;
       readonly runId: RunId | null;
     }
-  | ThreadFeedBotExchange;
+  | ThreadFeedBotExchange
+  | ThreadFeedRoutineRuns;
+
+/** Earlier back-to-back runs of one routine in a bot's DM, folded behind its newest run. */
+export interface ThreadFeedRoutineRuns {
+  readonly type: "routine-runs";
+  readonly id: string;
+  readonly createdAt: string;
+  readonly routine: OrchestrationV2RoutineLabel;
+  readonly runs: ReadonlyArray<{
+    readonly wake: ThreadFeedMessage;
+    readonly replies: ReadonlyArray<ThreadFeedMessage>;
+  }>;
+}
 
 /** A bot's DM folds a talk with its parent or child bot into one pill. */
 export interface ThreadFeedBotExchange {
@@ -1355,7 +1371,7 @@ function latestRunsEqual(left: ThreadFeedLatestRun | null, right: ThreadFeedLate
 
 function feedEntryRunId(entry: ThreadFeedEntry): RunId | null {
   if (entry.type === "message") return entry.message.runId ?? null;
-  return entry.type === "bot-exchange" ? null : entry.runId;
+  return entry.type === "bot-exchange" || entry.type === "routine-runs" ? null : entry.runId;
 }
 
 function isUserMessageEntry(entry: ThreadFeedEntry | undefined): boolean {
@@ -1711,10 +1727,58 @@ export function deriveDirectMessageFeed(
   const folded = foldBotExchanges(kept, sentBotMessages(feed, parentProjectId));
   const last = folded.at(-1);
   const replying = last?.type === "message" && last.message.streaming;
-  return withoutSilentRoutineWakes(
-    typingSince === null || replying ? folded : [...folded, thinkingRow(typingSince, null)],
-    (entry) => (entry.type === "message" && entry.message.role === "user" ? entry.message : null),
+  const userMessageOf = (entry: ThreadFeedEntry) =>
+    entry.type === "message" && entry.message.role === "user" ? entry.message : null;
+  return foldRepeatedRoutineRuns(
+    withoutSilentRoutineWakes(
+      typingSince === null || replying ? folded : [...folded, thinkingRow(typingSince, null)],
+      userMessageOf,
+    ),
+    {
+      userMessageOf,
+      isSettledReply: (entry) =>
+        entry.type === "message" && entry.message.role === "assistant" && !entry.message.streaming,
+      fold: routineRunsRow,
+    },
   );
+}
+
+const routineRunsRows = new WeakMap<ThreadFeedEntry, ThreadFeedRoutineRuns>();
+
+function routineRunsRow({ routine, runs }: RoutineRunFold<ThreadFeedEntry>): ThreadFeedRoutineRuns {
+  const first = runs[0]!.wake;
+  const messages = runs.flatMap(({ wake, replies }) =>
+    wake.type === "message"
+      ? [
+          {
+            wake: wake.message,
+            replies: replies.flatMap((reply) => (reply.type === "message" ? [reply.message] : [])),
+          },
+        ]
+      : [],
+  );
+  const previous = routineRunsRows.get(first);
+  // Reusing the row keeps the list from re-rendering a fold that did not change.
+  const row =
+    previous !== undefined &&
+    previous.routine.name === routine.name &&
+    previous.runs.length === messages.length &&
+    previous.runs.every(
+      (run, index) =>
+        run.wake === messages[index]!.wake &&
+        run.replies.length === messages[index]!.replies.length &&
+        run.replies.every((reply, replyIndex) => reply === messages[index]!.replies[replyIndex]),
+    )
+      ? previous
+      : {
+          type: "routine-runs" as const,
+          id: `routine-runs:${first.id}`,
+          createdAt: first.createdAt,
+          routine,
+          runs: messages,
+        };
+  routineRunsRows.set(first, row);
+  return row;
 }
 
 /**
