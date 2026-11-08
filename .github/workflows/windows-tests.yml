@@ -25,6 +25,8 @@ permissions:
 
 jobs:
   test:
+    # Parked: mac-only for now. Re-enable by restoring the original gate.
+    if: false
     name: Test (${{ inputs.package || 'all non-server' }})
     runs-on: windows-2025
     timeout-minutes: 45

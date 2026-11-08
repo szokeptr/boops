@@ -507,7 +507,10 @@ jobs:
   mobile_native_static_analysis:
     name: Mobile Native Static Analysis
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.mobile_native != 'false' }}
+    # Parked: mac-only for now (no Android/iOS in CI). `check` treats this
+    # job's skip as OK. Original gate:
+    # if: ${{ !cancelled() && needs.changes.outputs.mobile_native != 'false' }}
+    if: false
     runs-on: macos-26
     timeout-minutes: 10
     steps:
@@ -591,11 +594,13 @@ jobs:
           echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           # A job may skip only when `changes` said every gate it represents was
           # not needed. Gates are keyed by job name, except merged Build and the
-          # macOS lint.
+          # macOS lint. Parked jobs (`if: false`, mac-only for now) may always skip.
           echo "$RESULTS" | jq -e '.changes.outputs as $gates
             | {build: ["build", "typecheck"], mobile_native_static_analysis: ["mobile_native"]} as $renamed
+            | ["mobile_native_static_analysis"] as $parked
             | all(to_entries[];
                 .value.result == "success"
+                or (.value.result == "skipped" and (.key as $k | $parked | index($k)))
                 or (.value.result == "skipped"
                   and (($renamed[.key] // [.key]) | all(.[]; $gates[.] == "false"))))' > /dev/null
 

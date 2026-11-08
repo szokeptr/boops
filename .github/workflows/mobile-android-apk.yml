@@ -14,8 +14,11 @@ concurrency:
 
 jobs:
   mirror:
+    # Parked: mac-only for now. Re-enable by restoring the original gate.
+    # Original gate:
+    # if: github.repository == 'pingdotgg/t3code'
+    if: false
     name: Mirror beta APK
-    if: github.repository == 'pingdotgg/t3code'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

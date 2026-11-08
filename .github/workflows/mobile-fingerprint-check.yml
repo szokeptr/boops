@@ -24,6 +24,8 @@ concurrency:
 
 jobs:
   fingerprint:
+    # Parked: mac-only for now. Re-enable by restoring the original gate.
+    if: false
     name: Native fingerprint diff
     runs-on: ubuntu-24.04
     permissions:

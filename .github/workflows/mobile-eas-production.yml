@@ -74,8 +74,11 @@ concurrency:
 
 jobs:
   production:
+    # Parked: mac-only for now. Re-enable by restoring the original gate.
+    # Original gate:
+    # if: github.repository == 'szokeptr/boops'
+    if: false
     name: EAS ${{ inputs.profile || 'production' }} ${{ github.event_name == 'push' && 'auto' || inputs.mode }}
-    if: github.repository == 'szokeptr/boops'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
