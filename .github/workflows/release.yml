@@ -624,7 +624,9 @@ jobs:
   desktop_linux_x64:
     name: Desktop Linux x64
     needs: [preflight, relay_public_config, build_bundle]
-    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.build_bundle.result == 'success' }}
+    # Parked: mac-only for now. `release` no longer waits on this job. Original gate:
+    # if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.build_bundle.result == 'success' }}
+    if: false
     uses: ./.github/workflows/release-desktop.yml
     secrets: inherit
     with:
@@ -650,7 +652,9 @@ jobs:
   desktop_linux_arm64:
     name: Desktop Linux arm64
     needs: [preflight, relay_public_config, build_bundle]
-    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.build_bundle.result == 'success' }}
+    # Parked: mac-only for now. `release` no longer waits on this job. Original gate:
+    # if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.build_bundle.result == 'success' }}
+    if: false
     uses: ./.github/workflows/release-desktop.yml
     secrets: inherit
     with:
@@ -672,19 +676,10 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs:
-      [
-        preflight,
-        relay_public_config,
-        quality,
-        test,
-        test_web,
-        test_server,
-        desktop_mac_arm64,
-        desktop_linux_x64,
-        desktop_linux_arm64,
-      ]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.quality.result == 'success' && needs.test.result == 'success' && needs.test_web.result == 'success' && needs.test_server.result == 'success' && needs.desktop_mac_arm64.result == 'success' && needs.desktop_linux_x64.result == 'success' && needs.desktop_linux_arm64.result == 'success' }}
+    # Parked (mac-only for now): desktop_linux_x64 and desktop_linux_arm64 are
+    # left out of `needs` and the gate. Add them back when re-enabling them.
+    needs: [preflight, relay_public_config, quality, test, test_web, test_server, desktop_mac_arm64]
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.quality.result == 'success' && needs.test.result == 'success' && needs.test_web.result == 'success' && needs.test_server.result == 'success' && needs.desktop_mac_arm64.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -723,8 +718,10 @@ jobs:
           merge-multiple: true
           path: release-assets
 
+      # Parked: mac-only for now. Original gate:
+      # if: needs.preflight.outputs.release_channel == 'nightly'
       - name: Download internal Android APK for Nightly
-        if: needs.preflight.outputs.release_channel == 'nightly'
+        if: false
         continue-on-error: true
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
@@ -783,8 +780,10 @@ jobs:
             fi
           done
 
+      # Parked: mac-only for now. Original gate:
+      # if: needs.preflight.outputs.release_channel != 'preview'
       - name: Merge Windows updater manifests
-        if: needs.preflight.outputs.release_channel != 'preview'
+        if: false
         run: |
           shopt -s nullglob
           for x64_manifest in release-assets/*-win-x64.yml; do
@@ -808,8 +807,10 @@ jobs:
             echo 'files<<EOF'
             echo 'release-assets/*.dmg'
             echo 'release-assets/*.zip'
-            echo 'release-assets/*.AppImage'
-            echo 'release-assets/*.deb'
+            # Linux packages are parked (mac-only for now); list them only if present.
+            for pkg in release-assets/*.AppImage release-assets/*.deb; do
+              [[ -f "$pkg" ]] && echo "$pkg"
+            done
               if [[ "${{ needs.preflight.outputs.release_channel }}" != "preview" ]]; then
               echo 'release-assets/*.blockmap'
               echo 'release-assets/*.yml'

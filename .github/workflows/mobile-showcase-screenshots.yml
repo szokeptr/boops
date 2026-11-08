@@ -43,8 +43,11 @@ env:
 
 jobs:
   ios:
+    # Parked: mac-only for now. Re-enable by restoring the original gate.
+    # Original gate:
+    # if: inputs.platform == 'all' || inputs.platform == 'ios'
+    if: false
     name: iPhone, iPhone Duo, and iPad 13
-    if: inputs.platform == 'all' || inputs.platform == 'ios'
     runs-on: macos-26
     # Capturing every palette multiplies the device matrix by six, and only the
     # one native build is shared between them.
@@ -106,8 +109,11 @@ jobs:
           retention-days: 14
 
   android:
+    # Parked: mac-only for now. Re-enable by restoring the original gate.
+    # Original gate:
+    # if: inputs.platform == 'all' || inputs.platform == 'android'
+    if: false
     name: Android phone, 7-inch tablet, and 10-inch tablet
-    if: inputs.platform == 'all' || inputs.platform == 'android'
     runs-on: ubuntu-24.04
     # Capturing every palette multiplies the device matrix by six, and only the
     # one native build is shared between them.

@@ -36,8 +36,11 @@ concurrency:
 
 jobs:
   publish:
+    # Parked: mac-only for now. Re-enable by restoring the original gate.
+    # Original gate:
+    # if: github.repository == 'pingdotgg/t3code'
+    if: false
     name: Validate and publish
-    if: github.repository == 'pingdotgg/t3code'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
