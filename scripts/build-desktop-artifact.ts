@@ -2876,7 +2876,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ],
       desktop: {
         entry: {
-          StartupWMClass: "t3code",
+          StartupWMClass: "boops",
         },
       },
     };
@@ -2884,7 +2884,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // FPM runs outside the staged app directory, so source paths must be absolute.
       fpm: [
         `${path.join(repoRoot, "apps/desktop/resources/linux/com.getboops.desktop.metainfo.xml")}=/usr/share/metainfo/com.getboops.desktop.metainfo.xml`,
-        `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/t3code/copyright`,
+        `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/boops/copyright`,
       ],
       // Debian 13 and Ubuntu 24.04 use 64-bit-time names; retain old-name fallbacks.
       depends: [
@@ -3830,7 +3830,8 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    // Electron names the macOS keychain item "<name> Safe Storage"; "t3code" collided with T3 Code.
+    name: "boops",
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
