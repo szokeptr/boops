@@ -80,6 +80,7 @@ import {
   IDLE_COMPACTION_TITLES,
   IDLE_COMPACTING_LABELS,
   foldRepeatedRoutineRuns,
+  isAgentSelfSentMessage,
   resolveUserMessagePresentation,
   type RoutineRunFold,
   withoutSilentRoutineWakes,
@@ -2485,26 +2486,32 @@ export function buildThreadFeed(
     }
     if (item.type === "user_message" || item.type === "assistant_message") {
       const updatedAt = DateTime.formatIso(item.updatedAt);
+      // What the agent sent into its own thread (say, a file) is its own reply, not another agent's.
+      const userItem =
+        item.type === "user_message" &&
+        !isAgentSelfSentMessage({ ...item, role: "user" }, item.threadId)
+          ? item
+          : null;
       const entry: RawThreadFeedEntry = {
         type: "message",
         id: item.messageId,
         createdAt,
         message: {
           id: item.messageId,
-          role: item.type === "user_message" ? "user" : "assistant",
+          role: userItem ? "user" : "assistant",
           text: item.text,
-          ...(item.type === "user_message" && item.context ? { context: item.context } : {}),
+          ...(userItem?.context ? { context: userItem.context } : {}),
           attachments: item.attachments ?? [],
           runId: item.runId,
           streaming: item.type === "assistant_message" && item.streaming,
-          ...(item.type === "user_message"
+          ...(userItem
             ? {
-                inputIntent: item.inputIntent,
-                createdBy: item.createdBy,
-                creationSource: item.creationSource,
-                ...(item.routine ? { routine: item.routine } : {}),
-                ...(item.senderThreadId ? { senderThreadId: item.senderThreadId } : {}),
-                ...(item.idleCompaction ? { idleCompaction: item.idleCompaction } : {}),
+                inputIntent: userItem.inputIntent,
+                createdBy: userItem.createdBy,
+                creationSource: userItem.creationSource,
+                ...(userItem.routine ? { routine: userItem.routine } : {}),
+                ...(userItem.senderThreadId ? { senderThreadId: userItem.senderThreadId } : {}),
+                ...(userItem.idleCompaction ? { idleCompaction: userItem.idleCompaction } : {}),
               }
             : {}),
           visibility: row.visibility,

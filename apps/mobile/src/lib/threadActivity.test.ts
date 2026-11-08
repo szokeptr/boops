@@ -389,6 +389,36 @@ function assistantMessage(updatedAt = "2026-06-20T00:00:03.000Z") {
 }
 
 describe("buildThreadFeed", () => {
+  it("shows what the agent sent into its own thread as its reply, and another agent's as a message", () => {
+    const file = {
+      type: "file" as const,
+      id: "plate-file",
+      name: "plate.3mf",
+      mimeType: "model/3mf",
+      sizeBytes: 4,
+    };
+    const fromAgent = (id: string, senderThreadId: ThreadId) => ({
+      ...userMessage(),
+      id: TurnItemId.make(id),
+      messageId: MessageId.make(id),
+      createdBy: "agent" as const,
+      creationSource: "mcp" as const,
+      senderThreadId,
+      text: "",
+      attachments: [file],
+    });
+    const feed = buildThreadFeed([
+      projected(fromAgent("self-sent", threadId), 0),
+      projected(fromAgent("other-agent", ThreadId.make("thread-other-agent")), 1),
+    ]);
+    expect(feed.map((entry) => entry.type === "message" && entry.message.role)).toEqual([
+      "assistant",
+      "user",
+    ]);
+    expect(feed[0]).toMatchObject({ message: { attachments: [file] } });
+    expect(feed[0]).not.toMatchObject({ message: { createdBy: "agent" } });
+  });
+
   it("keeps async answers in question history instead of user bubbles", () => {
     const requestId = RuntimeRequestId.make("question");
     const question: OrchestrationV2TurnItem = {
