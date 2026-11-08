@@ -16,6 +16,7 @@ import {
   mediaMimeTypeFromExtension,
 } from "@t3tools/shared/filePreview";
 import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
+import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { filePreviewDelimiter, parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
@@ -60,10 +61,12 @@ import {
   resolveWorkspaceFilePath,
   resolveWorkspaceRelativeFilePath,
   isAudioPreviewFile,
+  isBinaryFileReadFailure,
   isMarkdownPreviewFile,
   isSvgImagePreviewFile,
   isVideoPreviewFile,
   needsWorkspaceFileContents,
+  rawWorkspaceFileResource,
 } from "./filePath";
 import { useWorkspaceFileAssetUrlState } from "./workspaceFileAssetUrl";
 
@@ -227,6 +230,11 @@ function FileContent(props: {
   readonly threadId: ThreadId | null;
   readonly initialLine: number | null;
   readonly truncated: boolean;
+  readonly binaryFile: {
+    readonly sizeBytes: number | null;
+    readonly sharing: boolean;
+    readonly onShare: () => void;
+  } | null;
   readonly onRefresh?: () => Promise<void> | void;
 }) {
   // Reopening a mutable host file must not reuse a poster from an earlier visit.
@@ -291,6 +299,24 @@ function FileContent(props: {
 
   if (props.activeMode === "preview" && isBrowserFile) {
     return <WorkspaceFileWebPreview uri={props.previewUri} />;
+  }
+
+  if (props.binaryFile !== null) {
+    const name = basename(props.relativePath);
+    const size =
+      props.binaryFile.sizeBytes === null
+        ? ""
+        : ` (${formatAttachmentSize(props.binaryFile.sizeBytes)})`;
+    return (
+      <View className="flex-1 items-center justify-center bg-sheet px-6">
+        <EmptyState
+          title="No preview for this file"
+          detail={`${name}${size} can't be shown here. Save or share it to open it in another app.`}
+          actionLabel={props.binaryFile.sharing ? "Opening share sheet…" : "Save or share"}
+          onAction={props.binaryFile.onShare}
+        />
+      </View>
+    );
   }
 
   if (props.fileError && props.fileContents === null) {
@@ -677,7 +703,6 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           resource: assetPreview.resource,
         }
       : undefined;
-  const mediaActions = useMediaActions(mediaSource);
   const videoSource: MediaVideoPreviewSource | null =
     environmentId !== null &&
     relativePath !== null &&
@@ -719,6 +744,29 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
       : null,
   );
   const fileData = fileQuery.data as ProjectReadFileResult | null;
+  // The server won't decode a binary file as text, so the screen offers the raw file instead.
+  const rawFileSource: MediaActionsSource | undefined =
+    isBinaryFileReadFailure(fileQuery.failure) &&
+    environmentId !== null &&
+    cwd !== null &&
+    relativePath !== null &&
+    targetPath !== null
+      ? {
+          reference: mediaFileReference(targetPath, cwd),
+          name: basename(relativePath),
+          mimeType: metadata.data?.mimeType ?? "application/octet-stream",
+          environmentId,
+          ...(threadId === null ? {} : { threadId }),
+          resource: rawWorkspaceFileResource({
+            threadId,
+            cwd,
+            relativePath,
+            absolutePath: targetPath,
+          }),
+        }
+      : undefined;
+  const actionsSource = mediaSource ?? rawFileSource;
+  const mediaActions = useMediaActions(actionsSource);
 
   const handleSelectFile = (path: string) => {
     const targetPath =
@@ -798,7 +846,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
             onPress: () => setModeOverride({ path: relativePath, mode: "source" }),
           } as const)
         : null,
-      resolvedActiveMode === "source"
+      resolvedActiveMode === "source" && rawFileSource === undefined
         ? ({
             id: "word-wrap",
             title: appearance.codeWordBreak ? "Disable word wrap" : "Enable word wrap",
@@ -807,7 +855,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
             onPress: () => setCodeWordBreak(!appearance.codeWordBreak),
           } as const)
         : null,
-      ...(mediaSource
+      ...(actionsSource
         ? mediaActions.actions
             .filter(({ id }) => id !== "open-file")
             .map((action) => ({
@@ -1003,6 +1051,15 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           relativePath={relativePath}
           threadId={threadId}
           truncated={fileData?.truncated ?? false}
+          binaryFile={
+            rawFileSource
+              ? {
+                  sizeBytes: metadata.data?.byteLength ?? null,
+                  sharing: mediaActions.sharing,
+                  onShare: () => void mediaActions.share(),
+                }
+              : null
+          }
           onRefresh={() => fileQuery.refresh()}
         />
       </ScreenContent>
