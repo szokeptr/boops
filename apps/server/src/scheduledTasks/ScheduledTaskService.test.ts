@@ -768,7 +768,7 @@ it.effect(
           prompt: legacyPrompt,
           requireExisting: true,
         });
-        yield* service.moveHeartbeatOffMainThread({ projectId, mainThreadId });
+        yield* service.moveRoutinesOffConversations({ projectId, mainThreadId });
         const [moved] = (yield* service.list()).tasks;
         assert.deepInclude(moved, {
           threadId: heartbeatThreadId,
@@ -783,7 +783,7 @@ it.effect(
           schedule: { type: "interval", everyMs: 12 * 60 * 60 * 1000 },
           requireExisting: true,
         });
-        yield* service.moveHeartbeatOffMainThread({ projectId, mainThreadId });
+        yield* service.moveRoutinesOffConversations({ projectId, mainThreadId });
         const edited = yield* service.ensureDefaultHeartbeat({ projectId, mainThreadId });
         assert.deepInclude(edited.task, { title: "Slow heartbeat", threadId: mainThreadId });
         assert.lengthOf((yield* service.list()).tasks, 1);
@@ -792,4 +792,126 @@ it.effect(
         assert.lengthOf((yield* service.list()).tasks, 0);
       }).pipe(Effect.provide(layer));
     }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect("a bot's routine runs in its own background thread, out of its conversations", () =>
+  Effect.gen(function* () {
+    const projectId = ProjectId.make("project:test");
+    const mainThreadId = ThreadId.make("thread:bot");
+    const helperThreadId = ThreadId.make("thread:helper");
+    const created = yield* Ref.make<ReadonlyArray<OrchestrationV2ServerCommand>>([]);
+    const sent = yield* Ref.make<ReadonlyArray<ThreadManagementService.ThreadManagementSendInput>>(
+      [],
+    );
+    const shell = (
+      id: ThreadId,
+      lineage: object = { rootThreadId: id, parentThreadId: null, relationshipToParent: null },
+    ) =>
+      ({
+        id,
+        projectId,
+        deletedAt: null,
+        lineage,
+        modelSelection: routineModelSelection,
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+      }) as never;
+    const layer = ScheduledTaskService.layer.pipe(
+      Layer.provide(
+        routineDependencies(
+          {
+            getThreadShell: (id) =>
+              id === mainThreadId
+                ? Effect.succeed(shell(id))
+                : id === helperThreadId
+                  ? Effect.succeed(
+                      shell(id, {
+                        rootThreadId: mainThreadId,
+                        parentThreadId: mainThreadId,
+                        relationshipToParent: "subagent",
+                      }),
+                    )
+                  : Ref.get(created).pipe(
+                      Effect.map((commands) =>
+                        commands.some(
+                          (command) => command.type === "thread.create" && command.threadId === id,
+                        )
+                          ? shell(id)
+                          : null,
+                      ),
+                    ),
+            dispatch: (command) =>
+              Ref.update(created, (all) => [...all, command]).pipe(Effect.as({} as never)),
+            sendToThread: (input) =>
+              Ref.update(sent, (all) => [...all, input]).pipe(Effect.as({} as never)),
+          },
+          new Map(),
+        ),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const sql = yield* SqlClient.SqlClient;
+      const now = DateTime.formatIso(DateTime.toUtc(yield* DateTime.now));
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, main_thread_id, created_at, updated_at
+        ) VALUES (${projectId}, 'Bot', '/tmp/bot', '[]', ${mainThreadId}, ${now}, ${now})
+      `;
+      const save = (title: string, threadId: ThreadId) =>
+        service.upsert({
+          id: ScheduledTaskId.make(`task:${title}`),
+          title,
+          prompt: `Run ${title}`,
+          enabled: true,
+          schedule: { type: "interval", everyMs: 3_600_000 },
+          projectId,
+          threadId,
+          workspaceStrategy: { type: "root" },
+          modelSelection: routineModelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+        });
+
+      const checkIn = yield* save("Check-in", mainThreadId);
+      const routineThreadId = ThreadId.make("routine:task:Check-in");
+      assert.equal(checkIn.task.threadId, routineThreadId);
+      yield* save("Check-in", mainThreadId);
+      assert.deepEqual(
+        (yield* Ref.get(created)).map((command) =>
+          command.type === "thread.create"
+            ? [command.threadId, command.title, command.createdBy]
+            : command.type,
+        ),
+        [[routineThreadId, "Check-in", "system"]],
+      );
+
+      // A run tells the agent the user does not read this thread, and keeps its context.
+      yield* service.runNow({ id: checkIn.task.id });
+      assert.deepEqual(
+        (yield* Ref.get(sent)).map((input) => [input.threadId, input.text, input.sessionRollover]),
+        [
+          [
+            routineThreadId,
+            `Run Check-in\n\n${ScheduledTaskService.ROUTINE_THREAD_NOTE}`,
+            undefined,
+          ],
+        ],
+      );
+
+      // A routine aimed at background work stays there.
+      const helper = yield* save("Helper", helperThreadId);
+      assert.equal(helper.task.threadId, helperThreadId);
+
+      // One saved into the conversation before this moves on startup.
+      yield* insertRow(
+        sql,
+        { id: "task:legacy", next: null, enabled: 1, status: "never", threadId: mainThreadId },
+        now,
+      );
+      yield* service.moveRoutinesOffConversations({ projectId, mainThreadId });
+      const legacy = (yield* service.list()).tasks.find((task) => task.id === "task:legacy");
+      assert.equal(legacy?.threadId, ThreadId.make("routine:task:legacy"));
+    }).pipe(Effect.provide(layer));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );

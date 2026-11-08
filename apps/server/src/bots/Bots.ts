@@ -166,8 +166,8 @@ export class Bots extends Context.Service<
       readonly fromThreadId: ThreadId;
       readonly text: string;
     }) => Effect.Effect<BotMcpDelivery, BotFamilyError>;
-    /** Moves every bot's Heartbeat routine that still targets its main thread, once at startup. */
-    readonly moveHeartbeatsOffMainThreads: () => Effect.Effect<void>;
+    /** Moves every bot's routines that still post into its conversations, once at startup. */
+    readonly moveRoutinesOffConversations: () => Effect.Effect<void>;
     /**
      * Pauses the bot's routines and heartbeat and hides it from the bot list; its threads and
      * home folder stay. `includeChildren` also archives the live bots below it. Returns every bot
@@ -584,18 +584,18 @@ const make = Effect.gen(function* () {
     });
   });
 
-  const moveHeartbeatsOffMainThreads: Bots["Service"]["moveHeartbeatsOffMainThreads"] = Effect.fn(
-    "Bots.moveHeartbeatsOffMainThreads",
+  const moveRoutinesOffConversations: Bots["Service"]["moveRoutinesOffConversations"] = Effect.fn(
+    "Bots.moveRoutinesOffConversations",
   )(
     function* () {
       const shells = yield* projects.listShells();
       for (const shell of shells) {
         if (shell.mainThreadId == null) continue;
         yield* routines
-          .moveHeartbeatOffMainThread({ projectId: shell.id, mainThreadId: shell.mainThreadId })
+          .moveRoutinesOffConversations({ projectId: shell.id, mainThreadId: shell.mainThreadId })
           .pipe(
             Effect.catch((cause) =>
-              Effect.logWarning("Could not move the bot's heartbeat off its conversation", {
+              Effect.logWarning("Could not move the bot's routines off its conversations", {
                 projectId: shell.id,
                 cause,
               }),
@@ -603,7 +603,7 @@ const make = Effect.gen(function* () {
           );
       }
     },
-    Effect.catch((cause) => Effect.logWarning("Could not move bots' heartbeats", { cause })),
+    Effect.catch((cause) => Effect.logWarning("Could not move bots' routines", { cause })),
   );
 
   const readBot = Effect.fn("Bots.readBot")(function* (
@@ -716,7 +716,7 @@ const make = Effect.gen(function* () {
     messageChild,
     reportToParent,
     tellMainConversation,
-    moveHeartbeatsOffMainThreads,
+    moveRoutinesOffConversations,
     archive,
     unarchive,
     delete: deleteBot,

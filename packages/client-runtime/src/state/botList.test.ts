@@ -1,5 +1,6 @@
 import {
   botHeartbeatThreadId,
+  botRoutineThreadId,
   EnvironmentId,
   MessageId,
   ProjectId,
@@ -367,6 +368,10 @@ describe("deriveBotActivity and deriveBotConversations", () => {
       createdAt: at("2026-06-03T00:00:00.000Z"),
       ...message("nothing due", "2026-06-04T00:00:00.000Z"),
     }),
+    thread(laptop, "bot", botRoutineThreadId("check-in"), {
+      createdAt: at("2026-06-02T00:00:00.000Z"),
+      ...message("nothing new", "2026-06-02T00:00:00.000Z"),
+    }),
     thread(laptop, "bot", "helper", {
       ...helper("helper"),
       createdAt: at("2026-06-05T00:00:00.000Z"),
@@ -396,6 +401,7 @@ describe("deriveBotActivity and deriveBotConversations", () => {
     ).toEqual([
       ["helper", "working"],
       [`heartbeat:bot`, "idle"],
+      ["routine:check-in", "idle"],
     ]);
   });
 
@@ -424,7 +430,7 @@ describe("deriveBotActivity and deriveBotConversations", () => {
       ),
       machineLabels,
     });
-    expect(row).toMatchObject({ unread: true, activityThreadCount: 2 });
+    expect(row).toMatchObject({ unread: true, activityThreadCount: 3 });
   });
 });
 

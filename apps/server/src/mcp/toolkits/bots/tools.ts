@@ -103,7 +103,7 @@ const ReportToParentTool = Tool.make("report_to_parent", {
 
 const TellMainConversationTool = Tool.make("tell_main_conversation", {
   description:
-    "From one of your background threads, such as a Heartbeat run, post a short note into your main conversation with the user, where you then tell them. Only for what needs the user; not from the main conversation itself.",
+    "From one of your background threads, such as a Heartbeat or routine run, post a short note into your main conversation with the user, where you then tell them. Only for what needs the user; not from the main conversation itself.",
   parameters: BotMcpTellMainConversationInput,
   success: BotMcpDelivery,
   failure: OrchestratorMcpFailure,

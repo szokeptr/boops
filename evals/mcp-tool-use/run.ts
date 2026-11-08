@@ -72,7 +72,10 @@ import {
 import { proxyConfig } from "../shared/proxy.ts";
 import { changeRequestsCreatedBy } from "../../apps/server/src/orchestration-v2/PullRequestSyncReactor.ts";
 import { routineHeader } from "../../apps/server/src/orchestration-v2/ProviderTurnStartService.ts";
-import { DEFAULT_HEARTBEAT_PROMPT } from "../../apps/server/src/scheduledTasks/ScheduledTaskService.ts";
+import {
+  DEFAULT_HEARTBEAT_PROMPT,
+  ROUTINE_THREAD_NOTE,
+} from "../../apps/server/src/scheduledTasks/ScheduledTaskService.ts";
 import { DeviceExpect, gradeDevice } from "./device-grading.ts";
 import {
   AGENT_DEVICE_SHELL,
@@ -310,7 +313,7 @@ export const McpToolUseCase = Schema.Struct({
   /** Empty to resume a top-level thread without side-chat context after its last tool result. */
   prompt: Schema.String,
   /** The prompt is this shipped routine's run message, read from source. Leave `prompt` empty. */
-  routine: Schema.optional(Schema.Literal("heartbeat")),
+  routine: Schema.optional(Schema.Literals(["heartbeat", "check-in"])),
   /** Records for the context chips `prompt` links, projected as T3 sends them. */
   promptContext: Schema.optional(Schema.Struct({ records: Schema.Array(ComposerContextRecord) })),
   expect: McpToolUseExpect,
@@ -328,6 +331,12 @@ const ROUTINE_PROMPTS = {
     name: "Heartbeat",
     trigger: "interval",
   })}\n\n${DEFAULT_HEARTBEAT_PROMPT}`,
+  // An agent-made routine in a bot's conversation runs in its own background thread.
+  "check-in": `${routineHeader({
+    taskId: Contracts.ScheduledTaskId.make("scheduled-task:check-in"),
+    name: "Hourly GitHub check-in",
+    trigger: "interval",
+  })}\n\nCheck acme/app on GitHub: CI on main and my open PRs. Tell me what changed since the last check.\n\n${ROUTINE_THREAD_NOTE}`,
 } as const;
 
 /** The user message a case sends. */

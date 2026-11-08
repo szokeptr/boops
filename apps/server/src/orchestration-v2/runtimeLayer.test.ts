@@ -8764,7 +8764,7 @@ it.layer(layerBotsTest)("creating a bot", (it) => {
       );
       // Startup moves a heartbeat still on the main thread, as bots made before this had.
       yield* tasks.upsert({ ...ran.task, threadId: first.mainThreadId, requireExisting: true });
-      yield* bots.moveHeartbeatsOffMainThreads();
+      yield* bots.moveRoutinesOffConversations();
       assert.equal(
         (yield* tasks.list()).tasks.find((task) => task.id === ran.task.id)?.threadId,
         ScheduledTaskService.heartbeatThreadId(first.projectId),

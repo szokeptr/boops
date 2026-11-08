@@ -12,7 +12,7 @@ Bring your own: Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigra
 
 Claude Code and Codex are built for sessions you start and finish. Boops is for bots that stick around:
 
-- Each bot has a persona, a home folder with notes it keeps itself, and routines that run on a schedule or from a webhook.
+- Each bot has a persona, a home folder with notes it keeps itself, and routines that run on a schedule or from a webhook. Routines run in the background, under the bot's Activity, and message you only when something needs you.
 - One long conversation per bot, which you pick up from the web, desktop, or mobile app, with push notifications when it needs you.
 - Bring your own sub. Claude, Codex, and whatever else you already have installed.
 - Open source (MIT). If we go the wrong direction, fork it.

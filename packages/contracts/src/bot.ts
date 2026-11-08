@@ -152,9 +152,13 @@ export class BotCallError extends Schema.TaggedError<BotCallError>()("BotCallErr
 export const botHeartbeatThreadId = (projectId: ProjectId) =>
   ThreadId.make(`heartbeat:${projectId}`);
 
+/** The background thread one routine runs in, so its runs stay out of the bot's conversations. */
+export const botRoutineThreadId = (taskId: string) => ThreadId.make(`routine:${taskId}`);
+
 /**
  * A thread the user talks to the bot in: its main one, or one started beside it. Helpers, side
- * chats and the Heartbeat thread are the bot's background work, which Activity lists.
+ * chats, routine threads and the Heartbeat thread are the bot's background work, which Activity
+ * lists.
  */
 export function isBotConversationThread(
   thread: {
@@ -166,7 +170,9 @@ export function isBotConversationThread(
 ): boolean {
   return (
     thread.id === mainThreadId ||
-    (isListedThreadLineage(thread.lineage) && thread.id !== botHeartbeatThreadId(thread.projectId))
+    (isListedThreadLineage(thread.lineage) &&
+      thread.id !== botHeartbeatThreadId(thread.projectId) &&
+      !thread.id.startsWith("routine:"))
   );
 }
 

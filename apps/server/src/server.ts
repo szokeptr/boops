@@ -602,7 +602,7 @@ const layerSessionRolloverWorker = Layer.effectDiscard(
 const layerBotHeartbeatMove = Layer.effectDiscard(
   Effect.gen(function* () {
     const bots = yield* Bots.Bots;
-    yield* ServerActivation.forkParked(bots.moveHeartbeatsOffMainThreads());
+    yield* ServerActivation.forkParked(bots.moveRoutinesOffConversations());
   }),
 );
 

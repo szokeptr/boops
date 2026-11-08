@@ -1,5 +1,7 @@
 import {
   botHeartbeatThreadId,
+  botRoutineThreadId,
+  isBotConversationThread,
   CommandId,
   MessageId,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
@@ -51,6 +53,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as Metrics from "../observability/Metrics.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
@@ -86,6 +89,8 @@ export const DEFAULT_HEARTBEAT_PROMPT =
 const LEGACY_HEARTBEAT_PROMPT =
   "Heartbeat. Check your memory notes and the commitments you made to the user, and do anything that is due. Tell the user only what needs them; if nothing does, reply in one short line.";
 const HEARTBEAT_TITLE = "Heartbeat";
+export const ROUTINE_THREAD_NOTE =
+  "This routine runs in its own background thread, which the user does not read. If nothing needs the user, end in one short line. If something does, call tell_main_conversation once with a short note of what needs them.";
 
 export const heartbeatTaskId = (projectId: ProjectId) =>
   ScheduledTaskId.make(`heartbeat:${projectId}`);
@@ -309,8 +314,11 @@ export class ScheduledTaskService extends Context.Service<
       readonly projectId: ProjectId;
       readonly mainThreadId: ThreadId;
     }) => Effect.Effect<ScheduledTaskMutationResult, ScheduledTaskError>;
-    /** Moves a Heartbeat routine that still targets the main thread; creates nothing. */
-    readonly moveHeartbeatOffMainThread: (input: {
+    /**
+     * Moves the bot's routines that still post into one of its conversations to their own
+     * background threads, and its Heartbeat to the Heartbeat thread.
+     */
+    readonly moveRoutinesOffConversations: (input: {
       readonly projectId: ProjectId;
       readonly mainThreadId: ThreadId;
     }) => Effect.Effect<void, ScheduledTaskError>;
@@ -480,6 +488,7 @@ export const layer = Layer.effect(
     const digest = yield* Digest.Digest;
     const mac = yield* Mac.Mac;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
+    const projectStore = yield* ProjectStore.ProjectStoreV2;
     const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
     const secretRequests = yield* SecretRequests.SecretRequests;
     const scheduler = yield* Scheduler.Scheduler;
@@ -952,7 +961,10 @@ export const layer = Layer.effect(
               ...(threadId === heartbeatThreadId(projectId)
                 ? { sessionRollover: { reason: "heartbeat" as const } }
                 : {}),
-              text: prompt,
+              text:
+                threadId === botRoutineThreadId(active.id)
+                  ? `${prompt}\n\n${ROUTINE_THREAD_NOTE}`
+                  : prompt,
               attachments: [],
               mode: "queue",
               createdBy: active.createdBy,
@@ -1230,6 +1242,54 @@ export const layer = Layer.effect(
         }),
       );
 
+    // A bot's routine runs beside its conversations, so a run with nothing to say never shows
+    // there; it reaches the user through tell_main_conversation. The Heartbeat has its own thread.
+    const routineThreadFor = Effect.fn("ScheduledTaskService.routineThreadFor")(function* (input: {
+      readonly id: ScheduledTaskId;
+      readonly title: string;
+      readonly projectId: ProjectId;
+      readonly threadId: ThreadId;
+    }) {
+      if (input.id === heartbeatTaskId(input.projectId)) return input.threadId;
+      const fail = (cause: unknown) =>
+        taskError("Could not read the routine's thread.", { taskId: input.id, cause });
+      const project = yield* projectStore.getShell(input.projectId).pipe(Effect.mapError(fail));
+      const mainThreadId = Option.isSome(project) ? (project.value.mainThreadId ?? null) : null;
+      if (mainThreadId === null) return input.threadId;
+      const conversation = yield* threadManagement
+        .getThreadShell(input.threadId)
+        .pipe(Effect.mapError(fail));
+      if (conversation === null || !isBotConversationThread(conversation, mainThreadId)) {
+        return input.threadId;
+      }
+      const threadId = botRoutineThreadId(input.id);
+      const existing = yield* threadManagement.getThreadShell(threadId).pipe(Effect.mapError(fail));
+      if (existing !== null) {
+        if (existing.deletedAt !== null || existing.projectId !== input.projectId) {
+          return yield* taskError("The routine's thread was deleted.", { taskId: input.id });
+        }
+        return threadId;
+      }
+      // A fixed id makes a retried save find the thread instead of adding a second one.
+      yield* threadManagement
+        .dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`routine-thread:${input.id}`),
+          threadId,
+          projectId: input.projectId,
+          title: input.title,
+          modelSelection: conversation.modelSelection,
+          runtimeMode: conversation.runtimeMode,
+          interactionMode: conversation.interactionMode,
+          branch: null,
+          worktreePath: null,
+          createdBy: "system",
+          creationSource: "server",
+        })
+        .pipe(Effect.mapError(fail));
+      return threadId;
+    });
+
     const upsert: ScheduledTaskService["Service"]["upsert"] = Effect.fn(
       "ScheduledTaskService.upsert",
     )(function* (input) {
@@ -1341,6 +1401,12 @@ export const layer = Layer.effect(
         isSameSchedule(existingTask.schedule, schedule);
       if (!scheduleUnchanged)
         yield* requireFutureOnce({ enabled: input.enabled, schedule }, now, id);
+      const threadId = yield* routineThreadFor({
+        id,
+        title: input.title,
+        projectId: input.projectId,
+        threadId: input.threadId,
+      });
       const task: ScheduledTask = {
         id,
         title: input.title,
@@ -1348,7 +1414,7 @@ export const layer = Layer.effect(
         enabled: input.enabled,
         schedule,
         projectId: input.projectId,
-        threadId: input.threadId,
+        threadId,
         workspaceStrategy,
         modelSelection: input.modelSelection,
         runtimeMode: input.runtimeMode,
@@ -2593,10 +2659,18 @@ export const layer = Layer.effect(
         });
       });
 
-    const moveHeartbeatOffMainThread: ScheduledTaskService["Service"]["moveHeartbeatOffMainThread"] =
-      Effect.fn("ScheduledTaskService.moveHeartbeatOffMainThread")(function* (input) {
-        const existing = yield* findTask(heartbeatTaskId(input.projectId));
-        if (existing !== null) yield* retargetHeartbeat(existing, input);
+    const moveRoutinesOffConversations: ScheduledTaskService["Service"]["moveRoutinesOffConversations"] =
+      Effect.fn("ScheduledTaskService.moveRoutinesOffConversations")(function* (input) {
+        const heartbeat = yield* findTask(heartbeatTaskId(input.projectId));
+        if (heartbeat !== null) yield* retargetHeartbeat(heartbeat, input);
+        for (const task of (yield* list()).tasks) {
+          const current = task.threadId;
+          if (task.projectId !== input.projectId || current === null) continue;
+          if (task.id === heartbeatTaskId(input.projectId)) continue;
+          // Saving reroutes a routine that posts into a conversation; others stay untouched.
+          const threadId = yield* routineThreadFor({ ...task, threadId: current });
+          if (threadId !== current) yield* upsert({ ...task, threadId, requireExisting: true });
+        }
       });
 
     return ScheduledTaskService.of({
@@ -2616,7 +2690,7 @@ export const layer = Layer.effect(
       getWebhookDelivery,
       triggerWebhook,
       ensureDefaultHeartbeat,
-      moveHeartbeatOffMainThread,
+      moveRoutinesOffConversations,
     });
   }),
-);
+).pipe(Layer.provide(ProjectStore.layer));
