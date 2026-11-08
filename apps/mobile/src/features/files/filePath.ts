@@ -1,4 +1,10 @@
-import type { FilesystemEntryMetadata } from "@t3tools/contracts";
+import {
+  type AssetResource,
+  type FilesystemEntryMetadata,
+  ProjectReadFileError,
+  type ThreadId,
+} from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
 import { joinPath, resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import {
@@ -136,4 +142,28 @@ export function fileHeaderSubtitle(projectName: string, relativePath: string): s
   return isAbsolutePath(relativePath)
     ? parentDir
     : [projectName, parentDir].filter(Boolean).join(" · ");
+}
+
+const isProjectReadFileError = Schema.is(ProjectReadFileError);
+
+/** The server refuses to decode binary files as text; the viewer offers the raw file instead. */
+export function isBinaryFileReadFailure(failure: unknown): boolean {
+  return isProjectReadFileError(failure) && failure.failure === "binary_file";
+}
+
+/** Downloads the raw bytes of a file that has no in-app preview. */
+export function rawWorkspaceFileResource(input: {
+  readonly threadId: ThreadId | null;
+  readonly cwd: string;
+  readonly relativePath: string;
+  readonly absolutePath: string;
+}): AssetResource {
+  return input.threadId === null
+    ? { _tag: "draft-workspace-file", cwd: input.cwd, path: input.relativePath }
+    : {
+        _tag: "media-file",
+        threadId: input.threadId,
+        path: input.absolutePath,
+        disposition: "attachment",
+      };
 }
