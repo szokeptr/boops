@@ -1,4 +1,4 @@
-import { SymbolView } from "expo-symbols";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import * as Haptics from "expo-haptics";
 import type { ReactNode } from "react";
 import { type ColorValue, Pressable, View } from "react-native";
