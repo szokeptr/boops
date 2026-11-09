@@ -591,17 +591,20 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const userMessage = resolveUserMessagePresentation(row.message);
   // Messages from other agents fold to one line so the user's own messages stay easy to find. What
   // the agent sent into its own thread, such as a file it shared, stays open.
-  const folded =
+  const agentFolded =
     userMessage.attribution === "agent" &&
     !(ctx.threadRef !== null && isAgentSelfSentMessage(row.message, ctx.threadRef.threadId));
+  // A routine's note is addressed to the bot, which retells it right below.
+  const backgroundBotName = userMessage.bot?.background ? userMessage.bot.name : undefined;
+  const folded = agentFolded || backgroundBotName !== undefined;
   const [expanded, setExpanded] = useState(false);
   const revealFoldRef = findRevealRef(() => setExpanded(true));
   const senderShell = useQuietThreadShell(
-    folded && senderThreadId
+    agentFolded && senderThreadId
       ? { environmentId: ctx.activeThreadEnvironmentId, threadId: senderThreadId }
       : null,
   );
-  const senderLabel = senderShell?.title.trim() || "Agent";
+  const senderLabel = backgroundBotName ?? (senderShell?.title.trim() || "Agent");
   const senderBotProjectId = userMessage.bot?.projectId ?? null;
   const senderBot = useProject(
     senderBotProjectId === null
@@ -985,7 +988,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   return (
     <div
       className="group @container flex flex-col items-end gap-1"
-      data-user-message-attribution={folded ? "agent" : undefined}
+      data-user-message-attribution={agentFolded ? "agent" : undefined}
     >
       {userMessage.attribution === "t3code" ? (
         <p
@@ -1002,7 +1005,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         </p>
       ) : null}
       {/* The row's heading already names the sender for screen readers. */}
-      {senderBotName !== undefined ? (
+      {senderBotName !== undefined && !folded ? (
         <div
           aria-hidden
           className="me-1 flex items-center gap-1.5 text-2xs text-muted-foreground"

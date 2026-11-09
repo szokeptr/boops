@@ -6,6 +6,7 @@ import {
   EnvironmentId,
   MessageId,
   NodeId,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   RunAttemptId,
@@ -824,14 +825,35 @@ const SENDER_THREAD_ID = ThreadId.make("thread-sender");
 const AGENT_MESSAGE = "Review finished\n\nThe migration drops the index before backfilling it.";
 
 describe("MessagesTimeline agent messages", () => {
-  it("folds a message from another agent into a one-line preview", async () => {
+  it.each([
+    { name: "another agent", label: /^Agent/, context: undefined },
+    {
+      name: "the bot's own routine",
+      label: /^From Landlord bills/,
+      context: {
+        version: 1 as const,
+        records: [],
+        bot: {
+          projectId: ProjectId.make("bot-project"),
+          name: "Landlord bills",
+          relation: "background" as const,
+        },
+      },
+    },
+  ])("folds a message from $name into a one-line preview", async ({ label, context }) => {
     setup();
     const onOpenThread = vi.fn();
     await using screen = await renderTimeline(
-      [message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID })],
+      [
+        message(AGENT_MESSAGE, {
+          createdBy: "agent",
+          senderThreadId: SENDER_THREAD_ID,
+          ...(context ? { context } : {}),
+        }),
+      ],
       { onOpenThread },
     );
-    const row = screen.button(/^Agent/);
+    const row = screen.button(label);
     expect(row.textContent).toContain("Review finished");
     expect(row.getAttribute("aria-expanded")).toBe("false");
     expect(screen.text()).not.toContain("drops the index");
@@ -842,7 +864,7 @@ describe("MessagesTimeline agent messages", () => {
     await click(screen.button("Open thread"));
     expect(onOpenThread).toHaveBeenCalledWith(SENDER_THREAD_ID);
 
-    await click(screen.button(/^Agent/));
+    await click(screen.button(label));
     expect(screen.text()).not.toContain("drops the index");
   });
 

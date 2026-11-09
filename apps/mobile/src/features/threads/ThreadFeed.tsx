@@ -1447,15 +1447,18 @@ function useMarkdownStyles(): MarkdownStyleSets {
 function AgentMessageFoldHeader(props: {
   readonly environmentId: EnvironmentId;
   readonly senderThreadId?: ThreadId;
+  readonly label: string | undefined;
   readonly summary: string;
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly iconSubtleColor: ColorValue;
 }) {
   const senderShell = useQuietThreadShell(
-    props.senderThreadId ? scopeThreadRef(props.environmentId, props.senderThreadId) : null,
+    props.label === undefined && props.senderThreadId
+      ? scopeThreadRef(props.environmentId, props.senderThreadId)
+      : null,
   );
-  const label = senderShell?.title.trim() || "Agent";
+  const label = props.label ?? (senderShell?.title.trim() || "Agent");
   return (
     <Pressable
       accessibilityRole="button"
@@ -2092,7 +2095,12 @@ function renderFeedEntry(
     }
     if (isUser) {
       const enterAnimated = isFreshTimestamp(message.createdAt);
-      const foldRowId = presentation.attribution === "agent" ? `agent:${message.id}` : null;
+      // A routine's note is addressed to the bot, which retells it right below.
+      const backgroundBotName = presentation.bot?.background ? presentation.bot.name : undefined;
+      const foldRowId =
+        presentation.attribution === "agent" || backgroundBotName !== undefined
+          ? `agent:${message.id}`
+          : null;
       const foldExpanded = foldRowId !== null && (props.expandedWorkRows[foldRowId] ?? false);
       const bubbleBodyVisible = foldRowId === null || foldExpanded;
       const intentBadge = props.messageGrouping.continuesSteer
@@ -2159,7 +2167,7 @@ function renderFeedEntry(
               <Text className="font-t3-medium text-2xs text-foreground-muted">Said on a call</Text>
             </View>
           ) : null}
-          {presentation.bot !== undefined ? (
+          {presentation.bot !== undefined && foldRowId === null ? (
             <View className="mb-1 flex-row items-center gap-1.5 pr-1">
               {/* A look drawn from "From Heartbeat" would pass for some other bot. */}
               {presentation.bot.background ? null : (
@@ -2238,6 +2246,7 @@ function renderFeedEntry(
                 <AgentMessageFoldHeader
                   environmentId={props.environmentId}
                   senderThreadId={message.senderThreadId}
+                  label={backgroundBotName}
                   summary={
                     replaceComposerContextReferences(presentation.text, (ref) => ref.label)
                       .split(/\r?\n/)
