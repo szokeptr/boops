@@ -57,6 +57,7 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
 // Connections and members belong to the environment: these pages pick one, but no project.
 const SETTINGS_ENVIRONMENT_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/settings/connectors",
+  "/settings/vaults",
   "/settings/members",
 ]);
 

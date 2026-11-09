@@ -91,6 +91,12 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.connectorsRemove]: AuthSettingsWriteScope,
   [WS_METHODS.connectorsTest]: AuthSettingsWriteScope,
   [WS_METHODS.connectorsSetBotConnection]: AuthSettingsWriteScope,
+  [WS_METHODS.secretVaultsCreate]: AuthSettingsWriteScope,
+  [WS_METHODS.secretVaultsRename]: AuthSettingsWriteScope,
+  [WS_METHODS.secretVaultsRemove]: AuthSettingsWriteScope,
+  [WS_METHODS.secretVaultsSetBot]: AuthSettingsWriteScope,
+  [WS_METHODS.secretVaultsPutEntry]: AuthSettingsWriteScope,
+  [WS_METHODS.secretVaultsRemoveEntry]: AuthSettingsWriteScope,
   [WS_METHODS.connectorsAnswerRequest]: AuthSettingsWriteScope,
   // Probing sends a request to a URL the client names.
   [WS_METHODS.connectorsDetectAuth]: AuthSettingsWriteScope,

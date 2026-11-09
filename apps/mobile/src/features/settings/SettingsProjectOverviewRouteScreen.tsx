@@ -39,6 +39,7 @@ import {
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotConnectorsSection } from "../connectors/BotConnectorsSection";
+import { BotVaultsSection } from "../vaults/BotVaultsSection";
 import { BotSharingSection } from "../members/BotSharingSection";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
@@ -494,6 +495,20 @@ function ProjectOverviewContent(props: {
       {allMembers.map((member) => (
         <BotConnectorsSection
           key={`${member.environmentId}:${member.id}`}
+          bot={member}
+          environmentLabel={
+            allMembers.length > 1
+              ? props.environments.find(
+                  (environment) => environment.environmentId === member.environmentId,
+                )?.label
+              : null
+          }
+        />
+      ))}
+
+      {allMembers.map((member) => (
+        <BotVaultsSection
+          key={`vaults:${member.environmentId}:${member.id}`}
           bot={member}
           environmentLabel={
             allMembers.length > 1

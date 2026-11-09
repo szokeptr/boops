@@ -2021,6 +2021,7 @@ export const CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__boops__orchestrator_capabilities",
   "mcp__boops__list_scheduled_tasks",
   "mcp__boops__list_connectors",
+  "mcp__boops__list_secrets",
   "mcp__boops__boops_thread_list",
   "mcp__boops__boops_thread_wait",
   "mcp__boops__boops_worktree_status",

@@ -35,6 +35,7 @@ export type SettingsPath =
   | "/settings/access"
   | "/settings/members"
   | "/settings/connectors"
+  | "/settings/vaults"
   | "/settings/secrets"
   | "/settings/maintenance"
   | "/settings/labs"
@@ -107,6 +108,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/access": "Sharing & access",
   "/settings/members": "Members",
   "/settings/connectors": "Connectors",
+  "/settings/vaults": "Vaults",
   "/settings/secrets": "Secrets",
   "/settings/maintenance": "Maintenance",
   "/settings/labs": "Labs",
@@ -150,6 +152,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
       "/settings/access",
       "/settings/members",
       "/settings/connectors",
+      "/settings/vaults",
       ...(isSecretsFeatureEnabled ? (["/settings/secrets"] as const) : []),
     ],
   },
@@ -1175,6 +1178,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["remote mcp server url streamable http custom connector"],
   },
   {
+    id: "vaults",
+    title: "Vaults",
+    to: "/settings/vaults",
+    searchTerms: [
+      "vaults secrets tokens api keys passwords kept remembered bots home assistant replace remove",
+    ],
+  },
+  {
     id: "secret-providers",
     title: "Secret providers",
     to: "/settings/secrets",
@@ -1220,6 +1231,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/access": "connections",
   "/settings/members": null,
   "/settings/connectors": null,
+  "/settings/vaults": null,
   "/settings/secrets": null,
   "/settings/scheduled-tasks": null,
   "/settings/maintenance": null,

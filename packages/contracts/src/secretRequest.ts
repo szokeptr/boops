@@ -1,13 +1,21 @@
 import * as Schema from "effect/Schema";
 
-import { ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
+import { SecretVaultId, ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
 
 /** Server stores the value under a one-use SecretRef; the thread learns only status. */
 export const SecretRequestAnswerInput = Schema.Struct({
   threadId: ThreadId,
   turnItemId: TurnItemId,
   answer: Schema.Union([
-    Schema.Struct({ type: Schema.Literal("save"), secret: TrimmedNonEmptyString }),
+    Schema.Struct({
+      type: Schema.Literal("save"),
+      secret: TrimmedNonEmptyString,
+      /**
+       * Also keep it under the request's `keepAs` name. `vaultId: null` creates a vault for the
+       * bot when it has none.
+       */
+      keep: Schema.optional(Schema.Struct({ vaultId: Schema.NullOr(SecretVaultId) })),
+    }),
     Schema.Struct({ type: Schema.Literal("decline") }),
   ]),
 });

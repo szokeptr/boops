@@ -1,9 +1,13 @@
 import { pipe } from "effect/Function";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   SECRET_REQUEST_DEFAULT_PLACEHOLDER,
+  secretKeepVaultId,
+  secretKeepVaultLabel,
   secretRequestAnswerInput,
   secretRequestDisplay,
   secretRequestFailureMessage,
+  secretRequestKeepOptions,
   secretRequestPrivacyNote,
   type SecretRequestItem,
 } from "@t3tools/client-runtime/secret-request";
@@ -11,12 +15,20 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, OrchestrationV2ProjectedTurnItem } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  OrchestrationV2ProjectedTurnItem,
+  SecretVaultId,
+} from "@t3tools/contracts";
 import { useRef, useState } from "react";
-import { View, type ColorValue } from "react-native";
+import { Pressable, View, type ColorValue } from "react-native";
 
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
+import { Menu } from "../../components/ui/Menu";
+import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
+import { useProject, useThreadShell } from "../../state/entities";
+import { useSecretVaults } from "../../state/secretVaults";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../../components/ui/Button";
@@ -64,7 +76,19 @@ function PendingSecretRequestForm(props: {
   readonly item: SecretRequestItem;
   readonly iconColor: ColorValue;
 }) {
-  const { item } = props;
+  const { item, environmentId } = props;
+  const shell = useThreadShell(scopeThreadRef(environmentId, item.threadId));
+  const bot = useProject(shell === null ? null : scopeProjectRef(environmentId, shell.projectId));
+  const { vaults } = useSecretVaults(item.keepAs === undefined ? null : environmentId);
+  const keepOptions = secretRequestKeepOptions(item, vaults, bot?.id ?? null);
+  const botName = bot?.title ?? "this bot";
+  const [keep, setKeep] = useState(true);
+  const [chosenVault, setChosenVault] = useState<SecretVaultId | null>(null);
+  const keepVaultId =
+    keepOptions === null
+      ? null
+      : secretKeepVaultId(keepOptions, chosenVault ?? keepOptions.vaults[0]?.id ?? null);
+  const keeping = keepOptions !== null && keep;
   const answer = useAtomCommand(serverEnvironment.answerSecretRequest, {
     label: "answer secret request",
     // The failure cause holds the request; keep it out of the console.
@@ -78,14 +102,20 @@ function PendingSecretRequestForm(props: {
   const inFlight = useRef(false);
 
   const send = async (
-    reply: { readonly type: "save"; readonly secret: string } | { readonly type: "decline" },
+    reply:
+      | {
+          readonly type: "save";
+          readonly secret: string;
+          readonly keep?: { readonly vaultId: SecretVaultId | null } | undefined;
+        }
+      | { readonly type: "decline" },
   ) => {
     const input = secretRequestAnswerInput(item, reply);
     if (input === null || inFlight.current) return;
     inFlight.current = true;
     setSubmitting(true);
     setError(null);
-    const result = await answer({ environmentId: props.environmentId, input }).finally(() => {
+    const result = await answer({ environmentId, input }).finally(() => {
       inFlight.current = false;
       setSubmitting(false);
     });
@@ -98,6 +128,10 @@ function PendingSecretRequestForm(props: {
     }
   };
 
+  const save = () =>
+    void send({ type: "save", secret, keep: keeping ? { vaultId: keepVaultId } : undefined });
+  const keepVaultName = keepOptions?.vaults.find((vault) => vault.id === keepVaultId)?.name;
+
   return (
     <View className="mb-3 gap-3 rounded-[20px] border border-border bg-card-alt p-4">
       <View className="gap-1">
@@ -105,6 +139,11 @@ function PendingSecretRequestForm(props: {
         {item.reason.trim() ? (
           <Text className="font-sans text-sm leading-5 text-foreground-muted" selectable>
             {item.reason}
+          </Text>
+        ) : null}
+        {item.replace === true && keepOptions?.holder != null ? (
+          <Text className="font-sans text-sm leading-5 text-foreground-muted">
+            The kept value stopped working. Saving replaces it.
           </Text>
         ) : null}
       </View>
@@ -122,8 +161,53 @@ function PendingSecretRequestForm(props: {
         importantForAutofill="no"
         spellCheck={false}
         returnKeyType="done"
-        onSubmitEditing={() => void send({ type: "save", secret })}
+        onSubmitEditing={save}
       />
+      {keepOptions !== null ? (
+        <View className="gap-2">
+          <View className="flex-row items-center gap-3">
+            <Text className="flex-1 font-sans text-sm text-foreground">
+              Keep for {botName} as <Text className="font-mono text-sm">{keepOptions.name}</Text>
+            </Text>
+            <ThemedSwitch
+              accessibilityLabel={`Keep for ${botName} as ${keepOptions.name}`}
+              value={keep}
+              disabled={submitting}
+              onValueChange={setKeep}
+            />
+          </View>
+          {keep && keepOptions.holder === null && keepOptions.vaults.length > 1 ? (
+            <Menu
+              title="Keep in"
+              actions={keepOptions.vaults.map((vault) => ({
+                id: vault.id,
+                title: vault.name,
+                state: vault.id === keepVaultId ? ("on" as const) : ("off" as const),
+                attributes: { disabled: submitting },
+              }))}
+              onPressAction={({ nativeEvent }) =>
+                setChosenVault(nativeEvent.event as SecretVaultId)
+              }
+            >
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Vault: ${keepVaultName ?? ""}`}
+                disabled={submitting}
+                hitSlop={8}
+                className="flex-row items-center gap-1 self-start active:opacity-60"
+              >
+                <Text className="font-sans text-sm text-foreground-muted">In {keepVaultName}</Text>
+                <SymbolView
+                  name="chevron.down"
+                  size={11}
+                  tintColor={props.iconColor}
+                  type="monochrome"
+                />
+              </Pressable>
+            </Menu>
+          ) : null}
+        </View>
+      ) : null}
       {error !== null ? (
         <Text
           accessibilityRole="alert"
@@ -138,7 +222,7 @@ function PendingSecretRequestForm(props: {
         tone="primary"
         fullWidth
         disabled={submitting || secret.trim().length === 0}
-        onPress={() => void send({ type: "save", secret })}
+        onPress={save}
       />
       <View className="flex-row items-center justify-between gap-2">
         <View className="flex-1 flex-row items-center gap-1.5">
@@ -149,7 +233,10 @@ function PendingSecretRequestForm(props: {
             type="monochrome"
           />
           <Text className="flex-1 font-sans text-xs text-foreground-muted">
-            {secretRequestPrivacyNote(item)}
+            {secretRequestPrivacyNote(
+              item,
+              keeping ? secretKeepVaultLabel(keepOptions, keepVaultId, botName) : undefined,
+            )}
           </Text>
         </View>
         <Button

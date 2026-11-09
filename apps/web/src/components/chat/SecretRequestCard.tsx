@@ -1,9 +1,13 @@
 import { pipe } from "effect/Function";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   SECRET_REQUEST_DEFAULT_PLACEHOLDER,
+  secretKeepVaultId,
+  secretKeepVaultLabel,
   secretRequestAnswerInput,
   secretRequestDisplay,
   secretRequestFailureMessage,
+  secretRequestKeepOptions,
   secretRequestPrivacyNote,
   type SecretRequestItem,
 } from "@t3tools/client-runtime/secret-request";
@@ -11,14 +15,22 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, OrchestrationV2ProjectedTurnItem } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  OrchestrationV2ProjectedTurnItem,
+  SecretVaultId,
+} from "@t3tools/contracts";
 import { CheckIcon, LockIcon, MinusIcon, ShieldCheckIcon } from "lucide-react";
 import { useId, useRef, useState, type FormEvent } from "react";
 
+import { useProject, useThreadShell } from "../../state/entities";
+import { useSecretVaults } from "../../state/secretVaults";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { WorkLogRow } from "./WorkLog";
 
 export function SecretRequestCard(props: {
@@ -54,10 +66,22 @@ function PendingSecretRequestForm(props: {
   readonly environmentId: EnvironmentId;
   readonly item: SecretRequestItem;
 }) {
-  const { item } = props;
+  const { item, environmentId } = props;
   const inputId = useId();
   const errorId = useId();
   const privacyId = useId();
+  const shell = useThreadShell(scopeThreadRef(environmentId, item.threadId));
+  const bot = useProject(shell === null ? null : scopeProjectRef(environmentId, shell.projectId));
+  const { vaults } = useSecretVaults(item.keepAs === undefined ? null : environmentId);
+  const keepOptions = secretRequestKeepOptions(item, vaults, bot?.id ?? null);
+  const botName = bot?.title ?? "this bot";
+  const [keep, setKeep] = useState(true);
+  const [chosenVault, setChosenVault] = useState<SecretVaultId | null>(null);
+  const keepVaultId =
+    keepOptions === null
+      ? null
+      : secretKeepVaultId(keepOptions, chosenVault ?? keepOptions.vaults[0]?.id ?? null);
+  const keeping = keepOptions !== null && keep;
   const answer = useAtomCommand(serverEnvironment.answerSecretRequest, {
     label: "answer secret request",
     // The failure cause holds the request; keep it out of the console.
@@ -71,7 +95,13 @@ function PendingSecretRequestForm(props: {
   const inFlight = useRef(false);
 
   const send = async (
-    reply: { readonly type: "save"; readonly secret: string } | { readonly type: "decline" },
+    reply:
+      | {
+          readonly type: "save";
+          readonly secret: string;
+          readonly keep?: { readonly vaultId: SecretVaultId | null } | undefined;
+        }
+      | { readonly type: "decline" },
   ) => {
     const input = secretRequestAnswerInput(item, reply);
     if (input === null || inFlight.current) return;
@@ -93,7 +123,7 @@ function PendingSecretRequestForm(props: {
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void send({ type: "save", secret });
+    void send({ type: "save", secret, keep: keeping ? { vaultId: keepVaultId } : undefined });
   };
 
   return (
@@ -118,6 +148,11 @@ function PendingSecretRequestForm(props: {
         </label>
         {item.reason.trim() ? (
           <p className="text-sm wrap-anywhere text-muted-foreground">{item.reason}</p>
+        ) : null}
+        {item.replace === true && keepOptions?.holder != null ? (
+          <p className="text-sm text-muted-foreground">
+            The kept value stopped working. Saving replaces it.
+          </p>
         ) : null}
       </div>
       <div className="flex min-w-0 items-center gap-2">
@@ -146,6 +181,43 @@ function PendingSecretRequestForm(props: {
           Save securely
         </Button>
       </div>
+      {keepOptions !== null ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
+          <label className="flex min-w-0 items-center gap-2">
+            <Checkbox
+              checked={keep}
+              disabled={submitting}
+              onCheckedChange={(checked) => setKeep(checked === true)}
+            />
+            <span className="min-w-0">
+              Keep for {botName} as{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">{keepOptions.name}</code>
+            </span>
+          </label>
+          {keep && keepOptions.holder === null && keepOptions.vaults.length > 1 ? (
+            <Select
+              value={keepVaultId ?? ""}
+              disabled={submitting}
+              onValueChange={(value) => {
+                if (value !== null) setChosenVault(value as SecretVaultId);
+              }}
+            >
+              <SelectTrigger aria-label="Vault" size="xs">
+                <SelectValue>
+                  {keepOptions.vaults.find((vault) => vault.id === keepVaultId)?.name}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                {keepOptions.vaults.map((vault) => (
+                  <SelectItem key={vault.id} value={vault.id}>
+                    {vault.name}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          ) : null}
+        </div>
+      ) : null}
       {error !== null ? (
         <p id={errorId} role="alert" className="text-xs text-destructive">
           {error}
@@ -157,7 +229,10 @@ function PendingSecretRequestForm(props: {
           className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
         >
           <ShieldCheckIcon className="size-3.5 shrink-0" aria-hidden />
-          {secretRequestPrivacyNote(item)}
+          {secretRequestPrivacyNote(
+            item,
+            keeping ? secretKeepVaultLabel(keepOptions, keepVaultId, botName) : undefined,
+          )}
         </p>
         <Button
           type="button"

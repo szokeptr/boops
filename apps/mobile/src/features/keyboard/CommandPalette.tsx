@@ -350,6 +350,13 @@ export function CommandPalette(props: {
         run: () => openSettings(navigation, "SettingsConnectors"),
       },
       {
+        key: "vaults",
+        kind: "action",
+        title: "Vaults",
+        searchTerms: ["secrets", "tokens", "api keys", "passwords"],
+        run: () => openSettings(navigation, "SettingsVaults"),
+      },
+      {
         key: "usage",
         kind: "action",
         title: "Usage",

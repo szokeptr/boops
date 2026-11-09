@@ -34,6 +34,7 @@ import { projectEnvironment } from "../../state/projects";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { openDeleteBotDialog, useBotArchive } from "../bots/BotLifecycle";
 import { BotConnectorsSection } from "../connectors/BotConnectorsSection";
+import { BotVaultsSection } from "../vaults/BotVaultsSection";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -535,6 +536,13 @@ function ProjectDetail({
         </SettingsSection>
         {group.memberProjects.map((member) => (
           <BotConnectorsSection
+            key={`${member.environmentId}:${member.id}`}
+            bot={member}
+            environmentLabel={group.memberProjects.length > 1 ? member.environmentLabel : null}
+          />
+        ))}
+        {group.memberProjects.map((member) => (
+          <BotVaultsSection
             key={`${member.environmentId}:${member.id}`}
             bot={member}
             environmentLabel={group.memberProjects.length > 1 ? member.environmentLabel : null}

@@ -396,6 +396,16 @@ import {
 } from "./scheduledTask.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import {
+  SecretVaultError,
+  SecretVaultsCreateInput,
+  SecretVaultsPutEntryInput,
+  SecretVaultsRemoveEntryInput,
+  SecretVaultsRemoveInput,
+  SecretVaultsRenameInput,
+  SecretVaultsSetBotInput,
+  SecretVaultsSnapshot,
+} from "./secretVault.ts";
+import {
   ProjectCloneActionInput,
   ProjectCloneActionResult,
   ProjectCloneListEvent,
@@ -576,6 +586,13 @@ export const WS_METHODS = {
   connectorsTest: "connectors.test",
   connectorsSetBotConnection: "connectors.setBotConnection",
   connectorsAnswerRequest: "connectors.answerRequest",
+  secretVaultsSubscribe: "secretVaults.subscribe",
+  secretVaultsCreate: "secretVaults.create",
+  secretVaultsRename: "secretVaults.rename",
+  secretVaultsRemove: "secretVaults.remove",
+  secretVaultsSetBot: "secretVaults.setBot",
+  secretVaultsPutEntry: "secretVaults.putEntry",
+  secretVaultsRemoveEntry: "secretVaults.removeEntry",
   membersSubscribe: "members.subscribe",
   membersInvite: "members.invite",
   membersUpdate: "members.update",
@@ -2166,7 +2183,40 @@ const WsGuestShareCreateRpc = Rpc.make(WS_METHODS.guestShareCreate, {
 
 const WsSecretsAnswerRequestRpc = Rpc.make(WS_METHODS.secretsAnswerRequest, {
   payload: SecretRequestAnswerInput,
-  error: Schema.Union([SecretRequestError, EnvironmentAuthorizationError]),
+  error: Schema.Union([SecretRequestError, SecretVaultError, EnvironmentAuthorizationError]),
+});
+
+const SecretVaultRpcError = Schema.Union([SecretVaultError, EnvironmentAuthorizationError]);
+/** The vaults, then the list again after every change. Never carries values. */
+const WsSecretVaultsSubscribeRpc = Rpc.make(WS_METHODS.secretVaultsSubscribe, {
+  payload: Schema.Struct({}),
+  success: SecretVaultsSnapshot,
+  stream: true,
+  error: SecretVaultRpcError,
+});
+const WsSecretVaultsCreateRpc = Rpc.make(WS_METHODS.secretVaultsCreate, {
+  payload: SecretVaultsCreateInput,
+  error: SecretVaultRpcError,
+});
+const WsSecretVaultsRenameRpc = Rpc.make(WS_METHODS.secretVaultsRename, {
+  payload: SecretVaultsRenameInput,
+  error: SecretVaultRpcError,
+});
+const WsSecretVaultsRemoveRpc = Rpc.make(WS_METHODS.secretVaultsRemove, {
+  payload: SecretVaultsRemoveInput,
+  error: SecretVaultRpcError,
+});
+const WsSecretVaultsSetBotRpc = Rpc.make(WS_METHODS.secretVaultsSetBot, {
+  payload: SecretVaultsSetBotInput,
+  error: SecretVaultRpcError,
+});
+const WsSecretVaultsPutEntryRpc = Rpc.make(WS_METHODS.secretVaultsPutEntry, {
+  payload: SecretVaultsPutEntryInput,
+  error: SecretVaultRpcError,
+});
+const WsSecretVaultsRemoveEntryRpc = Rpc.make(WS_METHODS.secretVaultsRemoveEntry, {
+  payload: SecretVaultsRemoveEntryInput,
+  error: SecretVaultRpcError,
 });
 
 const WsScheduledTasksListWebhookDeliveriesRpc = Rpc.make(
@@ -2253,6 +2303,13 @@ export const WsRpcGroup = RpcGroup.make(
   WsConnectorsTestRpc,
   WsConnectorsSetBotConnectionRpc,
   WsConnectorsAnswerRequestRpc,
+  WsSecretVaultsSubscribeRpc,
+  WsSecretVaultsCreateRpc,
+  WsSecretVaultsRenameRpc,
+  WsSecretVaultsRemoveRpc,
+  WsSecretVaultsSetBotRpc,
+  WsSecretVaultsPutEntryRpc,
+  WsSecretVaultsRemoveEntryRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerSearchAcpRegistryRpc,
   WsServerPrepareAcpRegistryAgentRpc,

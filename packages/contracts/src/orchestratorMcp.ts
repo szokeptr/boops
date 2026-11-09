@@ -27,6 +27,7 @@ import {
 } from "./scheduledTask.ts";
 import { ProviderInteractionMode, ProviderRequestKind, RuntimeMode } from "./providerPolicy.ts";
 import { PullRequestState } from "./pullRequest.ts";
+import { SecretVaultEntryName } from "./secretVault.ts";
 import {
   ThreadLinkedPullRequest,
   ThreadPullRequestKey,
@@ -743,6 +744,13 @@ export const OrchestratorMcpRequestSecretInput = Schema.Struct({
   delivery: Schema.optional(Schema.Literals(["secretRef", "file"])).annotate({
     description: "secretRef (default) for a Boops tool; file for a command.",
   }),
+  name: Schema.optional(SecretVaultEntryName).annotate({
+    description:
+      "Vault name for a secret you need again, like 'home-assistant'. If kept, it returns at once with no card; if not, the user can keep it.",
+  }),
+  replace: Schema.optional(Schema.Boolean).annotate({
+    description: "With `name`: the kept value stopped working; ask for a new one.",
+  }),
   value: Schema.optional(PastedSecretValue).annotate({
     description: "Pasted in this thread; no card.",
   }),
@@ -762,12 +770,18 @@ export const OrchestratorMcpRequestSecretResult = Schema.Union([
     secretRef: SecretRef.annotate({
       description: "One-use. Pass to a tool that accepts a secretRef. You never see the value.",
     }),
+    kept: Schema.optional(Schema.Boolean).annotate({
+      description: "Kept under `name`; ask with it next time.",
+    }),
   }),
   Schema.Struct({
     status: Schema.Literal("saved").annotate({ description: "file holds the value." }),
     file: Schema.String.annotate({
       description:
         "Owner-only file with the value. Read it inside commands and never print it. Deleted after 24 hours.",
+    }),
+    kept: Schema.optional(Schema.Boolean).annotate({
+      description: "Kept under `name`; ask with it next time.",
     }),
   }),
   Schema.Struct({

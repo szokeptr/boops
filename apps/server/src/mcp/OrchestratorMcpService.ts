@@ -25,6 +25,7 @@ import {
   type OrchestratorMcpDeleteScheduledTaskInput,
   type OrchestratorMcpRequestSecretInput,
   type OrchestratorMcpRequestSecretResult,
+  type OrchestratorMcpListSecretsResult,
   type OrchestratorMcpDeleteScheduledTaskResult,
   type OrchestratorMcpListScheduledTasksResult,
   type OrchestratorMcpScheduledTask,
@@ -125,6 +126,7 @@ import {
 } from "./delegatedTaskModes.ts";
 import { isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import * as SecretVaults from "../secrets/SecretVaults.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 
@@ -195,6 +197,9 @@ export interface OrchestratorMcpServiceShape {
     scope: McpInvocationScope,
     input: OrchestratorMcpRequestSecretInput,
   ) => Effect.Effect<OrchestratorMcpRequestSecretResult, OrchestratorMcpFailure>;
+  readonly listSecrets: (
+    scope: McpInvocationScope,
+  ) => Effect.Effect<OrchestratorMcpListSecretsResult, OrchestratorMcpFailure>;
   readonly listThreads: (
     scope: McpInvocationScope,
     input: OrchestratorMcpThreadListInput,
@@ -1042,6 +1047,7 @@ const make = Effect.gen(function* () {
     );
 
   const secretRequests = yield* SecretRequests.SecretRequests;
+  const secretVaults = yield* SecretVaults.SecretVaults;
 
   const requireCapability = (scope: McpInvocationScope) =>
     scope.capabilities.has("orchestration")
@@ -2085,8 +2091,16 @@ const make = Effect.gen(function* () {
           "Asking for a secret requires an active run owned by this MCP provider session.",
         );
       }
+      // Vaults are the owner's; a member's conversation neither reads nor offers to keep.
+      const keepAs = parent.thread.linkOrigin?.memberId === undefined ? input.name : undefined;
       // A secret the user already pasted needs no card: it goes straight to a file.
       if (input.value !== undefined) {
+        if (input.name !== undefined) {
+          return yield* failure(
+            "invalid_request",
+            "Only the user can keep a secret. Leave out `value` so the card can offer to keep it.",
+          );
+        }
         if (input.delivery === "secretRef") {
           return yield* failure(
             "invalid_request",
@@ -2105,9 +2119,29 @@ const make = Effect.gen(function* () {
         yield* Metrics.increment(Metrics.secretRequestsTotal, { status: "saved_pasted" });
         return { status: "saved" as const, file };
       }
+      const key = yield* requestKey(input.clientRequestId);
+      if (keepAs !== undefined && input.replace !== true) {
+        const kept = yield* secretVaults
+          .read({ projectId: parent.thread.projectId, name: keepAs })
+          .pipe(Effect.mapError((error) => failure("orchestration_error", error.message)));
+        if (Option.isSome(kept)) {
+          const delivered = yield* secretRequests
+            .deliver({
+              threadId,
+              projectId: parent.thread.projectId,
+              requestNamespace: scope.requestNamespace,
+              requestKey: key,
+              delivery: input.delivery ?? "secretRef",
+              value: kept.value,
+            })
+            .pipe(Effect.mapError((error) => failure("orchestration_error", error.message)));
+          yield* Effect.annotateCurrentSpan({ "secret_request.status": "kept" });
+          yield* Metrics.increment(Metrics.secretRequestsTotal, { status: "kept" });
+          return { status: "saved" as const, kept: true, ...delivered };
+        }
+      }
       const runId = run.id;
       const nodeId = run.rootNodeId;
-      const key = yield* requestKey(input.clientRequestId);
       const turnItemId = TurnItemId.make(
         `turn-item:secret-request:${stablePart(threadId)}:${stablePart(key)}`,
       );
@@ -2128,6 +2162,8 @@ const make = Effect.gen(function* () {
             reason: input.reason,
             ...(input.placeholder === undefined ? {} : { placeholder: input.placeholder }),
             ...(input.delivery === "file" ? { delivery: "file" as const } : {}),
+            ...(keepAs === undefined ? {} : { keepAs }),
+            ...(keepAs !== undefined && input.replace === true ? { replace: true } : {}),
             secretStatus,
           })
           .pipe(
@@ -2206,11 +2242,30 @@ const make = Effect.gen(function* () {
       yield* Effect.annotateCurrentSpan({ "secret_request.status": status });
       yield* Metrics.increment(Metrics.secretRequestsTotal, { status });
       if (status !== "saved") return { status, note: SECRET_REQUEST_UNSAVED_NOTE[status] };
+      const kept =
+        keepAs !== undefined &&
+        (yield* threadManagement
+          .getThreadRecords(threadId, ["turnItems"], {
+            turnItemTypes: ["secret_request"],
+            messageRoles: [],
+          })
+          .pipe(
+            Effect.map((records) =>
+              records.turnItems.some(
+                (item) =>
+                  item.id === turnItemId &&
+                  item.type === "secret_request" &&
+                  item.keptIn !== undefined,
+              ),
+            ),
+            Effect.orElseSucceed(() => false),
+          ));
+      const keptField = kept ? { kept: true } : {};
       if (input.delivery === "file") {
         const file = yield* secretRequests
           .saveToFile({ threadId, turnItemId })
           .pipe(Effect.mapError((error) => failure("orchestration_error", error.message)));
-        return { status, file };
+        return { status, file, ...keptField };
       }
       const secretRef = yield* secretRequests.savedRef({ threadId: threadId, turnItemId });
       if (Option.isNone(secretRef)) {
@@ -2219,7 +2274,22 @@ const make = Effect.gen(function* () {
           "The user saved the secret, but it could not be read. Ask again with a new clientRequestId.",
         );
       }
-      return { status, secretRef: secretRef.value };
+      return { status, secretRef: secretRef.value, ...keptField };
+    }),
+
+    listSecrets: Effect.fn("OrchestratorMcpService.listSecrets")(function* (scope) {
+      const { parent } = yield* loadThreadCaller(scope, "list_secrets");
+      if (parent.thread.linkOrigin?.memberId !== undefined) return { secrets: [] };
+      const secrets = yield* secretVaults
+        .forBot(parent.thread.projectId)
+        .pipe(Effect.mapError((error) => failure("orchestration_error", error.message)));
+      return {
+        secrets: secrets.map((secret) => ({
+          name: secret.name,
+          label: secret.label,
+          vault: secret.vault,
+        })),
+      };
     }),
 
     capabilities: Effect.fn("OrchestratorMcpService.capabilities")(function* (scope, input = {}) {
@@ -3256,6 +3326,7 @@ export const layer: Layer.Layer<
   | ScheduledTaskService.ScheduledTaskService
   | ProjectService.ProjectService
   | SecretRequests.SecretRequests
+  | SecretVaults.SecretVaults
   | ServerSettings.ServerSettingsService
   | RemoteDelegation.RemoteDelegation
 > = Layer.effect(OrchestratorMcpService, make);

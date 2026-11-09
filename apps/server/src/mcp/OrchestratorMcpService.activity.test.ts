@@ -11,12 +11,14 @@ import {
   SECRET_REQUEST_UNSAVED_NOTE,
   ThreadId,
   TurnItemId,
+  SecretVaultEntryName,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
+import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "vite-plus/test";
@@ -27,6 +29,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import * as SecretVaults from "../secrets/SecretVaults.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
@@ -177,7 +180,10 @@ it("readThread preserves caller access errors and prefers activity-run status ov
           getProviders: Effect.succeed([]),
         } satisfies Partial<ProviderRegistry.ProviderRegistry["Service"]>),
         Layer.mock(ProjectService.ProjectService)({}),
-        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.merge(
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(SecretVaults.SecretVaults)({}),
+        ),
         Layer.mock(RemoteDelegation.RemoteDelegation)({}),
         Layer.mock(ScheduledTaskService.ScheduledTaskService)({
           list: () => Effect.succeed({ tasks: [] }),
@@ -263,7 +269,10 @@ it("readThread pages cut-off text without splitting an emoji across pages", asyn
           getProviders: Effect.succeed([]),
         } satisfies Partial<ProviderRegistry.ProviderRegistry["Service"]>),
         Layer.mock(ProjectService.ProjectService)({}),
-        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.merge(
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(SecretVaults.SecretVaults)({}),
+        ),
         Layer.mock(RemoteDelegation.RemoteDelegation)({}),
         Layer.mock(ScheduledTaskService.ScheduledTaskService)({
           list: () => Effect.succeed({ tasks: [] }),
@@ -396,7 +405,10 @@ it("taskStatus returns task.providerInstanceId rather than the driver kind", asy
           getProviders: Effect.succeed([]),
         } satisfies Partial<ProviderRegistry.ProviderRegistry["Service"]>),
         Layer.mock(ProjectService.ProjectService)({}),
-        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.merge(
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(SecretVaults.SecretVaults)({}),
+        ),
         Layer.mock(RemoteDelegation.RemoteDelegation)({}),
         Layer.mock(ScheduledTaskService.ScheduledTaskService)({
           list: () => Effect.succeed({ tasks: [] }),
@@ -524,7 +536,10 @@ it("readThread and sendToThread reach threads in other projects", async () => {
           getProviders: Effect.succeed([]),
         } satisfies Partial<ProviderRegistry.ProviderRegistry["Service"]>),
         Layer.mock(ProjectService.ProjectService)({}),
-        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.merge(
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(SecretVaults.SecretVaults)({}),
+        ),
         Layer.mock(RemoteDelegation.RemoteDelegation)({}),
         Layer.mock(ScheduledTaskService.ScheduledTaskService)({
           list: () =>
@@ -706,7 +721,20 @@ it("requestSecret saves a pasted value to a file without opening a card", async 
           getProviders: Effect.succeed([]),
         } satisfies Partial<ProviderRegistry.ProviderRegistry["Service"]>),
         Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(SecretVaults.SecretVaults)({
+          read: ({ name }) =>
+            Effect.succeed(name === "home-assistant" ? Option.some("ha_token") : Option.none()),
+        }),
         Layer.mock(SecretRequests.SecretRequests)({
+          deliver: (input) =>
+            Effect.sync(() => {
+              saved.push({
+                requestNamespace: input.requestNamespace,
+                requestKey: input.requestKey,
+                value: input.value,
+              });
+              return { file };
+            }),
           savePasted: (input) =>
             Effect.sync(() => {
               saved.push({
@@ -768,6 +796,29 @@ it("requestSecret saves a pasted value to a file without opening a card", async 
     expect(asRef.message).not.toContain("482916");
     expect(saved).toHaveLength(1);
     expect(dispatched).toEqual([]);
+
+    // Only the user keeps a secret, so a pasted value can't be kept under a name.
+    const pastedWithName = yield* service
+      .requestSecret(makeScope(), {
+        label: "Pixel PIN",
+        reason: "Unlocks the test phone.",
+        value: "482916",
+        name: SecretVaultEntryName.make("pixel-pin"),
+      })
+      .pipe(Effect.flip);
+    expect(pastedWithName.code).toBe("invalid_request");
+
+    // A secret the user kept comes back at once, with no card.
+    const kept = yield* service.requestSecret(makeScope(), {
+      label: "Home Assistant token",
+      reason: "Sets the thermostat.",
+      name: SecretVaultEntryName.make("home-assistant"),
+      delivery: "file",
+      clientRequestId: "ha-1",
+    });
+    expect(kept).toEqual({ status: "saved", kept: true, file });
+    expect(saved.at(-1)?.value).toBe("ha_token");
+    expect(dispatched).toEqual([]);
   }).pipe(Effect.provide(layer), Effect.runPromise);
 });
 
@@ -813,7 +864,10 @@ it("requestSecret returns the unsaved note for a declined, cancelled or timed-ou
             getProviders: Effect.succeed([]),
           } satisfies Partial<ProviderRegistry.ProviderRegistry["Service"]>),
           Layer.mock(ProjectService.ProjectService)({}),
-          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.merge(
+            Layer.mock(SecretRequests.SecretRequests)({}),
+            Layer.mock(SecretVaults.SecretVaults)({}),
+          ),
           Layer.mock(RemoteDelegation.RemoteDelegation)({}),
           Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
           Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),

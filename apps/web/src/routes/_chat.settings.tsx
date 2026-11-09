@@ -154,6 +154,7 @@ function SettingsRouteLayout() {
         pathname === "/settings/providers" ||
         pathname === "/settings/secrets" ||
         pathname === "/settings/connectors" ||
+        pathname === "/settings/vaults" ||
         pathname === "/settings/members"
       }
       onChange={(next) => {

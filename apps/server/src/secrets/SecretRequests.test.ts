@@ -25,6 +25,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "./SecretRequests.ts";
+import * as SecretVaults from "./SecretVaults.ts";
 
 const threadId = ThreadId.make("thread-orchestrator");
 const turnItemId = TurnItemId.make("turn-item:secret-request:1");
@@ -37,6 +38,7 @@ const withService = <A, E>(
     readonly service: SecretRequests.SecretRequests["Service"];
     readonly stored: Map<string, Uint8Array>;
     readonly dispatched: Array<OrchestrationV2ServerCommand>;
+    readonly kept: Array<Parameters<SecretVaults.SecretVaults["Service"]["keep"]>[0]>;
   }) => Effect.Effect<A, E>,
   options: {
     readonly threadId?: ThreadId;
@@ -46,11 +48,13 @@ const withService = <A, E>(
     readonly removeFails?: boolean;
     readonly closedFirst?: boolean;
     readonly failedRecords?: number;
+    readonly keepAs?: string;
   } = {},
 ) =>
   Effect.gen(function* () {
     const stored = new Map<string, Uint8Array>();
     const dispatched: Array<OrchestrationV2ServerCommand> = [];
+    const kept: Array<Parameters<SecretVaults.SecretVaults["Service"]["keep"]>[0]> = [];
     let secretStatus = "pending";
     let failedRecords = options.failedRecords ?? 0;
     const requestThreadId = options.threadId ?? threadId;
@@ -112,6 +116,7 @@ const withService = <A, E>(
                 label: "GitHub token",
                 reason: "Used as GH_TOKEN.",
                 ...(options.delivery === undefined ? {} : { delivery: options.delivery }),
+                ...(options.keepAs === undefined ? {} : { keepAs: options.keepAs }),
                 secretStatus,
               },
             ],
@@ -132,10 +137,13 @@ const withService = <A, E>(
           });
         },
       }),
+      Layer.mock(SecretVaults.SecretVaults)({
+        keep: (input) => Effect.sync(() => (kept.push(input), "Home")),
+      }),
     );
     return yield* Effect.gen(function* () {
       const service = yield* SecretRequests.SecretRequests;
-      return yield* body({ service, stored, dispatched });
+      return yield* body({ service, stored, dispatched, kept });
     }).pipe(Effect.provide(SecretRequests.layer.pipe(Layer.provide(layerDependencies))));
   });
 
@@ -163,6 +171,54 @@ it.effect("a saved answer becomes a one-use ref, and the thread only learns it w
       assert.equal(yield* service.consume({ ref, projectId }), "ghp_secret");
       assert.isFalse(valuesOf(stored).some((value) => value.includes("ghp_secret")));
       const again = yield* service.consume({ ref, projectId }).pipe(Effect.flip);
+      assert.include(again.message, "already used");
+    }),
+  ),
+);
+
+it.effect("a save the user chose to keep goes to the bot's vault under the asked name", () =>
+  withService(
+    ({ service, dispatched, kept }) =>
+      Effect.gen(function* () {
+        yield* service.answer({
+          threadId,
+          turnItemId,
+          answer: { type: "save", secret: "ha_token", keep: { vaultId: null } },
+        });
+        assert.deepEqual(kept, [
+          {
+            projectId,
+            vaultId: null,
+            name: "home-assistant",
+            label: "GitHub token",
+            value: "ha_token",
+          },
+        ]);
+        assert.include(dispatched[0] as object, { secretStatus: "saved", keptIn: "Home" });
+        // The one-use ref still goes to the agent that asked.
+        assert.isTrue(Option.isSome(yield* service.savedRef({ threadId, turnItemId })));
+      }),
+    { keepAs: "home-assistant" },
+  ),
+);
+
+it.effect("a kept value reaches the agent as a fresh one-use ref", () =>
+  withService(({ service }) =>
+    Effect.gen(function* () {
+      const delivered = yield* service.deliver({
+        threadId,
+        projectId,
+        requestNamespace: "provider-session:1",
+        requestKey: "key-1",
+        delivery: "secretRef",
+        value: "ha_token",
+      });
+      assert.isTrue("secretRef" in delivered);
+      if (!("secretRef" in delivered)) return;
+      assert.equal(yield* service.consume({ ref: delivered.secretRef, projectId }), "ha_token");
+      const again = yield* service
+        .consume({ ref: delivered.secretRef, projectId })
+        .pipe(Effect.flip);
       assert.include(again.message, "already used");
     }),
   ),

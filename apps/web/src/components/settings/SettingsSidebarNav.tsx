@@ -10,6 +10,7 @@ import {
 import {
   ArchiveIcon,
   PlugIcon,
+  VaultIcon,
   FlaskConicalIcon,
   BotIcon,
   createLucideIcon,
@@ -107,6 +108,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/access": ShieldCheckIcon,
   "/settings/members": UsersIcon,
   "/settings/connectors": PlugIcon,
+  "/settings/vaults": VaultIcon,
   "/settings/secrets": KeyRoundIcon,
   "/settings/maintenance": WrenchIcon,
   "/settings/labs": FlaskConicalIcon,

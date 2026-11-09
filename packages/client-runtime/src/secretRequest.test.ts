@@ -1,8 +1,17 @@
-import { SecretRequestError } from "@t3tools/contracts";
+import {
+  ProjectId,
+  SecretRequestError,
+  type SecretVault,
+  SecretVaultEntryId,
+  SecretVaultEntryName,
+  SecretVaultId,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  secretKeepVaultId,
   secretRequestDisplay,
+  secretRequestKeepOptions,
   secretRequestFailureMessage,
   secretRequestPrivacyNote,
 } from "./secretRequest.ts";
@@ -35,5 +44,48 @@ describe("secretRequestFailureMessage", () => {
       "Could not answer the request. Try again.",
     );
     expect(secretRequestFailureMessage(undefined)).toBe("Could not answer the request. Try again.");
+  });
+});
+
+describe("secretRequestKeepOptions", () => {
+  const bot = ProjectId.make("project:assistant");
+  const vault = (id: string, projectIds: ReadonlyArray<ProjectId>, names: ReadonlyArray<string>) =>
+    ({
+      id: SecretVaultId.make(id),
+      name: id,
+      projectIds,
+      createdAt: "2026-11-09T00:00:00.000Z",
+      entries: names.map((name) => ({
+        id: SecretVaultEntryId.make(`${id}:${name}`),
+        name: SecretVaultEntryName.make(name),
+        label: name,
+        createdAt: "2026-11-09T00:00:00.000Z",
+        updatedAt: "2026-11-09T00:00:00.000Z",
+        lastUsedAt: null,
+      })),
+    }) satisfies SecretVault;
+  const item = { keepAs: SecretVaultEntryName.make("home-assistant") };
+
+  it("offers only the bot's own vaults, and replaces a kept value where it lives", () => {
+    const options = secretRequestKeepOptions(
+      item,
+      [
+        vault("private", [bot], []),
+        vault("household", [bot], ["home-assistant"]),
+        vault("other-bot", [ProjectId.make("project:coder")], ["home-assistant"]),
+      ],
+      bot,
+    );
+    expect(options?.vaults.map((candidate) => candidate.name)).toEqual(["private", "household"]);
+    expect(options?.holder).toBe("household");
+    expect(secretKeepVaultId(options!, SecretVaultId.make("private"))).toBe("household");
+  });
+
+  it("needs a choice only between several vaults; none means a new one", () => {
+    const one = secretRequestKeepOptions(item, [vault("private", [bot], [])], bot)!;
+    expect(secretKeepVaultId(one, null)).toBe("private");
+    const none = secretRequestKeepOptions(item, [], bot)!;
+    expect(secretKeepVaultId(none, null)).toBeNull();
+    expect(secretRequestKeepOptions({}, [], bot)).toBeNull();
   });
 });

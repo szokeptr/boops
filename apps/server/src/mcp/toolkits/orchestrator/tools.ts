@@ -19,6 +19,7 @@ import {
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpRequestSecretInput,
   OrchestratorMcpRequestSecretResult,
+  OrchestratorMcpListSecretsResult,
   OrchestratorMcpRequestUserActionInput,
   OrchestratorMcpRequestUserActionResult,
   OrchestratorMcpFailure,
@@ -204,7 +205,7 @@ const DeleteScheduledTaskTool = Tool.make("delete_scheduled_task", {
 
 const RequestSecretTool = Tool.make("request_secret", {
   description:
-    'Ask for a secret in a private card and wait; open it, don\'t offer it. Returns a one-use `secretRef`, or with `delivery: "file"` a file to read only in its command, e.g. `adb pair <ip:port> "$(cat <file>)"`. Asked how to give one: call now. Pasted secret for child or script: `value`. Not one from an old thread.',
+    'Ask for a secret in a private card and wait; open it, don\'t offer it. Returns a one-use `secretRef`, or with `delivery: "file"` a file to read only in its command, e.g. `adb pair <ip:port> "$(cat <file>)"`. Asked how to give one: call now. Pasted secret for child or script: `value`. Not one from an old thread. A secret you\'ll need again, such as an API token: pass `name` (list_secrets shows kept ones) and call this each time you need it.',
   parameters: OrchestratorMcpRequestSecretInput,
   success: OrchestratorMcpRequestSecretResult,
   failure: OrchestratorMcpFailure,
@@ -227,6 +228,19 @@ const RequestUserActionTool = Tool.make("request_user_action", {
 })
   .annotate(Tool.Title, "Ask the user to do something")
   .annotate(Tool.Destructive, false);
+
+const ListSecretsTool = Tool.make("list_secrets", {
+  description:
+    "List the secrets the user kept for you, by name. Get one with request_secret and that `name`.",
+  success: OrchestratorMcpListSecretsResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "List kept secrets")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
 
 const ListConnectorsTool = Tool.make("list_connectors", {
   description:
@@ -405,6 +419,7 @@ export const OrchestratorToolkit = Toolkit.make(
   ListScheduledTasksTool,
   DeleteScheduledTaskTool,
   RequestSecretTool,
+  ListSecretsTool,
   RequestUserActionTool,
   ListConnectorsTool,
   RequestConnectionTool,

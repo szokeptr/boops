@@ -6,6 +6,7 @@ import {
   CommandId,
   SecretRef,
   SecretRequestError,
+  type SecretVaultError,
   type ProjectId,
   type SecretRequestAnswerInput,
   type ThreadId,
@@ -27,6 +28,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as Metrics from "../observability/Metrics.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as SecretVaults from "./SecretVaults.ts";
 
 const SECRET_REF_PREFIX = "secret-ref:";
 const storeName = (ref: SecretRef) => `secret-request-${ref.slice(SECRET_REF_PREFIX.length)}`;
@@ -44,7 +46,9 @@ const decodeStored = Schema.decodeUnknownOption(StoredSecret);
 export class SecretRequests extends Context.Service<
   SecretRequests,
   {
-    readonly answer: (input: SecretRequestAnswerInput) => Effect.Effect<void, SecretRequestError>;
+    readonly answer: (
+      input: SecretRequestAnswerInput,
+    ) => Effect.Effect<void, SecretRequestError | SecretVaultError>;
     readonly savedRef: (input: {
       readonly threadId: ThreadId;
       readonly turnItemId: string;
@@ -66,6 +70,18 @@ export class SecretRequests extends Context.Service<
       readonly requestKey: string;
       readonly value: string;
     }) => Effect.Effect<string, SecretRequestError>;
+    /** Hands a vault value to the agent the way `request_secret` would: a fresh ref or a file. */
+    readonly deliver: (input: {
+      readonly threadId: ThreadId;
+      readonly projectId: ProjectId;
+      readonly requestNamespace: string;
+      readonly requestKey: string;
+      readonly delivery: "secretRef" | "file";
+      readonly value: string;
+    }) => Effect.Effect<
+      { readonly secretRef: SecretRef } | { readonly file: string },
+      SecretRequestError
+    >;
   }
 >()("boops/secrets/SecretRequests") {}
 
@@ -74,6 +90,7 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const threadManagement = yield* ThreadManagementService.ThreadManagementService;
+  const vaults = yield* SecretVaults.SecretVaults;
   // Beside the store's own files so the same owner-only directory and cleanup rules apply.
   const filesDir = store.directory === undefined ? undefined : path.join(store.directory, "files");
 
@@ -134,6 +151,17 @@ const make = Effect.gen(function* () {
             ),
           );
       }
+      // Kept before recording, so a failure leaves the card pending to try again.
+      const keptIn =
+        input.answer.type === "save" && input.answer.keep !== undefined && item.keepAs !== undefined
+          ? yield* vaults.keep({
+              projectId: records.thread.projectId,
+              vaultId: input.answer.keep.vaultId,
+              name: item.keepAs,
+              label: item.label,
+              value: input.answer.secret,
+            })
+          : undefined;
       const secretStatus = input.answer.type === "save" ? "saved" : "declined";
       yield* threadManagement
         .dispatch({
@@ -147,6 +175,9 @@ const make = Effect.gen(function* () {
           reason: item.reason,
           ...(item.placeholder === undefined ? {} : { placeholder: item.placeholder }),
           ...(item.delivery === undefined ? {} : { delivery: item.delivery }),
+          ...(item.keepAs === undefined ? {} : { keepAs: item.keepAs }),
+          ...(item.replace === undefined ? {} : { replace: item.replace }),
+          ...(keptIn === undefined ? {} : { keptIn }),
           secretStatus,
         })
         .pipe(
@@ -318,6 +349,37 @@ const make = Effect.gen(function* () {
     }).pipe(consumeLock.withPermits(1));
   });
 
+  const deliver: SecretRequests["Service"]["deliver"] = Effect.fn("SecretRequests.deliver")(
+    function* (input) {
+      const ref = yield* refFor(
+        input.threadId,
+        `vault\u0000${input.requestNamespace}\u0000${input.requestKey}`,
+      );
+      if (input.delivery === "file") {
+        if (filesDir === undefined) {
+          return yield* new SecretRequestError({ reason: "store_failed" });
+        }
+        const file = path.join(filesDir, ref.slice(SECRET_REF_PREFIX.length));
+        yield* Effect.gen(function* () {
+          if (yield* fileSystem.exists(file).pipe(Effect.orElseSucceed(() => false))) return;
+          yield* writeSecretFile(filesDir, file, input.value);
+        }).pipe(consumeLock.withPermits(1));
+        return { file };
+      }
+      const encoded = yield* encodeStored({
+        projectId: input.projectId,
+        value: input.value,
+        savedAt: yield* Clock.currentTimeMillis,
+      }).pipe(Effect.orDie);
+      yield* store
+        .set(storeName(ref), new TextEncoder().encode(encoded))
+        .pipe(
+          Effect.mapError((cause) => new SecretRequestError({ reason: "store_failed", cause })),
+        );
+      return { secretRef: ref };
+    },
+  );
+
   const sweepExpired = Effect.gen(function* () {
     if (store.directory === undefined) return;
     const now = yield* Clock.currentTimeMillis;
@@ -364,7 +426,7 @@ const make = Effect.gen(function* () {
     Effect.forkScoped,
   );
 
-  return SecretRequests.of({ answer, savedRef, consume, saveToFile, savePasted });
+  return SecretRequests.of({ answer, savedRef, consume, saveToFile, savePasted, deliver });
 });
 
 export const layer = Layer.effect(SecretRequests, make);

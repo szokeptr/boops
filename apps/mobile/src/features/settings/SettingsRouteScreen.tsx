@@ -264,6 +264,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
         serverPage("SettingsThreads", "text.bubble", "Threads"),
         page("SettingsScheduledTasks", "clock", "Scheduled tasks"),
         page("SettingsConnectors", "cable.connector", "Connectors"),
+        page("SettingsVaults", { ios: "lock.rectangle.stack", android: "lock" }, "Vaults"),
       ],
     },
     {

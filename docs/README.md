@@ -23,6 +23,7 @@
 - [Calling a bot](./user/bot-calls.md)
 - [T3 Connect troubleshooting](./user/t3-connect-troubleshooting.md)
 - [Connectors](./user/connectors.md)
+- [Vaults](./user/vaults.md)
 - [Outside agents (MCP)](./user/outside-agents.md)
 - [Running in the background](./user/background-service.md)
 - [Updating T3 Code](./user/updating.md)

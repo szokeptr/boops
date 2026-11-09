@@ -145,6 +145,7 @@ import * as DocumentText from "./provider/DocumentText.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
+import * as SecretVaults from "./secrets/SecretVaults.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
 import {
   bufferShellLiveStream,
@@ -1452,6 +1453,7 @@ export const layerWsRpc = (
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
+      const secretVaults = yield* SecretVaults.SecretVaults;
       const guestShares = yield* GuestShareService.GuestShareService;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
@@ -2484,6 +2486,13 @@ export const layerWsRpc = (
           Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
             Effect.andThen(secretRequests.answer(input)),
           ),
+        [WS_METHODS.secretVaultsSubscribe]: () => secretVaults.subscribe,
+        [WS_METHODS.secretVaultsCreate]: (input) => secretVaults.create(input).pipe(Effect.asVoid),
+        [WS_METHODS.secretVaultsRename]: (input) => secretVaults.rename(input),
+        [WS_METHODS.secretVaultsRemove]: ({ vaultId }) => secretVaults.remove(vaultId),
+        [WS_METHODS.secretVaultsSetBot]: (input) => secretVaults.setBot(input),
+        [WS_METHODS.secretVaultsPutEntry]: (input) => secretVaults.putEntry(input),
+        [WS_METHODS.secretVaultsRemoveEntry]: ({ entryId }) => secretVaults.removeEntry(entryId),
         [WS_METHODS.scheduledTasksListWebhookDeliveries]: (input) =>
           Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
             Effect.andThen(scheduledTasks.listWebhookDeliveries(input)),

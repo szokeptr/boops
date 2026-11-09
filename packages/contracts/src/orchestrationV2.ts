@@ -1,5 +1,6 @@
 import { OrchestrationMessageContext } from "./composerContext.ts";
 import { withRecordIdTable } from "./orchestrationV2IdTable.ts";
+import { SecretVaultEntryName } from "./secretVault.ts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -1628,6 +1629,12 @@ const OrchestrationV2SecretRequestFields = {
   placeholder: Schema.optional(Schema.String),
   delivery: Schema.optional(OrchestrationV2SecretRequestDelivery),
   secretStatus: OrchestrationV2SecretRequestStatus,
+  /** The vault entry name the agent asked for; the card offers to keep the value under it. */
+  keepAs: Schema.optional(SecretVaultEntryName),
+  /** The kept value under `keepAs` stopped working; saving replaces it. */
+  replace: Schema.optional(Schema.Boolean),
+  /** The vault the user kept the value in. */
+  keptIn: Schema.optional(Schema.String),
 } as const;
 
 export const OrchestrationV2LinkRequestStatus = Schema.Literals([
@@ -3679,6 +3686,9 @@ const OrchestrationV2InternalCommand = Schema.Union([
     placeholder: Schema.optional(Schema.String),
     delivery: Schema.optional(OrchestrationV2SecretRequestDelivery),
     secretStatus: OrchestrationV2SecretRequestStatus,
+    keepAs: Schema.optional(SecretVaultEntryName),
+    replace: Schema.optional(Schema.Boolean),
+    keptIn: Schema.optional(Schema.String),
   }),
   /**
    * Records or updates a link an agent asked the user to make. Internal so no

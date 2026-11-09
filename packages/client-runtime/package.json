@@ -191,6 +191,10 @@
       "types": "./src/state/connectors.ts",
       "default": "./src/state/connectors.ts"
     },
+    "./state/secret-vaults": {
+      "types": "./src/state/secretVaults.ts",
+      "default": "./src/state/secretVaults.ts"
+    },
     "./state/members": {
       "types": "./src/state/members.ts",
       "default": "./src/state/members.ts"

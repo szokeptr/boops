@@ -139,6 +139,13 @@ const handlers = {
       return yield* service.requestSecret(scope, input);
     }),
   ),
+  list_secrets: McpToolAccess.readsAsCaller(() =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+      return yield* service.listSecrets(scope);
+    }),
+  ),
   request_user_action: McpToolAccess.actsAsCaller(requestUserAction),
   list_connectors: McpToolAccess.readsAsCaller(() =>
     Effect.gen(function* () {

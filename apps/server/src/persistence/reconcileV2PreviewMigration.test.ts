@@ -69,6 +69,7 @@ describe("V2 preview upgrade", () => {
         [87, "ProjectionProjectsCallSettings"],
         [88, "NotificationDeviceKeys"],
         [89, "ProjectionProjectsTalksWithAnyBot"],
+        [90, "SecretVaults"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -181,6 +182,7 @@ describe("V2 preview upgrade", () => {
         [87, "ProjectionProjectsCallSettings"],
         [88, "NotificationDeviceKeys"],
         [89, "ProjectionProjectsTalksWithAnyBot"],
+        [90, "SecretVaults"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

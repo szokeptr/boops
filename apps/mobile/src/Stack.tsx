@@ -86,6 +86,7 @@ import {
   SettingsScheduledTaskEditRouteScreen,
 } from "./features/settings/SettingsScheduledTasksRouteScreen";
 import { SettingsConnectorsRouteScreen } from "./features/settings/SettingsConnectorsRouteScreen";
+import { SettingsVaultsRouteScreen } from "./features/settings/SettingsVaultsRouteScreen";
 import { SettingsMembersRouteScreen } from "./features/settings/SettingsMembersRouteScreen";
 import { SettingsKeyboardRouteScreen } from "./features/settings/SettingsKeyboardRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
@@ -335,6 +336,11 @@ const SETTINGS_SCREENS = {
     screen: SettingsConnectorsRouteScreen,
     linking: "settings/connectors",
     options: { ...SETTINGS_PAGE_OPTIONS, title: "Connectors" },
+  }),
+  SettingsVaults: createNativeStackScreen({
+    screen: SettingsVaultsRouteScreen,
+    linking: "settings/vaults",
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Vaults" },
   }),
   SettingsMembers: createNativeStackScreen({
     screen: SettingsMembersRouteScreen,
