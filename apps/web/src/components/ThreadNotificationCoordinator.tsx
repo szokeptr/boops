@@ -4,9 +4,16 @@ import {
   presentThreadShell,
 } from "@t3tools/client-runtime/state/models";
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
+import { botMessagePreview, isBotConversationThread } from "@t3tools/client-runtime/state/bot-list";
 import type { AnyRouter } from "@tanstack/react-router";
 import { threadKey } from "@t3tools/client-runtime/state/entities";
-import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  OrchestrationProjectShell,
+  OrchestrationV2ThreadShell,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as Option from "effect/Option";
 import type { AtomRegistry } from "effect/reactivity";
@@ -43,6 +50,7 @@ import { toastManager } from "./ui/toast";
 
 interface NotificationState extends ThreadNotificationObservation {
   readonly raw: OrchestrationV2ThreadShell;
+  readonly botName: string;
   readonly subagentRequest: PendingSubagentRequest | null;
   readonly thread: EnvironmentThreadShell;
   readonly status: ThreadStatus;
@@ -131,9 +139,10 @@ export function startThreadNotifications(
       environmentId?: string;
       threadId?: string;
     };
+    const reply = state.raw.latestVisibleMessage;
     const title =
       kind === "completion"
-        ? "Thread completed"
+        ? state.botName
         : status === "approval"
           ? "Approval needed"
           : status === "limited"
@@ -143,6 +152,11 @@ export function startThreadNotifications(
               : status === "request"
                 ? "Guest request"
                 : "Input needed";
+    // A reply reads like a message from the bot; anything else names the bot it concerns.
+    const body =
+      kind === "completion" && reply !== null
+        ? (botMessagePreview(reply.text) ?? state.botName)
+        : state.botName;
     if (hasNotificationSound(mode)) {
       void playNotificationSound(kind, () =>
         hasNotificationSound(getClientSettings().notificationMode),
@@ -159,7 +173,7 @@ export function startThreadNotifications(
         onRemove: (): void => forgetToast(toastKey, toastId),
         type: kind === "completion" ? "success" : status === "failed" ? "error" : "warning",
         title,
-        description: thread.title,
+        description: body,
         data: {
           hideCopyButton: true,
           leadingIcon:
@@ -198,7 +212,7 @@ export function startThreadNotifications(
       return;
     try {
       const notification = new Notification(title, {
-        body: thread.title,
+        body,
         tag: threadNotificationTag(environmentId, thread.id),
         silent: true,
         // Windows drops clicks after a toast moves into Notification Center.
@@ -223,6 +237,7 @@ export function startThreadNotifications(
     environmentId: EnvironmentId,
     entry: WatchedEnvironment,
     threads: ReadonlyArray<OrchestrationV2ThreadShell>,
+    projects: ReadonlyMap<ProjectId, OrchestrationProjectShell>,
   ) => {
     const previous = entry.previous;
     const next = new Map<ThreadId, NotificationState>();
@@ -242,11 +257,20 @@ export function startThreadNotifications(
       ) {
         continue;
       }
+      // Only a bot's conversations notify; routines, Heartbeat and plain projects are background work.
+      const project = projects.get(rawThread.projectId);
+      if (
+        project?.mainThreadId == null ||
+        !isBotConversationThread(rawThread, project.mainThreadId)
+      ) {
+        continue;
+      }
       const prior = previous.get(rawThread.id);
       const subagentRequest = subagentRequests.get(rawThread.id) ?? null;
       if (
         !entry.reconnecting &&
         prior?.raw === rawThread &&
+        prior.botName === project.title &&
         prior.subagentRequest === subagentRequest
       ) {
         next.set(rawThread.id, prior);
@@ -264,9 +288,14 @@ export function startThreadNotifications(
           ? `${thread.latestRun?.runId ?? ""}:${status}`
           : null;
       const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
-      const settled = status === "ready" && thread.latestRun?.status === "completed";
+      // A turn that ends without the bot saying anything is not a message.
+      const settled =
+        status === "ready" &&
+        thread.latestRun?.status === "completed" &&
+        rawThread.latestVisibleMessage?.role === "assistant";
       const state = {
         raw: rawThread,
+        botName: project.title,
         subagentRequest,
         thread,
         status,
@@ -298,16 +327,21 @@ export function startThreadNotifications(
         if (state) present(environmentId, state, kind);
       }),
     };
-    let threads: ReadonlyArray<OrchestrationV2ThreadShell> | null = null;
+    let live: Parameters<typeof observeThreads> | null = null;
     const unsubscribeShell = registry.subscribe(
       environmentShell.stateValueAtom(environmentId),
       (shell) => {
-        threads =
+        live =
           shell.status === "live" && Option.isSome(shell.snapshot)
-            ? shell.snapshot.value.threads
+            ? [
+                environmentId,
+                entry,
+                shell.snapshot.value.threads,
+                new Map(shell.snapshot.value.projects.map((project) => [project.id, project])),
+              ]
             : null;
-        if (threads !== null) {
-          observeThreads(environmentId, entry, threads);
+        if (live !== null) {
+          observeThreads(...live);
           return;
         }
         entry.reconnecting = true;
@@ -315,7 +349,7 @@ export function startThreadNotifications(
       { immediate: true },
     );
     const reobserve = () => {
-      if (threads !== null) observeThreads(environmentId, entry, threads);
+      if (live !== null) observeThreads(...live);
     };
     const unsubscribeRequests = registry.subscribe(
       environmentThreadShells.pendingSubagentRequestsAtom(environmentId),

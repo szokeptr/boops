@@ -1,6 +1,8 @@
 # Mobile notifications
 
-Sign in to Boops Connect, link your environments, and enable **Device Notifications** in **Settings → Notifications** to receive alerts when an agent finishes, fails, needs approval, or asks for input. Tap a notification to open its thread. Your environment must have agent activity publishing enabled.
+Sign in to Boops Connect, link your environments, and enable **Device Notifications** in **Settings → Notifications** to receive alerts when a bot replies, fails, needs approval, or asks for input. Tap a notification to open its conversation. Your environment must have agent activity publishing enabled.
+
+Only a bot's conversations notify: its main chat and chats you start beside it. Routines, the Heartbeat, helpers, and threads in plain projects stay quiet and out of the activity card; when a routine has something for you, the bot tells you in its main chat. A turn that ends without the bot saying anything sends nothing.
 
 Enable **Live Activity Updates** on iOS, **Agent Live Updates** on Android 16 and newer, or **Ongoing Agent Activity** on older Android versions to follow work without opening the app. Finished results remain visible for up to 15 minutes. You can dismiss an Android activity card without disabling alerts; turn off the same switch to stop future cards.
 

@@ -23,7 +23,7 @@ export function NotificationSettings() {
       {...searchableSetting("thread-notifications")}
       description={
         permissionMessage ??
-        "System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while Boops is open."
+        "System alerts when a bot replies, fails, or needs input or approval. Routines and other background work stay quiet. Applies to this device while Boops is open."
       }
       control={
         <Select

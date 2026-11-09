@@ -102,6 +102,8 @@ class TestNotification extends EventTarget {
 
 const thread = {
   id: "thread",
+  projectId: "bot",
+  reply: "**Done.** The report is ready." as string | null,
   title: "Test thread",
   archivedAt: null as string | null,
   hasPendingApprovals: false,
@@ -118,7 +120,7 @@ function toV2ThreadShell(input: typeof thread) {
   const latestTurn = input.latestTurn;
   return {
     id: input.id,
-    projectId: "project",
+    projectId: input.projectId,
     title: input.title,
     providerInstanceId: "codex",
     modelSelection: { instanceId: "codex", model: "gpt-5.4" },
@@ -148,7 +150,10 @@ function toV2ThreadShell(input: typeof thread) {
       : input.hasPendingApprovals
         ? { id: "request-1", kind: "command", createdAt: SHELL_NOW }
         : null,
-    latestVisibleMessage: null,
+    latestVisibleMessage:
+      input.reply === null
+        ? null
+        : { id: "message", role: "assistant", text: input.reply, updatedAt: SHELL_NOW },
     latestUserMessageAt: null,
     hasActionableProposedPlan: false,
     itemCount: 0,
@@ -172,6 +177,10 @@ function shell(overrides: Partial<typeof thread> = {}, ...others: Partial<typeof
   return {
     status: "live",
     snapshot: Option.some({
+      projects: [
+        { id: "bot", title: "Pip", mainThreadId: "thread" },
+        { id: "plain", title: "Plain project" },
+      ],
       threads: [overrides, ...others].map((override) =>
         toV2ThreadShell({ ...thread, ...override }),
       ),
@@ -250,8 +259,39 @@ it("presents completion notifications and sound as soon as the shell completes",
       latestTurn: { turnId: "turn", state: "completed", completedAt: "2026-09-13T07:00:01.000Z" },
     }),
   );
-  expect(TestNotification.sent.map((sent) => sent.title)).toEqual(["Thread completed"]);
+  expect(TestNotification.sent.map((sent) => [sent.title, sent.options.body])).toEqual([
+    ["Pip", "Done. The report is ready."],
+  ]);
   expect(state.sound).toHaveBeenCalledWith("completion", expect.any(Function));
+});
+
+it("stays quiet for background threads, plain projects and turns without a reply", async () => {
+  await using app = setup();
+  const completed = {
+    turnId: "turn",
+    state: "completed",
+    completedAt: "2026-09-13T07:00:01.000Z" as string | null,
+  };
+  const failed = { turnId: "turn", state: "error", completedAt: null };
+  const routine = { id: "routine:task-1" };
+  const heartbeat = { id: "heartbeat:bot" };
+  const plain = { id: "plain-thread", projectId: "plain" };
+  const silent = { id: "silent", reply: null };
+  state.shells.set("one", shell(routine, heartbeat, plain, silent));
+  app.start();
+  for (const latestTurn of [completed, failed]) {
+    state.shells.set(
+      "one",
+      shell(
+        { ...routine, latestTurn },
+        { ...heartbeat, latestTurn },
+        { ...plain, latestTurn },
+        { ...silent, latestTurn: completed },
+      ),
+    );
+  }
+  expect(TestNotification.sent).toEqual([]);
+  expect(state.sound).not.toHaveBeenCalled();
 });
 
 it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
@@ -288,14 +328,14 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
 
     expect(TestNotification.sent.map(({ title }) => title)).toEqual([
       "Approval needed",
-      "Thread completed",
+      "Pip",
       flag === "hasPendingApprovals" ? "Approval needed" : "Input needed",
     ]);
     state.shells.set("one", { ...shell(completed, asking, offline, done), status: "cached" });
     state.shells.set("one", shell(completed, asking, offline, done));
     expect(TestNotification.sent.map(({ title }) => title)).toEqual([
       "Approval needed",
-      "Thread completed",
+      "Pip",
       flag === "hasPendingApprovals" ? "Approval needed" : "Input needed",
     ]);
   },
@@ -311,8 +351,8 @@ it.each([false, true])(
     });
     state.shells.set("one", completed);
     state.shells.set("one", { ...completed, status: "cached" });
-    expect(TestNotification.sent.map(({ title }) => title)).toEqual(["Thread completed"]);
+    expect(TestNotification.sent.map(({ title }) => title)).toEqual(["Pip"]);
     state.shells.set("one", continued ? shell() : completed);
-    expect(TestNotification.sent.map(({ title }) => title)).toEqual(["Thread completed"]);
+    expect(TestNotification.sent.map(({ title }) => title)).toEqual(["Pip"]);
   },
 );

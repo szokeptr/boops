@@ -1,7 +1,6 @@
 import type { AgentAwarenessThread } from "../orchestration-v2/ProjectionStore.ts";
 import {
   isBotConversationThread,
-  isListedThreadLineage,
   type EnvironmentId,
   type EnvironmentMemberId,
   type OrchestrationV2DomainEvent,
@@ -194,24 +193,43 @@ const CLEARED_PUBLISH_IDENTITY = agentAwarenessPublishIdentity(null);
 
 const RELAY_MESSAGE_SENDER_NAME_MAX_LENGTH = 200;
 
-/** A bot conversation that finished or asks something speaks as the bot; other threads do not. */
+type AwarenessProject = Pick<Project, "id" | "title" | "mainThreadId">;
+
+/** Routines, the Heartbeat thread, helpers and plain projects are background work: never published. */
+function isNotifiableThread(project: AwarenessProject, thread: AgentAwarenessThread): boolean {
+  return isBot(project) && isBotConversationThread(thread, project.mainThreadId ?? null);
+}
+
+function assistantReply(thread: AgentAwarenessThread) {
+  const latest = thread.latestVisibleMessage;
+  return latest?.role === "assistant" && latest.text.trim() !== "" ? latest : null;
+}
+
+/** What the phone hears of a thread. A finished turn counts only when the bot said something. */
+function notifiableAwarenessState(input: {
+  readonly environmentId: EnvironmentId;
+  readonly project: AwarenessProject;
+  readonly thread: AgentAwarenessThread;
+}) {
+  if (!isNotifiableThread(input.project, input.thread)) return null;
+  const state = projectThreadAwarenessV2(input);
+  return state?.phase === "completed" && assistantReply(input.thread) === null ? null : state;
+}
+
+/** A conversation that finished or asks something speaks as the bot. */
 function resolveBotReply(
   state: RelayAgentActivityState | null,
   project: Project,
   thread: AgentAwarenessThread,
 ): BotReply | null {
   if (state?.phase !== "completed" && state?.phase !== "waiting_for_input") return null;
-  if (!isBot(project) || !isBotConversationThread(thread, project.mainThreadId ?? null)) {
-    return null;
-  }
   // The relay limits UTF-16 length; cut on a code point so no surrogate half is left.
   let senderName = "";
   for (const char of state.projectTitle) {
     if (senderName.length + char.length > RELAY_MESSAGE_SENDER_NAME_MAX_LENGTH) break;
     senderName += char;
   }
-  const latest = thread.latestVisibleMessage;
-  const reply = latest?.role === "assistant" && latest.text.trim() !== "" ? latest : null;
+  const reply = assistantReply(thread);
   return {
     senderId: project.id,
     senderName: senderName.trim(),
@@ -370,7 +388,7 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
     };
   }
   const state = sanitizeRelayAgentActivityState(
-    projectThreadAwarenessV2({
+    notifiableAwarenessState({
       environmentId: input.environmentId,
       project: input.project.value,
       thread: input.thread.value,
@@ -396,7 +414,7 @@ function terminalWorkSinceStart(thread: AgentAwarenessThread, startedAt: number)
 export function resolveAgentAwarenessRelayActiveThreadIds(input: {
   readonly environmentId: EnvironmentId;
   readonly startedAt: number;
-  readonly projects: ReadonlyArray<Pick<Project, "id" | "title">>;
+  readonly projects: ReadonlyArray<AwarenessProject>;
   readonly threads: ReadonlyArray<AgentAwarenessThread>;
 }): ReadonlyArray<ThreadId> {
   const projectById = new Map(input.projects.map((project) => [project.id, project]));
@@ -406,7 +424,7 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
       if (!project) {
         return false;
       }
-      const state = projectThreadAwarenessV2({
+      const state = notifiableAwarenessState({
         environmentId: input.environmentId,
         project,
         thread,
@@ -627,21 +645,23 @@ export const make = Effect.gen(function* () {
 
     // Read only this thread; full shell reads would make each activity event scale with all threads.
     const threadShell = (yield* threads.getAgentAwarenessSnapshot(threadId)).threads[0] ?? null;
+    const shellProject =
+      threadShell === null
+        ? Option.none<Project>()
+        : yield* projects.getById(threadShell.projectId);
     if (
       threadShell !== null &&
-      !isListedThreadLineage(threadShell.lineage) &&
+      !(Option.isSome(shellProject) && isNotifiableThread(shellProject.value, threadShell)) &&
       !hasLivePublishedState(yield* Ref.get(publishedStateByThreadRef), threadId)
     ) {
-      // Subagents and side chats have no relay rows to clear; per-event tombstones would needlessly redeliver user aggregates.
+      // Background threads have no relay rows to clear; per-event tombstones would needlessly redeliver user aggregates.
       return;
     }
     const thread =
       threadShell === null || threadShell.archivedAt !== null
         ? Option.none<AgentAwarenessThread>()
         : Option.some(threadShell);
-    const project = Option.isSome(thread)
-      ? yield* projects.getById(thread.value.projectId)
-      : Option.none<Project>();
+    const project = Option.isSome(thread) ? shellProject : Option.none<Project>();
     const snapshot = resolveAgentAwarenessRelayPublishSnapshot({
       environmentId,
       thread,

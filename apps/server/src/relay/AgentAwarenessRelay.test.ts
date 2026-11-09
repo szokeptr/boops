@@ -56,6 +56,12 @@ const THREAD_ID = ThreadId.make("relay-thread");
 const SECOND_THREAD_ID = ThreadId.make("relay-thread-2");
 const PROJECT_ID = ProjectId.make("relay-project");
 const NOW = "2026-09-04T12:00:00.000Z";
+const REPLY = {
+  id: MessageId.make("message:reply"),
+  role: "assistant" as const,
+  text: "Done",
+  updatedAt: DateTime.makeUnsafe(NOW),
+};
 
 function shell(overrides: Partial<OrchestrationV2ThreadShell> = {}): OrchestrationV2ThreadShell {
   return {
@@ -73,7 +79,7 @@ function shell(overrides: Partial<OrchestrationV2ThreadShell> = {}): Orchestrati
     createdBy: "user",
     creationSource: "web",
     activeRunId: null,
-    latestVisibleMessage: null,
+    latestVisibleMessage: REPLY,
     hasActionableProposedPlan: false,
     itemCount: 0,
     visibleItemCount: 0,
@@ -116,9 +122,21 @@ describe("startup agent activity", () => {
     const ids = AgentAwarenessRelay.resolveAgentAwarenessRelayActiveThreadIds({
       environmentId: EnvironmentId.make("relay-env"),
       startedAt,
-      projects: [{ id: PROJECT_ID, title: "Project" }],
+      projects: [
+        { id: PROJECT_ID, title: "Bot", mainThreadId: THREAD_ID },
+        { id: ProjectId.make("plain"), title: "Plain project" },
+      ],
       threads: [
         shell(),
+        shell({ id: botHeartbeatThreadId(PROJECT_ID) }),
+        shell({ id: ThreadId.make("routine:task-1") }),
+        shell({ id: ThreadId.make("plain-thread"), projectId: ProjectId.make("plain") }),
+        shell({
+          id: ThreadId.make("silent-completed"),
+          status: "completed",
+          latestVisibleMessage: null,
+          latestRunCompletedAt: DateTime.makeUnsafe("2026-09-04T12:00:01.000Z"),
+        }),
         shell({
           id: oldCompleted,
           status: "completed",
@@ -155,7 +173,7 @@ const makeTestRelay = Effect.fnUntraced(function* (
     readonly readShell?: (threadId: ThreadId) => Effect.Effect<OrchestrationV2ThreadShell | null>;
     readonly domainEvents?: Stream.Stream<OrchestrationV2DomainEvent>;
     readonly catchUpThreads?: ReadonlyArray<OrchestrationV2ThreadShell>;
-    readonly project?: { readonly title?: string; readonly mainThreadId?: ThreadId };
+    readonly project?: { readonly title?: string; readonly mainThreadId?: ThreadId | null };
     readonly deviceKeys?: ReadonlyArray<NotificationDeviceKeys.NotificationDeviceKey>;
   } = {},
 ) {
@@ -289,6 +307,7 @@ const makeTestRelay = Effect.fnUntraced(function* (
       }),
   });
   const project = {
+    mainThreadId: THREAD_ID,
     ...options.project,
     id: PROJECT_ID,
     title: options.project?.title ?? "Project",
@@ -468,49 +487,45 @@ describe("AgentAwarenessRelay", () => {
       assert.equal(publications.length, 3);
       assert.deepEqual(opened(2), ["One more thing", "One more thing"]);
 
-      // Without the bot's words the phone still hears from the bot, just without a preview.
-      yield* completeWith(shell({ status: "completed", linkOrigin }));
-      assert.deepEqual(publications[3]?.state?.message, {
-        senderId: PROJECT_ID,
-        senderName: "Pip",
-        previews: [],
-      });
+      // A turn that ends without the bot saying anything is not a message: the card just clears.
+      yield* completeWith(
+        shell({
+          status: "completed",
+          linkOrigin,
+          latestVisibleMessage: { ...REPLY, role: "user", text: "Thanks" },
+        }),
+      );
+      assert.isNull(publications[3]?.state);
+      assert.equal(publications.length, 4);
     }),
   );
 
   it.effect.each([
-    { name: "a coding thread", project: {}, threadId: THREAD_ID },
+    { name: "a plain project's thread", project: { mainThreadId: null }, threadId: THREAD_ID },
     {
       name: "a bot's Heartbeat thread",
       project: { mainThreadId: ThreadId.make("bot-main") },
       threadId: botHeartbeatThreadId(PROJECT_ID),
     },
-  ])("$name does not speak as the bot", ({ project, threadId }) =>
+    {
+      name: "a bot's routine thread",
+      project: { mainThreadId: ThreadId.make("bot-main") },
+      threadId: ThreadId.make("routine:task-1"),
+    },
+  ])("$name is never published", ({ project, threadId }) =>
     Effect.gen(function* () {
-      const { relay, currentShell, publications, deviceKeyAudiences } = yield* makeTestRelay({
-        project,
-      });
-      const assistant = {
-        id: MessageId.make("message:1"),
-        role: "assistant" as const,
-        text: "Done",
-        updatedAt: DateTime.makeUnsafe(NOW),
-      };
-      yield* Ref.set(currentShell, shell({ id: threadId, latestVisibleMessage: assistant }));
-      yield* relay.publishThread(threadId);
-      yield* Ref.set(
-        currentShell,
-        shell({ id: threadId, status: "completed", latestVisibleMessage: assistant }),
-      );
-      yield* relay.publishThread(threadId);
-      yield* TestClock.adjust("5 seconds");
-      yield* relay.drain;
-      assert.deepEqual(
-        publications.map((publication) => publication.state?.phase),
-        ["running", "completed"],
-      );
-      assert.isUndefined(publications[1]?.state?.message);
-      assert.deepEqual(deviceKeyAudiences, []);
+      const { relay, currentShell, publications } = yield* makeTestRelay({ project });
+      for (const next of [
+        shell({ id: threadId }),
+        shell({ id: threadId, status: "failed" }),
+        shell({ id: threadId, status: "completed" }),
+      ]) {
+        yield* Ref.set(currentShell, next);
+        yield* relay.publishThread(threadId);
+        yield* TestClock.adjust("5 seconds");
+        yield* relay.drain;
+      }
+      assert.deepEqual(publications, []);
     }),
   );
 
@@ -964,6 +979,27 @@ describe("AgentAwarenessRelay", () => {
           }),
         ),
       );
+      yield* deliver({
+        id: EventId.make("event:held-item:message"),
+        type: "message.updated",
+        threadId: THREAD_ID,
+        runId,
+        occurredAt: now,
+        payload: {
+          id: MessageId.make("message:held-item:reply"),
+          threadId: THREAD_ID,
+          runId,
+          nodeId: null,
+          role: "assistant",
+          text: "Still watching",
+          attachments: [],
+          streaming: false,
+          createdBy: "agent",
+          creationSource: "provider",
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
       yield* deliver(
         itemEvent("event:held-item:tick", item("item:tool", { ...background, status: "running" })),
       );
