@@ -1913,8 +1913,8 @@ function botExchangeRow({ first, peers, entries }: OpenBotExchange): ThreadFeedB
 
 /**
  * Talk with the bot's parent or child bot folds into one exchange where it starts: a message from
- * that bot, and this bot's messages to it. The bot's replies fold in only in a turn the other bot
- * started; elsewhere they stay visible and end the exchange, as does any other user message.
+ * that bot, and this bot's messages to it. The bot answers other bots only through tools, so its
+ * own text is always for the user: it stays visible and ends the exchange, as does any user message.
  */
 function foldBotExchanges(
   feed: ReadonlyArray<ThreadFeedEntry>,
@@ -1927,7 +1927,6 @@ function foldBotExchanges(
   }
   const result: Array<ThreadFeedEntry | OpenBotExchange> = [];
   let open: OpenBotExchange | null = null;
-  let botTurn = false;
   const add = (
     first: OpenBotExchange["first"],
     entry: ThreadFeedBotExchangeEntry,
@@ -1954,16 +1953,9 @@ function foldBotExchanges(
       add(unit, unit, { name: null, projectId: unit.to });
     } else if (unit.type !== "message") {
       result.push(unit);
-    } else if (unit.message.role === "assistant") {
-      if (botTurn && open !== null) {
-        add(unit, { kind: "message", message: unit.message }, null);
-      } else {
-        open = null;
-        result.push(unit);
-      }
     } else {
-      const bot = resolveUserMessagePresentation(unit.message).bot;
-      botTurn = bot !== undefined && !bot.background;
+      const bot =
+        unit.message.role === "user" ? resolveUserMessagePresentation(unit.message).bot : undefined;
       if (bot === undefined || bot.background) {
         open = null;
         result.push(unit);

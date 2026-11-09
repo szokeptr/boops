@@ -2747,7 +2747,7 @@ describe("v2 run and attempt history", () => {
       ["assistant-final-entry", "assistant", "Done"],
     ]);
 
-    // Talk with a parent or child bot folds into one pill until the user writes again.
+    // Talk with a parent or child bot folds into a pill; the bot's own text is always for the user.
     const message = (id: string, role: "user" | "assistant", at: string, extra = {}) => ({
       id: `${id}-entry`,
       kind: "message" as const,
@@ -2805,7 +2805,6 @@ describe("v2 run and attempt history", () => {
       supportsConversationRollback: false,
       directMessage: true,
     });
-    // A message the bot sends inside your turn opens its own pill; its replies to you stay out.
     expect(
       exchangeRows
         .slice(3)
@@ -2821,7 +2820,9 @@ describe("v2 run and attempt history", () => {
             : [row.id],
         ),
     ).toEqual([
-      ["bot-exchange:jarvis-1-entry", ["jarvis"], ["jarvis-1", "reply-1", "jarvis-2"]],
+      ["bot-exchange:jarvis-1-entry", ["jarvis"], ["jarvis-1"]],
+      ["reply-1-entry"],
+      ["bot-exchange:jarvis-2-entry", ["jarvis"], ["jarvis-2"]],
       ["again-entry"],
       ["on-it-entry"],
       ["bot-exchange:ask-jarvis-entry", ["jarvis"], ["sending:File them please"]],

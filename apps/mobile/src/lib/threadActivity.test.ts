@@ -1008,7 +1008,7 @@ describe("buildThreadFeed", () => {
       ["assistant", "Done"],
     ]);
 
-    // Talk with a parent or child bot folds into one exchange until the user writes again.
+    // Talk with a parent or child bot folds into a pill; the bot's own text is always for the user.
     const fromJarvis = (id: string, ordinal: number, at: string) => ({
       ...userMessage(at),
       id: TurnItemId.make(`item-${id}`),
@@ -1057,7 +1057,6 @@ describe("buildThreadFeed", () => {
       ]),
       null,
     );
-    // A message the bot sends inside your turn opens its own pill; its replies to you stay out.
     expect(
       exchange.map((entry) =>
         entry.type === "bot-exchange"
@@ -1072,7 +1071,9 @@ describe("buildThreadFeed", () => {
       ),
     ).toEqual([
       ["message-user"],
-      ["bot-exchange:jarvis-1", ["jarvis"], ["jarvis-1", "message-assistant", "jarvis-2"]],
+      ["bot-exchange:jarvis-1", ["jarvis"], ["jarvis-1"]],
+      ["message-assistant"],
+      ["bot-exchange:jarvis-2", ["jarvis"], ["jarvis-2"]],
       ["again"],
       ["on-it"],
       ["bot-exchange:local:thread-1:ask-jarvis", ["jarvis"], ["sending:File them please"]],
