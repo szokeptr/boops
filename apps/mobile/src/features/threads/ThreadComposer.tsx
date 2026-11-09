@@ -344,7 +344,8 @@ function SendActionButton(props: {
   );
 }
 
-function ComposerSurface(props: {
+/** The composer pill: glass on iOS, a solid panel elsewhere. */
+export function ComposerSurface(props: {
   readonly children: ReactNode;
   readonly style: ViewStyle;
   readonly animateLayout?: boolean;

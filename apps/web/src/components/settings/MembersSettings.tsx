@@ -6,10 +6,13 @@ import { useState } from "react";
 
 import { useEnvironmentBots } from "../../state/connectors";
 import type { EnvironmentPresentation } from "../../state/environments";
+import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { useMembers } from "../../state/members";
+import { useRooms } from "../../state/rooms";
 import { ConnectRequiredNote, InviteMemberForm } from "../members/InviteMemberForm";
 import { LastSeen } from "../members/MemberStatus";
 import { useMemberCommands } from "../members/useMemberCommands";
+import { useRoomCommands } from "../rooms/useRoomCommands";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
   AlertDialog,
@@ -31,6 +34,7 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
+import { Input } from "../ui/input";
 import { Toggle } from "../ui/toggle";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { searchableSetting } from "./settingsSearch";
@@ -103,6 +107,8 @@ function EnvironmentMembers({ environment }: { readonly environment: Environment
       {members.length > 0 ? (
         <p className="px-3 text-xs text-muted-foreground sm:px-4">{PRIVACY_NOTE}</p>
       ) : null}
+      {allowed ? <OwnerNameSetting environmentId={environmentId} /> : null}
+      {allowed ? <OthersRooms environmentId={environmentId} /> : null}
       {inviting ? (
         <InviteMemberDialog
           environmentId={environmentId}
@@ -120,7 +126,7 @@ function MemberRow(props: {
   readonly bots: ReadonlyArray<EnvironmentProject>;
 }) {
   const { member, bots } = props;
-  const { setBotAccess, remove } = useMemberCommands(props.environmentId);
+  const { setBotAccess, setCanCreateRooms, remove } = useMemberCommands(props.environmentId);
   const [confirming, setConfirming] = useState(false);
   return (
     <>
@@ -168,6 +174,17 @@ function MemberRow(props: {
             ))}
           </ul>
         )}
+        <div className="pb-2">
+          <Toggle
+            size="xs"
+            variant="outline"
+            pressed={member.canCreateRooms}
+            aria-label={`Let ${member.label} start group chats`}
+            onPressedChange={(pressed) => void setCanCreateRooms(member, pressed)}
+          >
+            Can start group chats
+          </Toggle>
+        </div>
       </SettingsRow>
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogPopup>
@@ -251,5 +268,69 @@ function InviteMemberDialog(props: {
         </DialogPanel>
       </DialogPopup>
     </Dialog>
+  );
+}
+
+/** Group chats members started without the owner: who is in them, and a way to end one. */
+function OthersRooms({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const { rooms } = useRooms(environmentId);
+  const commands = useRoomCommands(environmentId);
+  const others = rooms.filter((room) => !room.joined);
+  if (others.length === 0) return null;
+  return (
+    <SettingsSection title="Group chats you're not in">
+      {others.map((room) => (
+        <SettingsRow
+          key={room.id}
+          title={room.title}
+          description={room.participants.map((entry) => entry.name).join(", ")}
+          control={
+            <Button
+              size="xs"
+              variant="ghost-destructive"
+              onClick={() => void commands.delete(room.id, room.title)}
+            >
+              Delete…
+            </Button>
+          }
+        />
+      ))}
+    </SettingsSection>
+  );
+}
+
+/** What people and bots in group chats call the owner. Saved when the field loses focus. */
+function OwnerNameSetting({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const saved = useEnvironmentSettings(environmentId, (settings) => settings.ownerName);
+  const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? saved;
+  const save = () => {
+    if (draft === null) return;
+    const next = draft.trim();
+    setDraft(null);
+    if (next !== saved) updateSettings({ ownerName: next });
+  };
+  return (
+    <SettingsSection title="Group chats">
+      <SettingsRow
+        title="Your name"
+        description="What people and bots in your group chats call you."
+        control={
+          <Input
+            className="w-48"
+            value={value}
+            maxLength={60}
+            placeholder="Owner"
+            aria-label="Your name in group chats"
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={save}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+            }}
+          />
+        }
+      />
+    </SettingsSection>
   );
 }

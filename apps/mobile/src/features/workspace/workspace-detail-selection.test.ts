@@ -104,6 +104,10 @@ describe("workspaceDetailLinkAction", () => {
     expect(workspaceDetailLinkAction({ routes: [{ name: "Home" }, threadA] })).toEqual(
       selectWorkspaceDetail(threadA),
     );
+    const room = { name: "Room", params: { environmentId: "env", roomId: "room" } } as const;
+    expect(workspaceDetailLinkAction({ routes: [{ name: "Home" }, room] })).toEqual(
+      selectWorkspaceDetail(room),
+    );
     expect(
       workspaceDetailLinkAction({
         routes: [{ name: "Home" }, { name: "Settings" }, { name: "SettingsAppearance" }],

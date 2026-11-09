@@ -43,6 +43,7 @@ export function useMemberCommands(environmentId: EnvironmentId) {
   });
   const inviteCommand = useAtomCommand(memberEnvironment.invite, { reportFailure: false });
   const removeCommand = useAtomCommand(memberEnvironment.remove, { reportFailure: false });
+  const updateCommand = useAtomCommand(memberEnvironment.update, { reportFailure: false });
 
   const setBotAccess = async (input: {
     readonly projectId: ProjectId;
@@ -63,6 +64,14 @@ export function useMemberCommands(environmentId: EnvironmentId) {
       input.enabled ? "Could not share the connection" : "Could not stop sharing it",
       result,
     );
+  };
+
+  const setCanCreateRooms = async (member: EnvironmentMember, canCreateRooms: boolean) => {
+    const result = await updateCommand({
+      environmentId,
+      input: { memberId: member.id, canCreateRooms },
+    });
+    reportFailure("Could not change it", result);
   };
 
   /** Resolves to the error to show beside the form, or null once the invite is sent. */
@@ -89,5 +98,13 @@ export function useMemberCommands(environmentId: EnvironmentId) {
       },
     });
 
-  return { canShare, canInvite, setBotAccess, setBotConnectionAccess, invite, remove };
+  return {
+    canShare,
+    canInvite,
+    setBotAccess,
+    setBotConnectionAccess,
+    setCanCreateRooms,
+    invite,
+    remove,
+  };
 }

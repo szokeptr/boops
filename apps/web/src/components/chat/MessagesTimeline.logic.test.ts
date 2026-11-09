@@ -2711,6 +2711,24 @@ describe("v2 run and attempt history", () => {
     ]);
     expect(directMessage(true).at(-1)).toEqual(["working-indicator-row", "working"]);
 
+    // In a group chat, replies from different senders never stack into one run.
+    const twoSenders = deriveMessagesTimelineRows({
+      timelineEntries: timelineEntries.map((entry) =>
+        entry.kind === "message" && entry.message.role === "assistant"
+          ? { ...entry, message: { ...entry.message, sender: { key: entry.id, name: entry.id } } }
+          : entry,
+      ),
+      isWorking: false,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      directMessage: true,
+    }).flatMap((row) => (row.kind === "message" ? [[row.id, row.groupedWithPrevious]] : []));
+    expect(twoSenders).toEqual([
+      ["user-entry", false],
+      ["assistant-thought-entry", false],
+      ["assistant-final-entry", false],
+    ]);
+
     // An answered question reads as the bot asking and you replying, where it was asked.
     const answered = deriveMessagesTimelineRows({
       timelineEntries: [

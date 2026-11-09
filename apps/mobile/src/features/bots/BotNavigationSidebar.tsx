@@ -32,6 +32,7 @@ import { BotListToolbar } from "./BotListToolbar";
 import { useBotNavigation, useSelectedBotKey } from "./useBotNavigation";
 import { useBotShareSheet } from "../members/BotShareSheet";
 import { useBotRows } from "./useBotRows";
+import { RoomListSection } from "../rooms/RoomListSection";
 
 const SIDEBAR_STICKY_HEADER_HEIGHT = 106;
 
@@ -217,6 +218,7 @@ function BotNavigationSidebarPane(
           showsVerticalScrollIndicator={false}
           style={{ flex: 1 }}
           ListHeaderComponent={pinnedHeader}
+          ListFooterComponent={<RoomListSection searchQuery={props.searchQuery} />}
           ListEmptyComponent={pinned.length > 0 ? undefined : listEmpty}
         />
         {share.sheet}
@@ -273,6 +275,7 @@ function BotNavigationSidebarPane(
             showsVerticalScrollIndicator={false}
             style={{ flex: 1 }}
             ListHeaderComponent={pinnedHeader}
+            ListFooterComponent={<RoomListSection searchQuery={props.searchQuery} />}
             ListEmptyComponent={pinned.length > 0 ? undefined : listEmpty}
           />
         )}

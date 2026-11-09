@@ -60,6 +60,8 @@ export interface TimelineRowSharedState {
   threadRef: ScopedThreadRef | null;
   /** Heads the agent's messages for screen readers: the bot's name. */
   assistantName: string;
+  /** Who the typing row is for, where several bots share a timeline. */
+  typingName: string | null;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   workspaceRoot: string | undefined;

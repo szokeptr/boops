@@ -231,6 +231,8 @@ interface MessagesTimelineProps {
   isWorking: boolean;
   /** A bot's conversation: bubbles and a typing row instead of the work log. */
   directMessage?: boolean;
+  /** Names the typing row, where several bots share the timeline. */
+  typingName?: string | null;
   runlessWorkActive?: boolean;
   activeTurnStartedAt?: string | null;
   worktreeSetup?: WorktreeSetupSnapshot | null;
@@ -347,6 +349,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onCiteAssistantText,
   isWorking,
   directMessage = false,
+  typingName = null,
   runlessWorkActive = false,
   activeTurnStartedAt = null,
   worktreeSetup = null,
@@ -1040,6 +1043,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     routeThreadKey,
     threadRef: citationThreadRef,
     assistantName,
+    typingName,
     markdownCwd,
     resolvedTheme,
     workspaceRoot,

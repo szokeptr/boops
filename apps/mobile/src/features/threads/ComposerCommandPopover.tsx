@@ -5,6 +5,7 @@ import {
 import type {
   EnvironmentId,
   EnvironmentMachineKind,
+  ProjectAvatar,
   ScopedThreadRef,
   ServerProviderSkill,
   ServerProviderSlashCommand,
@@ -18,6 +19,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { ENVIRONMENT_MACHINE_SYMBOLS } from "../../components/EnvironmentMachineSymbol";
 import { GlassSurface } from "../../components/ui/GlassSurface";
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
+import { BotAvatarSlot } from "../bots/BotAvatarSlot";
 export type ComposerCommandItem =
   | {
       readonly id: string;
@@ -60,6 +62,13 @@ export type ComposerCommandItem =
       readonly id: string;
       readonly type: "skill";
       readonly skill: ServerProviderSkill;
+      readonly label: string;
+      readonly description: string;
+    }
+  | {
+      readonly id: string;
+      readonly type: "bot";
+      readonly avatar: ProjectAvatar | null;
       readonly label: string;
       readonly description: string;
     };
@@ -107,6 +116,7 @@ function itemIcon(item: ComposerCommandItem): AppSymbolName | null {
     case "skill":
       return SKILL_SOURCE_SYMBOL_BY_KIND[resolveProviderSkillSourceKind(item.skill)];
     case "path":
+    case "bot":
       return null;
     case "thread":
       return "text.bubble";
@@ -161,6 +171,8 @@ const CommandRow = memo(function CommandRow(props: {
     >
       {props.item.type === "path" ? (
         <PierreEntryIcon path={props.item.path} kind={props.item.kind} size={16} />
+      ) : props.item.type === "bot" ? (
+        <BotAvatarSlot avatar={props.item.avatar} name={props.item.label} status="idle" size={24} />
       ) : iconName ? (
         <SymbolView
           name={iconName}

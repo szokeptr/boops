@@ -7,7 +7,9 @@ import {
 import {
   type EnvironmentId,
   type EnvironmentMachineKind,
+  type ProjectAvatar,
   type ProjectEntry,
+  type ProjectId,
   type ProviderDriverKind,
   type PullRequestContextMetadata,
   type ScopedThreadRef,
@@ -29,6 +31,7 @@ import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../compo
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
+import { BotAvatar } from "../bots/BotAvatar";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { ComposerBanner } from "./ComposerBanner";
@@ -86,6 +89,15 @@ export type ComposerCommandItem =
       type: "environment";
       environmentId: EnvironmentId;
       machine: EnvironmentMachineKind;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      /** A bot in a group chat, to @mention. */
+      type: "bot";
+      projectId: ProjectId;
+      avatar: ProjectAvatar | null;
       label: string;
       description: string;
     };
@@ -213,6 +225,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       ) : null}
       {props.item.type === "thread" ? (
         <MessagesSquareIcon aria-hidden="true" className="size-4 shrink-0 text-secondary-label" />
+      ) : null}
+      {props.item.type === "bot" ? (
+        <BotAvatar avatar={props.item.avatar} name={props.item.label} status="idle" size={16} />
       ) : null}
       {props.item.type === "environment" ? (
         <EnvironmentMachineIcon

@@ -34,21 +34,24 @@ function identifierFromNotificationResponse(response: unknown): string | null {
   return typeof identifier === "string" ? identifier : null;
 }
 
-function encodeThreadDeepLink(input: {
-  readonly environmentId: string;
-  readonly threadId: string;
-}): string | null {
-  if (input.environmentId.length === 0 || input.threadId.length === 0) {
+type AgentDeepLinkKind = "threads" | "rooms";
+
+function encodeAgentDeepLink(
+  kind: AgentDeepLinkKind,
+  input: { readonly environmentId: string; readonly id: string },
+): string | null {
+  if (input.environmentId.length === 0 || input.id.length === 0) {
     return null;
   }
   try {
-    return `/threads/${encodeURIComponent(input.environmentId)}/${encodeURIComponent(input.threadId)}`;
+    return `/${kind}/${encodeURIComponent(input.environmentId)}/${encodeURIComponent(input.id)}`;
   } catch {
     return null;
   }
 }
 
-function normalizeThreadDeepLink(value: string): string | null {
+/** A thread's or a group chat's path; a room push carries a relay thread id that is not a thread. */
+function normalizeAgentDeepLink(value: string): string | null {
   if (
     value.trim() !== value ||
     value.startsWith("//") ||
@@ -59,14 +62,15 @@ function normalizeThreadDeepLink(value: string): string | null {
   }
 
   const parts = value.split("/");
-  if (parts.length !== 4 || parts[0] !== "" || parts[1] !== "threads") {
+  const kind = parts[1];
+  if (parts.length !== 4 || parts[0] !== "" || (kind !== "threads" && kind !== "rooms")) {
     return null;
   }
 
   try {
-    return encodeThreadDeepLink({
+    return encodeAgentDeepLink(kind, {
       environmentId: decodeURIComponent(parts[2] ?? ""),
-      threadId: decodeURIComponent(parts[3] ?? ""),
+      id: decodeURIComponent(parts[3] ?? ""),
     });
   } catch {
     return null;
@@ -74,18 +78,18 @@ function normalizeThreadDeepLink(value: string): string | null {
 }
 
 export function threadDeepLinkOnScreen(pathname: string): string | null {
-  const match = /^\/threads\/([^/]+)\/([^/]+)(?:\/|$)/.exec(pathname);
-  if (!match?.[1] || !match[2]) {
+  const match = /^\/(threads|rooms)\/([^/]+)\/([^/]+)(?:\/|$)/.exec(pathname);
+  if (!match?.[2] || !match[3]) {
     return null;
   }
-  return `/threads/${match[1]}/${match[2]}`;
+  return `/${match[1]}/${match[2]}/${match[3]}`;
 }
 
 export function extractAgentNotificationDeepLink(response: unknown): string | null {
   const data = dataFromNotificationResponse(response);
   const deepLink = data?.deepLink;
   if (typeof deepLink === "string") {
-    const normalizedDeepLink = normalizeThreadDeepLink(deepLink);
+    const normalizedDeepLink = normalizeAgentDeepLink(deepLink);
     if (normalizedDeepLink) {
       return normalizedDeepLink;
     }
@@ -94,7 +98,7 @@ export function extractAgentNotificationDeepLink(response: unknown): string | nu
   const environmentId = data?.environmentId;
   const threadId = data?.threadId;
   if (typeof environmentId === "string" && typeof threadId === "string") {
-    return encodeThreadDeepLink({ environmentId, threadId });
+    return encodeAgentDeepLink("threads", { environmentId, id: threadId });
   }
   return null;
 }

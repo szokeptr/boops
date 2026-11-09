@@ -17,6 +17,7 @@ import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { GuestShareDialogHost } from "../components/chat/GuestShareControls";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
 import { CreateBotDialogHost } from "../components/CreateBotDialog";
+import { CreateRoomDialogHost } from "../components/rooms/CreateRoomDialog";
 import { ArchiveBotDialogHost, DeleteBotDialogHost } from "../components/bots/BotLifecycle";
 import { ShareBotDialogHost } from "../components/members/ShareBotDialog";
 import { BotCallHost } from "../components/bots/BotCallPanel";
@@ -202,6 +203,7 @@ function RootRouteBranch() {
         <ProjectCloneToastCoordinator />
         <AddProjectToMachineDialogHost />
         <CreateBotDialogHost />
+        <CreateRoomDialogHost />
         <ArchiveBotDialogHost />
         <DeleteBotDialogHost />
         <ShareBotDialogHost />

@@ -25,6 +25,7 @@ export const EnvironmentMemberRecord = Schema.Struct({
   /** Stored lowercased, so one address has one row. */
   email: TrimmedNonEmptyString,
   access: MemberAccess,
+  canCreateRooms: Schema.BooleanFromBit,
   /** The Boops Connect user bound on their first connection; null while invited. */
   cloudUserId: Schema.NullOr(Schema.String),
   createdAt: IsoDateTime,
@@ -38,6 +39,7 @@ const UpdateRequest = Schema.Struct({
   id: EnvironmentMemberId,
   label: Schema.NullOr(TrimmedNonEmptyString),
   access: Schema.NullOr(MemberAccess),
+  canCreateRooms: Schema.NullOr(Schema.Boolean),
 });
 const BindRequest = Schema.Struct({
   id: EnvironmentMemberId,
@@ -92,6 +94,7 @@ const make = Effect.gen(function* () {
     label AS "label",
     email AS "email",
     access AS "access",
+    can_create_rooms AS "canCreateRooms",
     cloud_user_id AS "cloudUserId",
     created_at AS "createdAt",
     last_connected_at AS "lastConnectedAt"
@@ -114,9 +117,10 @@ const make = Effect.gen(function* () {
     Request: EnvironmentMemberRecord,
     execute: (row) => sql`
       INSERT INTO environment_members (
-        member_id, label, email, access, cloud_user_id, created_at, last_connected_at
+        member_id, label, email, access, can_create_rooms, cloud_user_id, created_at,
+        last_connected_at
       ) VALUES (
-        ${row.id}, ${row.label}, ${row.email}, ${row.access}, ${row.cloudUserId},
+        ${row.id}, ${row.label}, ${row.email}, ${row.access}, ${row.canCreateRooms}, ${row.cloudUserId},
         ${row.createdAt}, ${row.lastConnectedAt}
       )
     `,
@@ -124,9 +128,11 @@ const make = Effect.gen(function* () {
   const updateRow = SqlSchema.findOneOption({
     Request: UpdateRequest,
     Result: EnvironmentMemberRecord,
-    execute: ({ id, label, access }) => sql`
+    execute: ({ id, label, access, canCreateRooms }) => sql`
       UPDATE environment_members
-      SET label = COALESCE(${label}, label), access = COALESCE(${access}, access)
+      SET label = COALESCE(${label}, label),
+        access = COALESCE(${access}, access),
+        can_create_rooms = COALESCE(${canCreateRooms === null ? null : canCreateRooms ? 1 : 0}, can_create_rooms)
       WHERE member_id = ${id}
       RETURNING ${columns}
     `,

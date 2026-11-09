@@ -51,6 +51,7 @@ import type {
   OrchestrationV2RunStatus,
   OrchestrationV2TurnItem,
   OrchestrationV2UserMessageInputIntent,
+  ProjectAvatar,
   ProjectId,
   RunAttemptId,
   TurnItemId,
@@ -146,6 +147,12 @@ export interface ThreadFeedMessage {
   readonly creationSource?: OrchestrationV2CreationSource;
   readonly routine?: import("@t3tools/contracts").OrchestrationV2RoutineLabel;
   readonly senderThreadId?: ThreadId;
+  /** In a group chat: who sent it, headed over the bubble. Bots wear their own colours. */
+  readonly sender?: {
+    readonly key: string;
+    readonly name: string;
+    readonly bot?: { readonly avatar: ProjectAvatar | null };
+  };
   readonly idleCompaction?: import("@t3tools/contracts").OrchestrationV2IdleCompaction;
   readonly visibility: OrchestrationV2ProjectedTurnItem["visibility"];
   readonly sourceThreadId: ThreadId;

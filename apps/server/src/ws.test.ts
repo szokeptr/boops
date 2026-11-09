@@ -140,6 +140,7 @@ import {
 } from "./ws.ts";
 import * as Connectors from "./connectors/Connectors.ts";
 import * as Members from "./members/Members.ts";
+import * as Rooms from "./rooms/Rooms.ts";
 import * as NotificationDeviceKeys from "./notifications/NotificationDeviceKeys.ts";
 
 const snapshotConfig = (fields: Partial<ServerConfig>) =>
@@ -796,6 +797,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
   Layer.mock(Connectors.Connectors)({ catalog: [] }),
   Layer.mock(Members.Members)({}),
+  Layer.mock(Rooms.Rooms)({}),
   Layer.mock(NotificationDeviceKeys.NotificationDeviceKeys)({}),
   Layer.mock(PortScanner.PortDiscovery)({ trackAgent: () => () => undefined }),
   Layer.mock(PreviewManager.PreviewManager)({}),

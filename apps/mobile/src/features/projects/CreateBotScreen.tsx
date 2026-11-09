@@ -22,6 +22,8 @@ import { useEnvironmentServerConfig, waitForProject } from "../../state/entities
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { useMemberEnvironments } from "../../state/members";
+import { useRooms } from "../../state/rooms";
+import { Button } from "../../components/ui/Button";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
   AddProjectShell,
@@ -67,6 +69,7 @@ export function CreateBotScreen() {
     null;
   const environmentId = environment?.environmentId ?? null;
   const config = useEnvironmentServerConfig(environmentId);
+  const canCreateRoom = useRooms(environmentId).canCreate;
   const modelOptions = buildModelOptions(config, null, undefined, null).filter(
     (option) => !option.isUnavailable && !option.isHidden,
   );
@@ -234,6 +237,19 @@ export function CreateBotScreen() {
         onPress={() => void submit()}
         loading={isSubmitting}
       />
+      {canCreateRoom ? (
+        <Button
+          label="Start a group chat instead"
+          icon="person.2"
+          tone="text"
+          disabled={isSubmitting}
+          onPress={() =>
+            navigation.dispatch(
+              StackActions.replace("CreateRoom", { environmentId: environment.environmentId }),
+            )
+          }
+        />
+      ) : null}
     </AddProjectShell>
   );
 }

@@ -123,6 +123,12 @@ function EnvironmentMembersContent(props: EnvironmentMembersProps) {
                 }
               />
             ))}
+            <SettingsSwitchRow
+              label="Can start group chats"
+              value={member.canCreateRooms}
+              disabled={!commands.canShare}
+              onValueChange={(enabled) => void commands.setCanCreateRooms(member, enabled)}
+            />
             <ListActionRow
               icon="person.fill.xmark"
               label={`Remove ${member.label}`}

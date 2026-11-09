@@ -23,7 +23,8 @@ const STATUS_DOT_CLASS: Partial<Record<BotStatus, string>> = {
   working: "bg-adaptive-sky-600-400",
 };
 
-function Shape({ shape }: { readonly shape: AvatarShape }) {
+/** One piece of a bot's drawing, in the avatar canvas's coordinates. */
+export function BotAvatarShape({ shape }: { readonly shape: AvatarShape }) {
   switch (shape.kind) {
     case "rect":
       return (
@@ -79,7 +80,7 @@ export function BotAvatarSlot(props: {
     >
       <Svg width={size} height={size} viewBox={`0 0 ${AVATAR_CANVAS} ${AVATAR_CANVAS}`}>
         {shapes.map((shape) => (
-          <Shape key={avatarShapeKey(shape)} shape={shape} />
+          <BotAvatarShape key={avatarShapeKey(shape)} shape={shape} />
         ))}
       </Svg>
       {status === "working" ? (

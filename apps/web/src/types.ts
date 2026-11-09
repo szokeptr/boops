@@ -1,3 +1,4 @@
+import type { ProjectAvatar } from "@t3tools/contracts";
 import { imageMimeType } from "@t3tools/shared/image";
 import type {
   ChatFileAttachment as ContractChatFileAttachment,
@@ -86,6 +87,17 @@ export interface ChatMessage {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly inputIntent?: OrchestrationV2UserMessageInputIntent | undefined;
+  /** Who wrote it, where one timeline holds several authors (a group chat); one per `key`. */
+  readonly sender?: ChatMessageSender | undefined;
+}
+
+export interface ChatMessageSender {
+  readonly key: string;
+  readonly name: string;
+  /** Set for a bot: its look names and colours the message. */
+  readonly bot?: { readonly avatar: ProjectAvatar | null } | undefined;
+  /** The conversation itself speaking, such as "Ivy couldn't answer": a quiet centered line. */
+  readonly notice?: boolean | undefined;
 }
 
 export interface ProposedPlan {

@@ -2417,7 +2417,7 @@ function directMessageRows(
     row?.kind !== "message"
       ? null
       : row.message.role === "assistant"
-        ? "assistant"
+        ? `assistant:${row.message.sender?.key ?? ""}`
         : resolveUserMessagePresentation(row.message).attribution === null
           ? "user"
           : null;

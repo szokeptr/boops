@@ -13,7 +13,8 @@ type RootParams = ReactNavigation.RootParamList;
 /** A page the workspace's detail column shows on its own: what a list row selects. */
 export type WorkspaceDetail =
   | { readonly name: "Thread"; readonly params: RootParams["Thread"] }
-  | { readonly name: "BotActivity"; readonly params: RootParams["BotActivity"] };
+  | { readonly name: "BotActivity"; readonly params: RootParams["BotActivity"] }
+  | { readonly name: "Room"; readonly params: RootParams["Room"] };
 
 const SELECT_WORKSPACE_DETAIL = "SELECT_WORKSPACE_DETAIL";
 
@@ -33,6 +34,7 @@ export function selectWorkspaceDetail(detail: WorkspaceDetail): SelectWorkspaceD
 const IDENTITY = {
   Thread: ["environmentId", "threadId"],
   BotActivity: ["environmentId", "projectId"],
+  Room: ["environmentId", "roomId"],
 } as const;
 
 type RouteLike = { readonly name: string; readonly key?: string; readonly params?: object };
@@ -92,13 +94,13 @@ export function workspaceDetailRouter<Action extends NavigationAction>(
   };
 }
 
-/** A link to a single thread selects it, like its list row would. */
+/** A link to a single thread or group chat selects it, like its list row would. */
 export function workspaceDetailLinkAction(
   state: PartialState<NavigationState> | NavigationState,
 ): SelectWorkspaceDetailAction | undefined {
   const pages = state.routes.filter((route) => route.name !== "Home");
   const [page] = pages;
   if (pages.length !== 1 || !page || page.state) return undefined;
-  if (page.name !== "Thread") return undefined;
+  if (page.name !== "Thread" && page.name !== "Room") return undefined;
   return selectWorkspaceDetail({ name: page.name, params: page.params } as WorkspaceDetail);
 }

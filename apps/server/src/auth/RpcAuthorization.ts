@@ -222,6 +222,13 @@ export const RPC_REQUIRED_SCOPES = {
   // A paired phone registers itself; keys are scoped to the caller's own audience.
   [WS_METHODS.notificationsRegisterDeviceKey]: AuthOrchestrationReadScope,
   [WS_METHODS.notificationsRemoveDeviceKey]: AuthOrchestrationReadScope,
+  // Reading and leaving rooms, and muting one, are the caller's own; the service fences rooms.
+  [WS_METHODS.roomsSubscribe]: AuthOrchestrationReadScope,
+  [WS_METHODS.roomsHistory]: AuthOrchestrationReadScope,
+  [WS_METHODS.roomsSubscribeFeed]: AuthOrchestrationReadScope,
+  [WS_METHODS.roomsLeave]: AuthOrchestrationReadScope,
+  [WS_METHODS.roomsSetMuted]: AuthOrchestrationReadScope,
+  [WS_METHODS.roomsMarkRead]: AuthOrchestrationReadScope,
 } as const satisfies Readonly<Record<WsRpcMethod, AuthEnvironmentScope>>;
 
 /**
@@ -262,6 +269,21 @@ const MEMBER_RPC_POLICY = {
   // Her own phones, filed under her audience.
   [WS_METHODS.notificationsRegisterDeviceKey]: "allow",
   [WS_METHODS.notificationsRemoveDeviceKey]: "allow",
+  // The Rooms service decides per room: only rooms she is in, and creating needs the owner's leave.
+  [WS_METHODS.roomsSubscribe]: "allow",
+  [WS_METHODS.roomsCreate]: "allow",
+  [WS_METHODS.roomsRename]: "allow",
+  [WS_METHODS.roomsAddParticipant]: "allow",
+  [WS_METHODS.roomsRemoveParticipant]: "allow",
+  [WS_METHODS.roomsLeave]: "allow",
+  [WS_METHODS.roomsSetArchived]: "allow",
+  [WS_METHODS.roomsSetMuted]: "allow",
+  [WS_METHODS.roomsDelete]: "allow",
+  [WS_METHODS.roomsPost]: "allow",
+  [WS_METHODS.roomsHistory]: "allow",
+  [WS_METHODS.roomsSubscribeFeed]: "allow",
+  [WS_METHODS.roomsRespond]: "allow",
+  [WS_METHODS.roomsMarkRead]: "allow",
   [WS_METHODS.previewClose]: "deny",
   [WS_METHODS.previewStopLocalServer]: "deny",
   [WS_METHODS.serverRunStorageCleanup]: "deny",

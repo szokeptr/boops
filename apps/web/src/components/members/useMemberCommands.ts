@@ -35,7 +35,15 @@ export function useMemberCommands(environmentId: EnvironmentId) {
   const runSetBotConnectionAccess = useAtomCommand(memberEnvironment.setBotConnectionAccess, quiet);
   const runInvite = useAtomCommand(memberEnvironment.invite, quiet);
   const runRemove = useAtomCommand(memberEnvironment.remove, quiet);
+  const runUpdate = useAtomCommand(memberEnvironment.update, quiet);
   return {
+    setCanCreateRooms: async (member: EnvironmentMember, canCreateRooms: boolean) => {
+      const result = await runUpdate({
+        environmentId,
+        input: { memberId: member.id, canCreateRooms },
+      });
+      reportFailure(`Could not change what ${member.label} can do`, result);
+    },
     setBotAccess: async (input: MembersSetBotAccessInput) => {
       const result = await runSetBotAccess({ environmentId, input });
       reportFailure(input.enabled ? "Could not share the bot" : "Could not stop sharing", result);

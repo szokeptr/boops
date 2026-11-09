@@ -1,7 +1,7 @@
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { type RunId } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
-import { memo, use, useState } from "react";
+import { type CSSProperties, memo, use, useState } from "react";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
 import { GitForkIcon } from "lucide-react";
@@ -23,6 +23,10 @@ import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../times
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
+import { botBubbleColors } from "@t3tools/client-runtime/bot-avatar";
+import { specFor } from "@t3tools/shared/botAvatar";
+import { BotAvatar } from "../bots/BotAvatar";
+import { SenderMessageAttachments } from "./SenderMessageAttachments";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -56,25 +60,72 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
     </AssistantCitationSource>
   );
 
-  if (ctx.directMessage) {
+  if (ctx.directMessage && row.message.sender?.notice === true) {
     return (
-      <div className="flex min-w-0 max-w-5/6 items-end gap-1">
-        <div
-          className={cn(
-            "min-w-0 rounded-2xl bg-message px-3.5 py-2.5 text-message-foreground",
-            row.groupedWithPrevious && "rounded-tl-md",
-            row.groupedWithNext && "rounded-bl-md",
-          )}
-          data-thread-find-text="true"
-        >
-          <MessageAuthorHeading>{ctx.assistantName}</MessageAuthorHeading>
-          {markdown}
-        </div>
-        {row.message.streaming || !text ? null : (
-          <div className="shrink-0 opacity-0 transition-opacity duration-200 pointer-coarse:hidden focus-within:opacity-100 group-hover/assistant:opacity-100">
-            <MessageCopyButton text={text} variant="ghost" />
+      <p
+        className="mx-auto max-w-5/6 py-1 text-center text-muted-foreground text-xs"
+        role="note"
+        data-thread-find-text="true"
+      >
+        {text}
+      </p>
+    );
+  }
+
+  if (ctx.directMessage) {
+    const sender = row.message.sender;
+    const colors =
+      sender?.bot === undefined ? null : botBubbleColors(sender.bot.avatar ?? specFor(sender.name));
+    return (
+      <div className="flex min-w-0 max-w-5/6 flex-col items-start gap-1">
+        {/* The bubble's heading names the sender for screen readers. */}
+        {sender !== undefined && !row.groupedWithPrevious ? (
+          <div
+            aria-hidden
+            className="ms-1 flex items-center gap-1.5 text-2xs text-muted-foreground"
+            data-assistant-message-sender={sender.key}
+          >
+            {sender.bot === undefined ? null : (
+              <BotAvatar avatar={sender.bot.avatar} name={sender.name} status="idle" size={16} />
+            )}
+            {sender.name}
           </div>
-        )}
+        ) : null}
+        <div className="flex min-w-0 max-w-full items-end gap-1">
+          <div
+            className={cn(
+              "min-w-0 rounded-2xl bg-message px-3.5 py-2.5 text-message-foreground",
+              row.groupedWithPrevious && "rounded-tl-md",
+              row.groupedWithNext && "rounded-bl-md",
+            )}
+            style={
+              colors === null
+                ? undefined
+                : ({
+                    backgroundColor: colors.background,
+                    color: colors.foreground,
+                    "--contrast-foreground": colors.foreground,
+                  } as CSSProperties)
+            }
+            data-thread-find-text="true"
+          >
+            <MessageAuthorHeading>{sender?.name ?? ctx.assistantName}</MessageAuthorHeading>
+            {(row.message.attachments ?? []).length > 0 ? (
+              <div className={cn(text ? "mb-2" : null)}>
+                <SenderMessageAttachments
+                  environmentId={ctx.activeThreadEnvironmentId}
+                  attachments={row.message.attachments ?? []}
+                />
+              </div>
+            ) : null}
+            {text || (row.message.attachments ?? []).length === 0 ? markdown : null}
+          </div>
+          {row.message.streaming || !text ? null : (
+            <div className="shrink-0 opacity-0 transition-opacity duration-200 pointer-coarse:hidden focus-within:opacity-100 group-hover/assistant:opacity-100">
+              <MessageCopyButton text={text} variant="ghost" />
+            </div>
+          )}
+        </div>
       </div>
     );
   }

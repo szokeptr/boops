@@ -21,6 +21,8 @@ import {
   ThreadModelSwitchDivider,
 } from "./thread-handoff-row";
 import { BotCallRecapRow } from "../bot-call/BotCallRecapRow";
+import { botBubbleColors } from "@t3tools/client-runtime/bot-avatar";
+import { specFor } from "@t3tools/shared/botAvatar";
 import { BotAvatarSlot } from "../bots/BotAvatarSlot";
 import { ThreadBotExchangeRow } from "./ThreadBotExchangeRow";
 import { ThreadRoutineRunsRow } from "./ThreadRoutineRunsRow";
@@ -375,8 +377,10 @@ export interface ThreadFeedProps {
   /** Set in a bot's main conversation, which reads like a DM: bubbles and a typing row, not the work. */
   readonly directMessage?: {
     readonly typingSince: string | null;
-    /** Your bubbles wear the bot's colour. */
-    readonly ownBubble: { readonly background: string; readonly foreground: string };
+    /** In a group chat: who the typing row names. */
+    readonly typingName?: string | null;
+    /** Your bubbles wear the bot's colour; a group chat keeps the default. */
+    readonly ownBubble: { readonly background: string; readonly foreground: string } | null;
     readonly bot: { readonly name: string; readonly avatar: ProjectAvatar | null };
     /** Names the bot a report_to_parent call goes to. */
     readonly parentProjectId: ProjectId | null;
@@ -1159,7 +1163,20 @@ interface MarkdownStyleSet {
   readonly nativeTextStyle: NativeMarkdownTextStyle;
 }
 
+const inkedMarkdownStyleSets = new WeakMap<MarkdownStyleSet, Map<string, MarkdownStyleSet>>();
+
+/** Cached per set and ink, so memoized markdown keeps its styles across renders. */
 function inkedMarkdownStyleSet(set: MarkdownStyleSet, ink: string): MarkdownStyleSet {
+  const inks = inkedMarkdownStyleSets.get(set) ?? new Map<string, MarkdownStyleSet>();
+  inkedMarkdownStyleSets.set(set, inks);
+  const cached = inks.get(ink);
+  if (cached !== undefined) return cached;
+  const inked = inkMarkdownStyleSet(set, ink);
+  inks.set(ink, inked);
+  return inked;
+}
+
+function inkMarkdownStyleSet(set: MarkdownStyleSet, ink: string): MarkdownStyleSet {
   return {
     nativeTextStyle: {
       ...set.nativeTextStyle,
@@ -1756,6 +1773,7 @@ function renderFeedEntry(
     readonly workflowOpening: WorkflowOpening | null;
     readonly messageGrouping: GroupedThreadFeedRow["messageGrouping"];
     readonly directMessage: boolean;
+    readonly typingName: string | null;
     readonly conversationBot: { readonly name: string; readonly avatar: ProjectAvatar | null };
   },
 ) {
@@ -1800,6 +1818,7 @@ function renderFeedEntry(
   if (entry.type === "thinking" && props.directMessage) {
     return (
       <ThreadTypingRow
+        name={props.typingName}
         startedAt={entry.createdAt}
         minHeight={props.workRowSizing.estimatedRowHeight}
       />
@@ -2440,11 +2459,29 @@ function renderFeedEntry(
     const enterAnimated = isFreshTimestamp(message.createdAt);
     if (props.directMessage) {
       const bubbleMaxWidth = props.duoColumns ? "85%" : props.userBubbleMaxWidth;
+      const { sender } = message;
+      const senderColors =
+        sender?.bot === undefined
+          ? null
+          : botBubbleColors(sender.bot.avatar ?? specFor(sender.name));
       return (
         <Animated.View
           className={cn("items-start", props.messageGrouping.groupedWithNext ? "mb-1" : "mb-5")}
           {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
         >
+          {sender !== undefined && !props.messageGrouping.groupedWithPrevious ? (
+            <View className="mb-1 ml-1 flex-row items-center gap-1.5">
+              {sender.bot === undefined ? null : (
+                <BotAvatarSlot
+                  avatar={sender.bot.avatar}
+                  name={sender.name}
+                  status="idle"
+                  size={16}
+                />
+              )}
+              <Text className="font-t3-medium text-2xs text-foreground-muted">{sender.name}</Text>
+            </View>
+          ) : null}
           <View
             className={cn(
               "min-w-0 gap-2 rounded-[20px] px-3.5 py-2.5",
@@ -2452,7 +2489,7 @@ function renderFeedEntry(
               props.messageGrouping.groupedWithNext && "rounded-bl-md",
             )}
             style={{
-              backgroundColor: userBubbleColor,
+              backgroundColor: senderColors?.background ?? userBubbleColor,
               maxWidth: bubbleMaxWidth,
               ...(hasWideBlock || attachments.length > 0 ? { width: bubbleMaxWidth } : null),
             }}
@@ -2467,7 +2504,11 @@ function renderFeedEntry(
                   citeThreadId={props.threadId}
                   citeMessageId={message.id}
                   onCite={props.onCite}
-                  markdownStyles={styles}
+                  markdownStyles={
+                    senderColors === null
+                      ? styles
+                      : inkedMarkdownStyleSet(markdownStyles.user, senderColors.foreground)
+                  }
                   linkHandlers={props.markdownLinkHandlers}
                   onUseArtifactTemplate={props.onUseArtifactTemplate}
                   renderImage={props.renderMarkdownImage}
@@ -3445,6 +3486,7 @@ export const ThreadFeed = memo(function ThreadFeed({
     userBubbleColor,
     ownBubble,
     conversationBot,
+    typingName: props.directMessage?.typingName ?? null,
     viewportWidth,
     contentWidth,
     skills: props.skills,
@@ -3977,6 +4019,7 @@ export const ThreadFeed = memo(function ThreadFeed({
           {renderFeedEntry(info, {
             messageGrouping: info.item.messageGrouping,
             directMessage: Boolean(props.directMessage),
+            typingName: props.directMessage?.typingName ?? null,
             conversationBot,
             environmentId: props.environmentId,
             dispatchingMessageId: props.dispatchingMessageId,

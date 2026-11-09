@@ -355,6 +355,7 @@ it.effect("mints the owner's session, a member's session, and nothing for anyone
       label: "Anna",
       email: "anna@example.com",
       access: "auto-accept-edits",
+      canCreateRooms: false,
       status: "active",
       createdAt: "2026-01-01T00:00:00.000Z",
       lastConnectedAt: "2026-01-01T00:00:00.000Z",

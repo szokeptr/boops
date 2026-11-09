@@ -55,6 +55,7 @@ const toMember = (record: EnvironmentMembers.EnvironmentMemberRecord): Environme
   label: record.label,
   email: record.email,
   access: record.access,
+  canCreateRooms: record.canCreateRooms,
   status: record.cloudUserId === null ? "invited" : "active",
   createdAt: record.createdAt,
   lastConnectedAt: record.lastConnectedAt,
@@ -280,6 +281,7 @@ const make = Effect.gen(function* () {
       label: input.label,
       email,
       access: input.access ?? DEFAULT_MEMBER_ACCESS,
+      canCreateRooms: false,
       cloudUserId: null,
       createdAt: DateTime.formatIso(yield* DateTime.now),
       lastConnectedAt: null,
@@ -307,7 +309,12 @@ const make = Effect.gen(function* () {
 
   const update: Members["Service"]["update"] = Effect.fn("Members.update")(function* (input) {
     const record = yield* store
-      .update({ id: input.memberId, label: input.label ?? null, access: input.access ?? null })
+      .update({
+        id: input.memberId,
+        label: input.label ?? null,
+        access: input.access ?? null,
+        canCreateRooms: input.canCreateRooms ?? null,
+      })
       .pipe(Effect.mapError(persistence));
     if (Option.isNone(record)) return yield* new MembersError({ reason: "not-found" });
     yield* published;

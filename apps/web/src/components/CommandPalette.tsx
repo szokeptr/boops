@@ -54,6 +54,7 @@ import {
   ArchiveRestoreIcon,
   ArrowLeftIcon,
   BotIcon,
+  UsersIcon,
   PhoneIcon,
   BugIcon,
   ChartNoAxesColumnIcon,
@@ -240,6 +241,8 @@ import {
   sourceControlHostIcon,
 } from "./CommandPaletteAddProject";
 import { openCreateBotDialog } from "./CreateBotDialog";
+import { openCreateRoomDialog } from "./rooms/CreateRoomDialog";
+import { useRooms } from "../state/rooms";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
 import {
@@ -538,6 +541,9 @@ function OpenCommandPaletteDialog(props: {
   const canManageContextualBot = useCanManageBot(contextualProjectRef?.environmentId ?? null);
   const canShareContextualBot = useCanManageMembers(contextualProjectRef?.environmentId ?? null);
   const memberOnly = useIsMemberOnly();
+  // Group chats live on the machine the bots do; a member's only machine is someone else's.
+  const roomEnvironmentId = primaryEnvironmentId;
+  const roomList = useRooms(roomEnvironmentId);
   const { archiveBot, unarchiveBot } = useBotArchive();
   const projectPickerEntries = buildSidebarProjectPickerEntries({
     groups: pickableProjectGroups(projectGroups),
@@ -1225,6 +1231,36 @@ function OpenCommandPaletteDialog(props: {
       shortcutCommand: "bot.new",
       run: async () => openCreateBotDialog(),
     });
+  }
+
+  if (roomEnvironmentId !== null && roomList.canCreate) {
+    actionItems.push({
+      kind: "action",
+      value: "action:new-group-chat",
+      searchTerms: ["new group chat", "group", "room", "people", "together", "chat with"],
+      title: "New group chat",
+      icon: <UsersIcon className={ITEM_ICON_CLASS} />,
+      run: async () => openCreateRoomDialog(roomEnvironmentId),
+    });
+  }
+  if (roomEnvironmentId !== null) {
+    for (const room of roomList.rooms) {
+      if (!room.joined || room.archivedAt !== null) continue;
+      actionItems.push({
+        kind: "action",
+        value: `room:${room.id}`,
+        searchTerms: [room.title, ...room.participants.map((entry) => entry.name), "group chat"],
+        title: room.title,
+        searchTitle: room.title,
+        icon: <UsersIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          await navigate({
+            to: "/rooms/$environmentId/$roomId",
+            params: { environmentId: roomEnvironmentId, roomId: room.id },
+          });
+        },
+      });
+    }
   }
 
   if (projects.length > 0) {

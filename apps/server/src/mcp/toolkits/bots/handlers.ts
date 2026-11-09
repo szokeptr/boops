@@ -1,9 +1,10 @@
-import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, RoomId, type RoomsError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import * as BotCalls from "../../../bots/BotCalls.ts";
 import type { BotFamilyError } from "../../../bots/botFamily.ts";
 import * as Bots from "../../../bots/Bots.ts";
+import * as Rooms from "../../../rooms/Rooms.ts";
 import { assertNotLinked } from "../../linkOrigin.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { loadCaller } from "../../threadAccess.ts";
@@ -55,6 +56,15 @@ const mapBotErrors = <A, R>(
       error._tag === "OrchestratorMcpFailure" ? error : toFailure(error),
     ),
   );
+
+const roomFailure = (error: RoomsError) =>
+  new OrchestratorMcpFailure({
+    code: error.reason === "not-found" ? "target_required" : "orchestration_error",
+    message:
+      error.reason === "not-found"
+        ? "You are not in that group chat. Call list_group_chats for the ones you are in."
+        : error.message,
+  });
 
 const handlers = {
   create_child_bot: McpToolAccess.actsAsCaller((input) =>
@@ -132,6 +142,24 @@ const handlers = {
       const thread = yield* callerThread;
       const calls = yield* BotCalls.BotCalls;
       return { ended: yield* calls.endForThread(thread.id) };
+    }),
+  ),
+  list_group_chats: McpToolAccess.readsAsCaller(() =>
+    Effect.gen(function* () {
+      const projectId = yield* callerBot;
+      const rooms = yield* Rooms.Rooms;
+      const groupChats = yield* rooms.roomsOfBot(projectId).pipe(Effect.mapError(roomFailure));
+      return { groupChats };
+    }),
+  ),
+  post_to_group_chat: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const projectId = yield* callerBot;
+      const rooms = yield* Rooms.Rooms;
+      yield* rooms
+        .postAsBot({ projectId, roomId: RoomId.make(input.roomId), text: input.text })
+        .pipe(Effect.mapError(roomFailure));
+      return { posted: true };
     }),
   ),
 } satisfies McpToolAccess.Handlers<typeof BotToolkit.tools>;

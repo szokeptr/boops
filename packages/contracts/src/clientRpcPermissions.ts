@@ -41,6 +41,15 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.botsDelete]: AuthOrchestrationOperateScope,
   [WS_METHODS.botsCallStart]: AuthOrchestrationOperateScope,
   [WS_METHODS.botsCallEnd]: AuthOrchestrationOperateScope,
+  // Room rules (who may create, add or remove) are the Rooms service's; these are the floor.
+  [WS_METHODS.roomsCreate]: AuthOrchestrationOperateScope,
+  [WS_METHODS.roomsRename]: AuthOrchestrationOperateScope,
+  [WS_METHODS.roomsAddParticipant]: AuthOrchestrationOperateScope,
+  [WS_METHODS.roomsRemoveParticipant]: AuthOrchestrationOperateScope,
+  [WS_METHODS.roomsSetArchived]: AuthOrchestrationOperateScope,
+  [WS_METHODS.roomsDelete]: AuthOrchestrationOperateScope,
+  [WS_METHODS.roomsPost]: AuthOrchestrationOperateScope,
+  [WS_METHODS.roomsRespond]: AuthOrchestrationOperateScope,
   // Inviting someone hands them access to this environment, like a pairing link.
   [WS_METHODS.membersInvite]: AuthAccessWriteScope,
   [WS_METHODS.membersUpdate]: AuthAccessWriteScope,

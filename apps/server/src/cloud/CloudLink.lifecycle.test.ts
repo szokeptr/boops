@@ -63,6 +63,7 @@ const unusedSecretStoreOperation = () => Effect.die("unused secret-store operati
 
 const idleAwarenessRelay = AgentAwarenessRelay.AgentAwarenessRelay.of({
   publishThread: () => Effect.void,
+  publishRoomMessage: () => Effect.void,
   drain: Effect.void,
   requestCatchUp: () => Effect.void,
   start: () => Effect.void,

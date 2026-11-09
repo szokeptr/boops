@@ -45,6 +45,7 @@ import { SidebarContent, SidebarGroup, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ArchivedBotList } from "./ArchivedBotList";
 import { BotList } from "./BotList";
+import { RoomSidebarSection } from "../rooms/RoomSidebarSection";
 
 /** The bot whose main thread, background thread, or activity page the route shows. */
 function useActiveBotKey(): string | null {
@@ -279,6 +280,7 @@ export default function BotSidebar() {
       <SidebarContent className="min-h-full">
         <SidebarGroup className="flex-1" role="presentation">
           <BotListPanel {...(isMobile ? { onNavigate: () => setOpenMobile(false) } : {})} />
+          <RoomSidebarSection {...(isMobile ? { onNavigate: () => setOpenMobile(false) } : {})} />
           <div className="mt-auto pt-2">
             <ArchivedBotList />
           </div>

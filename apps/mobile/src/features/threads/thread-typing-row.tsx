@@ -2,6 +2,7 @@ import { useIsFocused } from "@react-navigation/native";
 import { type ReactNode, useEffect, useState } from "react";
 import { Animated as NativeAnimated, Easing, View, useAnimatedValue } from "react-native";
 
+import { AppText as Text } from "../../components/ui/AppText";
 import { usePaneRole } from "../../components/ui/Pane";
 import { useAppActive, useReduceMotionEnabled } from "../../lib/appState";
 import { ShimmeringWorkContent } from "./thread-work-log";
@@ -62,8 +63,15 @@ function FadeIn(props: { readonly animate: boolean; readonly children: ReactNode
   return <NativeAnimated.View style={{ opacity }}>{props.children}</NativeAnimated.View>;
 }
 
-/** A bot's working row reads like a friend typing, trying a new phrase every few seconds. */
-export function ThreadTypingRow(props: { readonly startedAt: string; readonly minHeight: number }) {
+/**
+ * A bot's working row reads like a friend typing, trying a new phrase every few seconds. A group
+ * chat names who is typing.
+ */
+export function ThreadTypingRow(props: {
+  readonly startedAt: string;
+  readonly minHeight: number;
+  readonly name?: string | null;
+}) {
   const seed = [...props.startedAt].reduce((sum, char) => sum + char.charCodeAt(0), 0);
   const focused = useIsFocused();
   const inSidebar = usePaneRole() === "sidebar";
@@ -104,7 +112,7 @@ export function ThreadTypingRow(props: { readonly startedAt: string; readonly mi
   return (
     <View
       accessible
-      accessibilityLabel="Working"
+      accessibilityLabel={props.name ? `${props.name} working` : "Working"}
       className="flex-row items-center gap-2.5 px-1"
       style={{ minHeight: props.minHeight }}
     >
@@ -123,6 +131,11 @@ export function ThreadTypingRow(props: { readonly startedAt: string; readonly mi
           showIcon={false}
         />
       </FadeIn>
+      {props.name ? (
+        <Text numberOfLines={1} className="min-w-0 shrink text-sm text-foreground-muted">
+          · {props.name}
+        </Text>
+      ) : null}
     </View>
   );
 }

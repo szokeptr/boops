@@ -85,6 +85,24 @@ export type BotMcpReportToParentInput = typeof BotMcpReportToParentInput.Type;
 export const BotMcpTellMainConversationInput = Schema.Struct({ text: BotMessageText });
 export type BotMcpTellMainConversationInput = typeof BotMcpTellMainConversationInput.Type;
 
+export const BotMcpListGroupChatsResult = Schema.Struct({
+  groupChats: Schema.Array(
+    Schema.Struct({
+      roomId: TrimmedNonEmptyString,
+      title: Schema.String,
+      people: Schema.Array(Schema.String),
+      bots: Schema.Array(Schema.String),
+    }),
+  ),
+});
+export type BotMcpListGroupChatsResult = typeof BotMcpListGroupChatsResult.Type;
+
+export const BotMcpPostToGroupChatInput = Schema.Struct({
+  roomId: TrimmedNonEmptyString,
+  text: BotMessageText,
+});
+export type BotMcpPostToGroupChatInput = typeof BotMcpPostToGroupChatInput.Type;
+
 export const BotMcpDelivery = Schema.Struct({
   delivery: Schema.Literals(["started", "queued", "steered", "restarted"]),
 });
@@ -155,6 +173,12 @@ export const botHeartbeatThreadId = (projectId: ProjectId) =>
 /** The background thread one routine runs in, so its runs stay out of the bot's conversations. */
 export const botRoutineThreadId = (taskId: string) => ThreadId.make(`routine:${taskId}`);
 
+/** The hidden thread a bot answers one room in; see `docs/adr/0003-rooms-front-per-bot-threads.md`. */
+export const botRoomThreadId = (roomId: string, projectId: ProjectId) =>
+  ThreadId.make(`room:${roomId}:${projectId}`);
+
+export const isRoomThreadId = (threadId: ThreadId) => threadId.startsWith("room:");
+
 /**
  * A thread the user talks to the bot in: its main one, or one started beside it. Helpers, side
  * chats, routine threads and the Heartbeat thread are the bot's background work, which Activity
@@ -172,7 +196,8 @@ export function isBotConversationThread(
     thread.id === mainThreadId ||
     (isListedThreadLineage(thread.lineage) &&
       thread.id !== botHeartbeatThreadId(thread.projectId) &&
-      !thread.id.startsWith("routine:"))
+      !thread.id.startsWith("routine:") &&
+      !isRoomThreadId(thread.id))
   );
 }
 

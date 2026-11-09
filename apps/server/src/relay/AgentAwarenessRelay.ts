@@ -6,7 +6,7 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2TurnItem,
   type Project,
-  type ThreadId,
+  ThreadId,
 } from "@t3tools/contracts";
 import {
   RelayApi,
@@ -57,11 +57,40 @@ export class AgentAwarenessRelay extends Context.Service<
   AgentAwarenessRelay,
   {
     readonly publishThread: (threadId: ThreadId) => Effect.Effect<void>;
+    /** A group chat message, as a push from its sender to each listed audience. Best effort. */
+    readonly publishRoomMessage: (input: RoomMessagePush) => Effect.Effect<void>;
     readonly drain: Effect.Effect<void>;
     readonly requestCatchUp: () => Effect.Effect<void>;
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
   }
 >()("boops/relay/AgentAwarenessRelay") {}
+
+export interface RoomMessagePush {
+  readonly roomId: string;
+  readonly roomTitle: string;
+  readonly senderId: string;
+  readonly senderName: string;
+  readonly text: string;
+  /** Who hears it: a member, or undefined for the owner. */
+  readonly audiences: ReadonlyArray<EnvironmentMemberId | undefined>;
+}
+
+/**
+ * One relay key per room and audience: the relay keeps one state per key, and a phone opens the
+ * preview with the key it was sealed under, so two people's pushes must not share one.
+ */
+const roomPushThreadId = (roomId: string, audience: EnvironmentMemberId | undefined) =>
+  ThreadId.make(`room-${roomId}-${audience ?? "owner"}`);
+
+const RELAY_TEXT_MAX = 160;
+const clip = (text: string, max: number) => {
+  let out = "";
+  for (const char of text.replace(/\s+/g, " ").trim()) {
+    if (out.length + char.length > max) return `${out.trimEnd()}…`;
+    out += char;
+  }
+  return out;
+};
 
 function eventThreadId(event: OrchestrationV2DomainEvent): ThreadId {
   return event.threadId;
@@ -974,8 +1003,74 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const publishRoomMessage: AgentAwarenessRelay["Service"]["publishRoomMessage"] = Effect.fn(
+    "AgentAwarenessRelay.publishRoomMessage",
+  )(
+    function* (input) {
+      if (!(yield* readPublishAgentActivityEnabled)) return;
+      const relayConfig = yield* readRelayConfig;
+      if (relayConfig === null) return;
+      const relayClient = yield* makeRelayClient(relayConfig);
+      const environmentId = yield* serverEnvironment.getEnvironmentId;
+      const updatedAt = DateTime.formatIso(yield* DateTime.now);
+      const title = clip(input.roomTitle, 200) || "Group chat";
+      const senderName = clip(input.senderName, 200) || "Someone";
+      const text = input.text.trim() === "" ? "Sent an attachment" : input.text;
+      for (const audience of new Set(input.audiences)) {
+        const threadId = roomPushThreadId(input.roomId, audience);
+        const keys = yield* deviceKeys
+          .listForAudience(audience)
+          .pipe(Effect.orElseSucceed(() => []));
+        const previews: RelayAgentActivityMessagePreview[] = [];
+        for (const key of keys.slice(0, 20)) {
+          const sealed = yield* Effect.try(() =>
+            sealNotificationPreview({
+              devicePublicKey: key.publicKey,
+              environmentId,
+              threadId,
+              text: `${senderName}: ${text}`,
+            }),
+          ).pipe(Effect.option);
+          if (Option.isSome(sealed)) {
+            previews.push({ deviceId: key.deviceId, ciphertext: sealed.value });
+          }
+        }
+        const state: RelayAgentActivityState = {
+          environmentId,
+          threadId,
+          projectTitle: title,
+          threadTitle: title,
+          phase: "completed",
+          headline: clip(`${senderName}: ${text}`, RELAY_TEXT_MAX),
+          modelTitle: "Group chat",
+          updatedAt,
+          deepLink: `/rooms/${environmentId}/${input.roomId}`,
+          ...(audience === undefined ? {} : { memberId: audience }),
+          message: { senderId: clip(input.senderId, 128), senderName: title, previews },
+        };
+        const proof = yield* makePublishProof({
+          relayIssuer: relayConfig.issuer,
+          environmentId,
+          threadId,
+          state,
+          jti: yield* random.uuidV4(),
+        }).pipe(Effect.provideService(EnvironmentSigningKey, signingKey));
+        yield* relayClient.server
+          .publishAgentActivity({ params: { environmentId, threadId }, payload: { state, proof } })
+          .pipe(Effect.timeout("10 seconds"));
+      }
+    },
+    (effect) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("could not push a group chat message", { cause }),
+        ),
+      ),
+  );
+
   return AgentAwarenessRelay.of({
     publishThread,
+    publishRoomMessage,
     drain: worker.drain,
     requestCatchUp: Effect.fn("AgentAwarenessRelay.requestCatchUp")(function () {
       return Queue.offer(catchUpRequests, undefined).pipe(Effect.asVoid);

@@ -70,6 +70,16 @@ describe("pending timeline messages", () => {
     expect(steers[1]).not.toBe(singleSteer[1]);
     const dm = group([first, reply, { ...reply, id: "reply-2" }], { directMessage: true });
     expect(dm.map((row) => row.messageGrouping.groupedWithNext)).toEqual([false, true, false]);
+    const from = (id: string, key: string) => ({
+      ...reply,
+      id,
+      message: { ...reply.message, sender: { key, name: key } },
+    });
+    const room = group([from("a1", "bot:a"), from("a2", "bot:a"), from("b1", "bot:b")], {
+      directMessage: true,
+    });
+    expect(room.map((row) => row.messageGrouping.groupedWithNext)).toEqual([true, false, false]);
+    expect(room[2]?.messageGrouping.groupedWithPrevious).toBe(false);
     expect(group([first, reply, { ...reply, id: "reply-3" }], {})[2]?.messageGrouping).toEqual(
       expect.objectContaining({ groupedWithPrevious: false }),
     );

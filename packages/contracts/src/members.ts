@@ -40,6 +40,8 @@ export const EnvironmentMember = Schema.Struct({
   label: TrimmedNonEmptyString,
   email: TrimmedNonEmptyString,
   access: MemberAccess,
+  /** Whether they may start group chats, with the bots shared with them. */
+  canCreateRooms: Schema.Boolean,
   /** `invited` until their first connection. */
   status: EnvironmentMemberStatus,
   createdAt: IsoDateTime,
@@ -67,6 +69,7 @@ export const MembersUpdateInput = Schema.Struct({
   memberId: EnvironmentMemberId,
   label: Schema.optionalKey(TrimmedNonEmptyString),
   access: Schema.optionalKey(MemberAccess),
+  canCreateRooms: Schema.optionalKey(Schema.Boolean),
 });
 export type MembersUpdateInput = typeof MembersUpdateInput.Type;
 

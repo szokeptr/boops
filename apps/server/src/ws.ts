@@ -5,6 +5,7 @@ import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as Connectors from "./connectors/Connectors.ts";
 import * as Members from "./members/Members.ts";
+import * as Rooms from "./rooms/Rooms.ts";
 import * as NotificationDeviceKeys from "./notifications/NotificationDeviceKeys.ts";
 import {
   authorizeMemberCommand,
@@ -1524,8 +1525,13 @@ export const layerWsRpc = (
       const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
       const connectors = yield* Connectors.Connectors;
       const members = yield* Members.Members;
+      const rooms = yield* Rooms.Rooms;
       const notificationDeviceKeys = yield* NotificationDeviceKeys.NotificationDeviceKeys;
       const currentMemberId = memberIdFromSessionSubject(currentSession.subject);
+      const roomViewer: Rooms.RoomViewer =
+        currentMemberId === undefined
+          ? { kind: "owner" }
+          : { kind: "member", memberId: currentMemberId };
       // A lookup that fails refuses the member rather than letting the call through.
       const failClosed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         effect.pipe(
@@ -2845,6 +2851,25 @@ export const layerWsRpc = (
         [WS_METHODS.membersSetBotConnectionAccess]: (input) =>
           members.setBotConnectionAccess(input),
         [WS_METHODS.membersLeave]: () => members.leave(currentSession.subject),
+        [WS_METHODS.roomsSubscribe]: () => rooms.subscribe(roomViewer),
+        [WS_METHODS.roomsCreate]: (input) => rooms.create(roomViewer, input),
+        [WS_METHODS.roomsRename]: ({ roomId, title }) => rooms.rename(roomViewer, roomId, title),
+        [WS_METHODS.roomsAddParticipant]: ({ roomId, participant }) =>
+          rooms.addParticipant(roomViewer, roomId, participant),
+        [WS_METHODS.roomsRemoveParticipant]: ({ roomId, participant }) =>
+          rooms.removeParticipant(roomViewer, roomId, participant),
+        [WS_METHODS.roomsLeave]: ({ roomId }) => rooms.leave(roomViewer, roomId),
+        [WS_METHODS.roomsSetArchived]: ({ roomId, archived }) =>
+          rooms.setArchived(roomViewer, roomId, archived),
+        [WS_METHODS.roomsSetMuted]: ({ roomId, muted }) =>
+          rooms.setMuted(roomViewer, roomId, muted),
+        [WS_METHODS.roomsDelete]: ({ roomId }) => rooms.remove(roomViewer, roomId),
+        [WS_METHODS.roomsPost]: (input) => rooms.post(roomViewer, input),
+        [WS_METHODS.roomsRespond]: (input) => rooms.respond(roomViewer, input),
+        [WS_METHODS.roomsMarkRead]: ({ roomId, throughSeq }) =>
+          rooms.markRead(roomViewer, roomId, throughSeq),
+        [WS_METHODS.roomsHistory]: (input) => rooms.history(roomViewer, input),
+        [WS_METHODS.roomsSubscribeFeed]: ({ roomId }) => rooms.feed(roomViewer, roomId),
         [WS_METHODS.notificationsRegisterDeviceKey]: (input) =>
           notificationDeviceKeys.register(currentSession.subject, input),
         [WS_METHODS.notificationsRemoveDeviceKey]: ({ deviceId }) =>

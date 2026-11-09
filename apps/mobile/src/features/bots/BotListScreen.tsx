@@ -38,6 +38,7 @@ import type { WorkspaceState } from "../../state/workspaceModel";
 import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useFabScroll } from "../home/FabScrollContext";
 import { EnvironmentInviteCards } from "../members/EnvironmentInviteCards";
+import { RoomListSection } from "../rooms/RoomListSection";
 import { useSearchScrollRestoration } from "../workspace/useSearchScrollRestoration";
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 import { useBotShareSheet } from "../members/BotShareSheet";
@@ -318,6 +319,7 @@ export function BotListScreen(props: {
                 {pinnedHeader}
               </>
             }
+            ListFooterComponent={<RoomListSection searchQuery={props.searchQuery} />}
             ListEmptyComponent={
               pinned.length > 0 ? undefined : (
                 <EmptyState

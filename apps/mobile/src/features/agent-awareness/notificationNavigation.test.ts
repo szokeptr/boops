@@ -6,6 +6,7 @@ import { consumeLastAgentNotificationResponse } from "./notificationResponseCons
 import {
   extractAgentNotificationDeepLink,
   routeAgentNotificationResponseOnce,
+  threadDeepLinkOnScreen,
 } from "./notificationPayload";
 
 function responseWithData(data: Record<string, unknown>, identifier = "notification-1") {
@@ -64,6 +65,21 @@ describe("extractAgentNotificationDeepLink", () => {
     ).toBe("/threads/env/thread");
   });
 
+  it("opens a group chat from a room push instead of its relay thread id", () => {
+    expect(
+      extractAgentNotificationDeepLink(
+        responseWithData({
+          deepLink: "/rooms/env%201/room-a",
+          environmentId: "env 1",
+          threadId: "room-room-a-owner",
+        }),
+      ),
+    ).toBe("/rooms/env%201/room-a");
+    expect(
+      extractAgentNotificationDeepLink(responseWithData({ deepLink: "/rooms/env/room/extra" })),
+    ).toBeNull();
+  });
+
   it("falls back to the thread route from environment and thread ids", () => {
     expect(
       extractAgentNotificationDeepLink(
@@ -101,6 +117,14 @@ describe("extractAgentNotificationDeepLink", () => {
       extractAgentNotificationDeepLink(responseWithData({ deepLink: "/threads/env/thread?x=1" })),
     ).toBeNull();
     expect(extractAgentNotificationDeepLink({})).toBeNull();
+  });
+});
+
+describe("threadDeepLinkOnScreen", () => {
+  it("names the conversation or group chat on screen, so its banners stay quiet", () => {
+    expect(threadDeepLinkOnScreen("/threads/env/thread/files")).toBe("/threads/env/thread");
+    expect(threadDeepLinkOnScreen("/rooms/env/room")).toBe("/rooms/env/room");
+    expect(threadDeepLinkOnScreen("/settings")).toBeNull();
   });
 });
 

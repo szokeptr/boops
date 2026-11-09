@@ -70,10 +70,16 @@ export function createThreadFeedGrouping() {
       readonly directMessage?: boolean;
     },
   ): ReadonlyArray<GroupedThreadFeedRow> => {
-    const isAssistantMessage = (index: number) => {
+    const assistantSender = (index: number) => {
       const entry = feed[index];
-      return entry?.type === "message" && entry.message.role === "assistant";
+      return entry?.type === "message" && entry.message.role === "assistant"
+        ? (entry.message.sender?.key ?? "")
+        : null;
     };
+    // A group chat stacks one sender's run; everyone else starts a new one.
+    const continuesAssistantRun = (index: number, neighbour: number) =>
+      assistantSender(neighbour) !== null && assistantSender(neighbour) === assistantSender(index);
+    const isAssistantMessage = (index: number) => assistantSender(index) !== null;
     const groupingMessage = (index: number) => {
       const entry = feed[index];
       return entry?.type === "message" &&
@@ -88,8 +94,8 @@ export function createThreadFeedGrouping() {
       const grouping =
         options.directMessage && isAssistantMessage(index)
           ? {
-              groupedWithPrevious: isAssistantMessage(index - 1),
-              groupedWithNext: isAssistantMessage(index + 1),
+              groupedWithPrevious: continuesAssistantRun(index, index - 1),
+              groupedWithNext: continuesAssistantRun(index, index + 1),
               continuesSteer: false,
             }
           : message === undefined

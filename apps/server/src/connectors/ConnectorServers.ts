@@ -1,4 +1,4 @@
-import type { ConnectorConnectionId, ThreadId } from "@t3tools/contracts";
+import { type ConnectorConnectionId, isRoomThreadId, type ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -44,6 +44,17 @@ const make = Effect.gen(function* () {
   const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
   const projects = yield* ProjectStore.ProjectStoreV2;
 
+  // A room's bots answer everyone in it, so a room with any member gets the member set.
+  const roomHasMembers = (threadId: ThreadId) =>
+    isRoomThreadId(threadId)
+      ? sql<{ readonly found: number }>`
+          SELECT 1 AS found FROM room_participants
+          WHERE room_id = ${threadId.slice("room:".length).split(":")[0] ?? ""}
+            AND participant_key LIKE 'member:%'
+          LIMIT 1
+        `.pipe(Effect.map((rows) => rows.length > 0))
+      : Effect.succeed(false);
+
   const forThread: ConnectorServers["Service"]["forThread"] = Effect.fn(
     "ConnectorServers.forThread",
   )(
@@ -52,7 +63,7 @@ const make = Effect.gen(function* () {
       const project = yield* projects.get(thread.projectId);
       const ids = connectionsForConversation(
         Option.getOrUndefined(project),
-        thread.linkOrigin?.memberId !== undefined,
+        thread.linkOrigin?.memberId !== undefined || (yield* roomHasMembers(threadId)),
       );
       if (ids.length === 0) return [];
       const rows = yield* sql<{ readonly server_name: string }>`

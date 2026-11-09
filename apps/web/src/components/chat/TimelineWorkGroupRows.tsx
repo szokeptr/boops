@@ -285,7 +285,7 @@ const TYPING_LABELS = [
 const TYPING_LABEL_HOLD_MS = 3200;
 
 /** A bot's working row reads like a friend typing, trying a new phrase every few seconds. */
-function TypingTimelineRow({ createdAt }: { createdAt: string | null }) {
+function TypingTimelineRow({ createdAt, name }: { createdAt: string | null; name: string | null }) {
   const seed = [...(createdAt ?? "")].reduce((sum, char) => sum + char.charCodeAt(0), 0);
   const [step, setStep] = useState(0);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rotates the label on a timer while the row is mounted
@@ -316,15 +316,16 @@ function TypingTimelineRow({ createdAt }: { createdAt: string | null }) {
         {label}
         <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay>
       </span>
+      {name === null ? null : <span className="min-w-0 truncate">· {name}</span>}
     </div>
   );
 }
 
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
-  const { directMessage } = use(TimelineRowCtx);
+  const { directMessage, typingName } = use(TimelineRowCtx);
   const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup } =
     use(TimelineRowActivityCtx);
-  if (directMessage) return <TypingTimelineRow createdAt={row.createdAt} />;
+  if (directMessage) return <TypingTimelineRow createdAt={row.createdAt} name={typingName} />;
   const compacting = row.compacting === true || isCompacting;
   const shimmer = isPreparingWorktree || compacting;
   const label = isPreparingWorktree ? (

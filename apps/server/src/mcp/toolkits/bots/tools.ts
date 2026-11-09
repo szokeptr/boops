@@ -2,6 +2,8 @@ import {
   BotCreateResult,
   BotMcpCreateChildInput,
   BotMcpDelivery,
+  BotMcpListGroupChatsResult,
+  BotMcpPostToGroupChatInput,
   BotMcpEndCallResult,
   BotMcpListChildrenResult,
   BotMcpMessageChildInput,
@@ -11,10 +13,12 @@ import {
   BotMcpTellMainConversationInput,
   OrchestratorMcpFailure,
 } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
 import * as BotCalls from "../../../bots/BotCalls.ts";
 import * as Bots from "../../../bots/Bots.ts";
+import * as Rooms from "../../../rooms/Rooms.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
@@ -114,6 +118,32 @@ const TellMainConversationTool = Tool.make("tell_main_conversation", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, false);
 
+const ListGroupChatsTool = Tool.make("list_group_chats", {
+  description:
+    "List the group chats you are in, with the people and other bots in each. Your replies to messages in a group chat reach it on their own; use post_to_group_chat only to speak up unprompted.",
+  success: BotMcpListGroupChatsResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: [...dependencies, Rooms.Rooms],
+})
+  .annotate(Tool.Title, "List group chats")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
+
+const PostToGroupChatTool = Tool.make("post_to_group_chat", {
+  description:
+    "Post a message as yourself in a group chat you are in, from a routine or when the user asks you to tell the group something. Everyone in it sees it; @Name another bot to hand it something. Not for replying in the group chat you were asked in: that reply posts itself.",
+  parameters: BotMcpPostToGroupChatInput,
+  success: Schema.Struct({ posted: Schema.Boolean }),
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: [...dependencies, Rooms.Rooms],
+})
+  .annotate(Tool.Title, "Post to a group chat")
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.OpenWorld, true);
+
 export const BotToolkit = Toolkit.make(
   CreateChildBotTool,
   ListChildBotsTool,
@@ -122,4 +152,6 @@ export const BotToolkit = Toolkit.make(
   ReportToParentTool,
   TellMainConversationTool,
   EndCallTool,
+  ListGroupChatsTool,
+  PostToGroupChatTool,
 );

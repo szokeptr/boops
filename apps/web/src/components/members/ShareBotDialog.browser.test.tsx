@@ -28,6 +28,7 @@ vi.mock(import("~/state/members"), async () => {
     label,
     email: `${label.toLowerCase()}@example.com`,
     access: "auto-accept-edits",
+    canCreateRooms: false,
     status: "active",
     createdAt: "2026-11-01T10:00:00.000Z",
     lastConnectedAt: null,
@@ -38,6 +39,7 @@ vi.mock(import("~/state/members"), async () => {
       setBotConnectionAccess: command("setBotConnectionAccess"),
       invite: command("invite"),
       remove: command("remove"),
+      update: command("update"),
     } as never,
     useMembers: () => ({
       allowed: true,

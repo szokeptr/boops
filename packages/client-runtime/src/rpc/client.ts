@@ -73,6 +73,8 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.connectorsSubscribe
   | typeof WS_METHODS.secretVaultsSubscribe
   | typeof WS_METHODS.membersSubscribe
+  | typeof WS_METHODS.roomsSubscribe
+  | typeof WS_METHODS.roomsSubscribeFeed
   | typeof WS_METHODS.terminalAttach
   | typeof WS_METHODS.terminalObserve;
 

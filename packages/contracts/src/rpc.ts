@@ -442,6 +442,23 @@ import {
   MembersUpdateInput,
 } from "./members.ts";
 import {
+  RoomFeedItem,
+  RoomsCreateInput,
+  RoomsError,
+  RoomsHistory,
+  RoomsHistoryInput,
+  RoomsParticipantInput,
+  RoomsPostInput,
+  RoomsMarkReadInput,
+  RoomsRenameInput,
+  RoomsRespondInput,
+  RoomsRoomInput,
+  RoomsSetArchivedInput,
+  RoomsSetMutedInput,
+  RoomsSnapshot,
+  RoomSummary,
+} from "./rooms.ts";
+import {
   NotificationKeysError,
   NotificationsRegisterDeviceKeyInput,
   NotificationsRemoveDeviceKeyInput,
@@ -600,6 +617,20 @@ export const WS_METHODS = {
   membersSetBotAccess: "members.setBotAccess",
   membersSetBotConnectionAccess: "members.setBotConnectionAccess",
   membersLeave: "members.leave",
+  roomsSubscribe: "rooms.subscribe",
+  roomsCreate: "rooms.create",
+  roomsRename: "rooms.rename",
+  roomsAddParticipant: "rooms.addParticipant",
+  roomsRemoveParticipant: "rooms.removeParticipant",
+  roomsLeave: "rooms.leave",
+  roomsSetArchived: "rooms.setArchived",
+  roomsSetMuted: "rooms.setMuted",
+  roomsDelete: "rooms.delete",
+  roomsPost: "rooms.post",
+  roomsHistory: "rooms.history",
+  roomsSubscribeFeed: "rooms.subscribeFeed",
+  roomsRespond: "rooms.respond",
+  roomsMarkRead: "rooms.markRead",
   notificationsRegisterDeviceKey: "notifications.registerDeviceKey",
   notificationsRemoveDeviceKey: "notifications.removeDeviceKey",
   serverUpdateSettings: "server.updateSettings",
@@ -955,6 +986,70 @@ const WsMembersSetBotConnectionAccessRpc = Rpc.make(WS_METHODS.membersSetBotConn
 const WsMembersLeaveRpc = Rpc.make(WS_METHODS.membersLeave, {
   payload: Schema.Struct({}),
   error: Schema.Union([MembersError, EnvironmentAuthorizationError]),
+});
+const RoomsRpcError = Schema.Union([RoomsError, EnvironmentAuthorizationError]);
+/** The rooms the caller is in (the owner also sees the rest), then again after every change. */
+const WsRoomsSubscribeRpc = Rpc.make(WS_METHODS.roomsSubscribe, {
+  payload: Schema.Struct({}),
+  success: RoomsSnapshot,
+  stream: true,
+  error: RoomsRpcError,
+});
+const WsRoomsCreateRpc = Rpc.make(WS_METHODS.roomsCreate, {
+  payload: RoomsCreateInput,
+  success: RoomSummary,
+  error: RoomsRpcError,
+});
+const WsRoomsRenameRpc = Rpc.make(WS_METHODS.roomsRename, {
+  payload: RoomsRenameInput,
+  error: RoomsRpcError,
+});
+const WsRoomsAddParticipantRpc = Rpc.make(WS_METHODS.roomsAddParticipant, {
+  payload: RoomsParticipantInput,
+  error: RoomsRpcError,
+});
+const WsRoomsRemoveParticipantRpc = Rpc.make(WS_METHODS.roomsRemoveParticipant, {
+  payload: RoomsParticipantInput,
+  error: RoomsRpcError,
+});
+const WsRoomsLeaveRpc = Rpc.make(WS_METHODS.roomsLeave, {
+  payload: RoomsRoomInput,
+  error: RoomsRpcError,
+});
+const WsRoomsSetArchivedRpc = Rpc.make(WS_METHODS.roomsSetArchived, {
+  payload: RoomsSetArchivedInput,
+  error: RoomsRpcError,
+});
+const WsRoomsSetMutedRpc = Rpc.make(WS_METHODS.roomsSetMuted, {
+  payload: RoomsSetMutedInput,
+  error: RoomsRpcError,
+});
+const WsRoomsDeleteRpc = Rpc.make(WS_METHODS.roomsDelete, {
+  payload: RoomsRoomInput,
+  error: RoomsRpcError,
+});
+const WsRoomsPostRpc = Rpc.make(WS_METHODS.roomsPost, {
+  payload: RoomsPostInput,
+  error: RoomsRpcError,
+});
+const WsRoomsHistoryRpc = Rpc.make(WS_METHODS.roomsHistory, {
+  payload: RoomsHistoryInput,
+  success: RoomsHistory,
+  error: RoomsRpcError,
+});
+const WsRoomsMarkReadRpc = Rpc.make(WS_METHODS.roomsMarkRead, {
+  payload: RoomsMarkReadInput,
+  error: RoomsRpcError,
+});
+const WsRoomsRespondRpc = Rpc.make(WS_METHODS.roomsRespond, {
+  payload: RoomsRespondInput,
+  error: RoomsRpcError,
+});
+const WsRoomsSubscribeFeedRpc = Rpc.make(WS_METHODS.roomsSubscribeFeed, {
+  payload: RoomsRoomInput,
+  success: RoomFeedItem,
+  stream: true,
+  error: RoomsRpcError,
 });
 /** Lets this environment seal bot reply previews to the calling phone; members register their own. */
 const WsNotificationsRegisterDeviceKeyRpc = Rpc.make(WS_METHODS.notificationsRegisterDeviceKey, {
@@ -2412,6 +2507,20 @@ export const WsRpcGroup = RpcGroup.make(
   WsMembersSetBotAccessRpc,
   WsMembersSetBotConnectionAccessRpc,
   WsMembersLeaveRpc,
+  WsRoomsSubscribeRpc,
+  WsRoomsCreateRpc,
+  WsRoomsRenameRpc,
+  WsRoomsAddParticipantRpc,
+  WsRoomsRemoveParticipantRpc,
+  WsRoomsLeaveRpc,
+  WsRoomsSetArchivedRpc,
+  WsRoomsSetMutedRpc,
+  WsRoomsDeleteRpc,
+  WsRoomsPostRpc,
+  WsRoomsHistoryRpc,
+  WsRoomsSubscribeFeedRpc,
+  WsRoomsRespondRpc,
+  WsRoomsMarkReadRpc,
   WsNotificationsRegisterDeviceKeyRpc,
   WsNotificationsRemoveDeviceKeyRpc,
   WsProjectsCreateFromThreadRpc,
