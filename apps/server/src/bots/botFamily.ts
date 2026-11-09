@@ -17,12 +17,19 @@ interface FamilyMember {
   readonly id: ProjectId;
   readonly mainThreadId?: ThreadId | null | undefined;
   readonly parentBotProjectId?: ProjectId | null | undefined;
+  readonly talksWithAnyBot?: boolean | undefined;
 }
 
-/** What `other` is to `self`: its parent, its child, or neither. Only direct links count. */
-function botRelation(self: FamilyMember, other: FamilyMember): "parent" | "child" | null {
+/** What `other` is to `self`: its parent, its child, its sibling, or neither. Only direct links count. */
+function botRelation(
+  self: FamilyMember,
+  other: FamilyMember,
+): "parent" | "child" | "sibling" | null {
   if (self.parentBotProjectId === other.id) return "parent";
   if (other.parentBotProjectId === self.id) return "child";
+  if (self.parentBotProjectId != null && self.parentBotProjectId === other.parentBotProjectId) {
+    return "sibling";
+  }
   return null;
 }
 
@@ -30,7 +37,10 @@ function botRelation(self: FamilyMember, other: FamilyMember): "parent" | "child
 export const isBot = (member: FamilyMember | undefined): member is FamilyMember =>
   member?.mainThreadId != null;
 
-/** Two bots may message each other only when one created the other; non-bot projects are not limited. */
+/**
+ * Two bots may message each other when one created the other, they share a parent, or either
+ * talks with any bot. Both directions, so the one reached can answer. Non-bot projects are not limited.
+ */
 export const assertBotsMayTalk = Effect.fn("BotFamily.assertMayTalk")(function* (
   fromProjectId: ProjectId,
   toProjectId: ProjectId,
@@ -46,9 +56,17 @@ export const assertBotsMayTalk = Effect.fn("BotFamily.assertMayTalk")(function* 
     );
   const from = shells.find((shell) => shell.id === fromProjectId);
   const to = shells.find((shell) => shell.id === toProjectId);
-  if (!isBot(from) || !isBot(to) || botRelation(from, to) !== null) return;
+  if (!isBot(from) || !isBot(to)) return;
+  if (
+    botRelation(from, to) !== null ||
+    from.talksWithAnyBot === true ||
+    to.talksWithAnyBot === true
+  ) {
+    return;
+  }
   return yield* new BotFamilyError({
     reason: "unrelated",
-    detail: "A bot can only reach its parent bot and the bots it created.",
+    detail:
+      "A bot can only reach its parent, the bots it created, and its siblings, unless one of the two talks with any bot.",
   });
 });

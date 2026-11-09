@@ -8936,7 +8936,7 @@ it.layer(layerBotsTest)("bot families", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("only a direct parent and child reach each other", () =>
+  it.effect("parents, children, siblings and bots that talk with any bot reach each other", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const bots = yield* Bots.Bots;
@@ -8951,6 +8951,7 @@ it.layer(layerBotsTest)("bot families", (it) => {
       const stranger = yield* quiet("Stranger");
       const child = yield* quietChild(parent.projectId, "Pace");
       const grandchild = yield* quietChild(child.projectId, "Stride");
+      const sibling = yield* quietChild(parent.projectId, "Tally");
       const plain = yield* projects.create({
         commandId: CommandId.make("family-plain-project"),
         projectId: ProjectId.make("family-plain-project"),
@@ -9036,8 +9037,35 @@ it.layer(layerBotsTest)("bot families", (it) => {
           mayTalk(stranger.projectId, child.projectId),
           mayTalk(parent.projectId, grandchild.projectId),
           mayTalk(stranger.projectId, plain.id),
+          mayTalk(child.projectId, sibling.projectId),
+          mayTalk(sibling.projectId, child.projectId),
+          mayTalk(grandchild.projectId, sibling.projectId),
         ]),
-        ["allowed", "allowed", "allowed", "unrelated", "unrelated", "allowed"],
+        [
+          "allowed",
+          "allowed",
+          "allowed",
+          "unrelated",
+          "unrelated",
+          "allowed",
+          "allowed",
+          "allowed",
+          "unrelated",
+        ],
+      );
+
+      yield* projects.update({
+        commandId: CommandId.make("family-open-stranger"),
+        projectId: stranger.projectId,
+        talksWithAnyBot: true,
+      });
+      assert.deepEqual(
+        yield* Effect.all([
+          mayTalk(stranger.projectId, grandchild.projectId),
+          mayTalk(grandchild.projectId, stranger.projectId),
+          mayTalk(grandchild.projectId, sibling.projectId),
+        ]),
+        ["allowed", "allowed", "unrelated"],
       );
     }).pipe(Effect.scoped),
   );

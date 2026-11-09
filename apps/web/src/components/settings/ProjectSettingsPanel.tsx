@@ -482,6 +482,23 @@ function ProjectDetail({
               />
             }
           />
+          <SettingsRow
+            title="Talks with any bot"
+            description="Lets this bot and every other bot on this machine message each other. Without it, a bot reaches only its parent, the bots it created, and its siblings."
+            control={
+              <Switch
+                checked={group.memberProjects.every((member) => member.talksWithAnyBot === true)}
+                disabled={!canEditGroup}
+                onCheckedChange={(checked) =>
+                  void updateAllMembers(
+                    { talksWithAnyBot: checked },
+                    "Failed to change which bots this bot can talk with",
+                  )
+                }
+                aria-label="Talks with any bot"
+              />
+            }
+          />
           <BotCallVoiceRows
             projectId={representative.id}
             settings={representative.callSettings ?? null}

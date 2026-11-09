@@ -70,6 +70,7 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly mainThreadId?: ThreadId | null;
   readonly autonomy?: BotAutonomy | null;
   readonly canCreateBotsWithoutAsking?: boolean;
+  readonly talksWithAnyBot?: boolean;
 }
 
 export interface DeleteProjectInput extends CommandMetadata {
@@ -404,6 +405,7 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
     ...(input.canCreateBotsWithoutAsking === undefined
       ? {}
       : { canCreateBotsWithoutAsking: input.canCreateBotsWithoutAsking }),
+    ...(input.talksWithAnyBot === undefined ? {} : { talksWithAnyBot: input.talksWithAnyBot }),
   });
 });
 

@@ -197,6 +197,7 @@ export const make = Effect.gen(function* () {
     autonomy: row.autonomy,
     parentBotProjectId: row.parentBotProjectId,
     canCreateBotsWithoutAsking: row.canCreateBotsWithoutAsking,
+    talksWithAnyBot: row.talksWithAnyBot,
     personaReady: row.personaReady,
     connectionIds: row.connectionIds,
     memberIds: row.memberIds,
@@ -445,6 +446,7 @@ export const make = Effect.gen(function* () {
         ...(input.canCreateBotsWithoutAsking === undefined
           ? {}
           : { canCreateBotsWithoutAsking: input.canCreateBotsWithoutAsking }),
+        ...(input.talksWithAnyBot === undefined ? {} : { talksWithAnyBot: input.talksWithAnyBot }),
         ...(input.personaReady === undefined ? {} : { personaReady: input.personaReady }),
         ...(input.connectionIds === undefined ? {} : { connectionIds: input.connectionIds }),
         ...(input.memberIds === undefined ? {} : { memberIds: input.memberIds }),

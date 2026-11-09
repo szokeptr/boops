@@ -262,6 +262,7 @@ function makeHarness(options: HarnessOptions = {}) {
               autonomy: "full",
               parentBotProjectId: null,
               canCreateBotsWithoutAsking: false,
+              talksWithAnyBot: false,
               personaReady: false,
               connectionIds: [],
               memberIds: [],

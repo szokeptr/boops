@@ -54,6 +54,9 @@ export const projectMutationOperation = Effect.fn("projectMutationOperation")(fu
         ...(mutation.canCreateBotsWithoutAsking === undefined
           ? {}
           : { canCreateBotsWithoutAsking: mutation.canCreateBotsWithoutAsking }),
+        ...(mutation.talksWithAnyBot === undefined
+          ? {}
+          : { talksWithAnyBot: mutation.talksWithAnyBot }),
       });
 
     case "project.delete":

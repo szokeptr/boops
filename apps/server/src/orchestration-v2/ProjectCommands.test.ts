@@ -40,6 +40,7 @@ const row = (overrides: Partial<ProjectRow> = {}): ProjectRow => ({
   autonomy: "full",
   parentBotProjectId: null,
   canCreateBotsWithoutAsking: false,
+  talksWithAnyBot: false,
   personaReady: false,
   connectionIds: [],
   memberIds: [],

@@ -92,6 +92,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
             autonomy: "home-folder",
             parentBotProjectId: ProjectId.make("project-parent"),
             canCreateBotsWithoutAsking: true,
+            talksWithAnyBot: true,
             personaReady: true,
             updatedAt: at,
           },
@@ -115,6 +116,7 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
         assert.deepStrictEqual(shell?.callSettings, { voice: "stone", language: "Hungarian" });
         assert.strictEqual(shell?.parentBotProjectId, "project-parent");
         assert.strictEqual(shell?.canCreateBotsWithoutAsking, true);
+        assert.strictEqual(shell?.talksWithAnyBot, true);
         assert.strictEqual(shell?.personaReady, true);
 
         const sql = yield* SqlClient.SqlClient;

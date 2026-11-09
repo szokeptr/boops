@@ -113,6 +113,7 @@ const layerWithPolicy = (policy?: ManagedPolicySummary, autonomy: BotAutonomy = 
             autonomy,
             parentBotProjectId: null,
             canCreateBotsWithoutAsking: false,
+            talksWithAnyBot: false,
             personaReady: false,
             connectionIds: [],
             memberIds: [],

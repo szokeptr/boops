@@ -195,6 +195,7 @@ function ProjectOverviewContent(props: {
   const organize = async (input: {
     readonly autonomy?: BotAutonomy;
     readonly canCreateBotsWithoutAsking?: boolean;
+    readonly talksWithAnyBot?: boolean;
     readonly callSettings?: BotCallSettings | null;
   }) => {
     setIsOrganizing(true);
@@ -450,6 +451,20 @@ function ProjectOverviewContent(props: {
             value={allMembers.every((member) => member.canCreateBotsWithoutAsking === true)}
             disabled={isOrganizing || offline}
             onValueChange={(allowed) => void organize({ canCreateBotsWithoutAsking: allowed })}
+          />
+        ) : null}
+        {canOrganize ? (
+          <SettingsSwitchRow
+            icon="bubble.left.and.bubble.right"
+            label="Talks with any bot"
+            subtitle={
+              offline
+                ? "Connect every machine with this project to change this."
+                : "Lets this bot and every other bot on this machine message each other. Without it, a bot reaches only its parent, the bots it created, and its siblings."
+            }
+            value={allMembers.every((member) => member.talksWithAnyBot === true)}
+            disabled={isOrganizing || offline}
+            onValueChange={(allowed) => void organize({ talksWithAnyBot: allowed })}
           />
         ) : null}
         {canOrganize ? (

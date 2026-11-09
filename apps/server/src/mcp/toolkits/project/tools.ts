@@ -96,6 +96,7 @@ const {
   autonomy: _autonomy,
   parentBotProjectId: _parentBotProjectId,
   canCreateBotsWithoutAsking: _canCreateBotsWithoutAsking,
+  talksWithAnyBot: _talksWithAnyBot,
   archived: _archived,
   ...projectUpdateFields
 } = ProjectUpdatePayload.fields;

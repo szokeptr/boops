@@ -29,6 +29,7 @@ export type ProjectGroupUpdate = Partial<{
   archived: boolean;
   autonomy: BotAutonomy;
   canCreateBotsWithoutAsking: boolean;
+  talksWithAnyBot: boolean;
   callSettings: BotCallSettings | null;
 }>;
 

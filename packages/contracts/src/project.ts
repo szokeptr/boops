@@ -328,6 +328,7 @@ export const Project = Schema.Struct({
   autonomy: Schema.optional(BotAutonomy),
   parentBotProjectId: Schema.optional(Schema.NullOr(ProjectId)),
   canCreateBotsWithoutAsking: Schema.optional(Schema.Boolean),
+  talksWithAnyBot: Schema.optional(Schema.Boolean),
   /** Server-kept: the bot's home folder has a PERSONA.md, so it has hatched. Absent from older servers. */
   personaReady: Schema.optional(Schema.Boolean),
   connectionIds: Schema.optional(Schema.Array(ConnectorConnectionId)),
@@ -383,6 +384,8 @@ export const ProjectUpdatePayload = Schema.Struct({
   parentBotProjectId: Schema.optional(Schema.NullOr(ProjectId)),
   /** Lets this bot create child bots without an approval card. */
   canCreateBotsWithoutAsking: Schema.optional(Schema.Boolean),
+  /** Lets this bot talk with any bot on this machine both ways, not only its parent, children and siblings. */
+  talksWithAnyBot: Schema.optional(Schema.Boolean),
 });
 export type ProjectUpdatePayload = typeof ProjectUpdatePayload.Type;
 
