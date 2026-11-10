@@ -9,8 +9,10 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   appendAssistantCitationToDraft,
+  appendReplyCitationToDraft,
   draftCitationAt,
   mobileAssistantCitation,
+  mobileReplyCitation,
   removeDraftCitation,
   setDraftCitationComment,
 } from "./composerCitation";
@@ -40,6 +42,24 @@ describe("mobileAssistantCitation", () => {
   });
 });
 
+describe("mobileReplyCitation", () => {
+  it.each([
+    [
+      "quotes the message as plain text",
+      "## Plan\n\n**Ship** the `fix_bug` in [the PR](https://example.com/1), *today*.\n\n* 2 * 3 = 6",
+      "Plan\n\nShip the fix_bug in the PR, today.\n\n* 2 * 3 = 6",
+    ],
+    ["keeps code without its fence", "Run:\n```sh\nvp test\n```", "Run:\n\nvp test"],
+    ["cuts a long message at a word", `${"word ".repeat(80)}`, `${"word ".repeat(55)}word…`],
+    ["nothing to quote", "```\n```", null],
+  ])("%s", (_name, markdown, expected) => {
+    const citation = mobileReplyCitation({ ...source, markdown });
+    expect(citation && { text: citation.text, start: citation.start }).toEqual(
+      expected === null ? null : { text: expected, start: 0 },
+    );
+  });
+});
+
 describe("appendAssistantCitationToDraft", () => {
   it.each([
     ["empty draft", "", ""],
@@ -53,6 +73,21 @@ describe("appendAssistantCitationToDraft", () => {
     expect(next.slice(match!.end)).toBe(" ");
     expect(match!.citation).toEqual(citation);
     expect(range).toEqual({ source: match!.source, start: match!.start, end: match!.end });
+  });
+});
+
+describe("appendReplyCitationToDraft", () => {
+  it("quotes a message once however often it is replied to", () => {
+    const first = mobileReplyCitation({ ...source, markdown: "one" })!;
+    const second = mobileReplyCitation({
+      ...source,
+      messageId: MessageId.make("other"),
+      markdown: "two",
+    })!;
+    const once = appendReplyCitationToDraft("Hi", first);
+    expect(appendReplyCitationToDraft(`${once}and more`, first)).toBe(`${once}and more`);
+    const both = appendReplyCitationToDraft(once, second);
+    expect(collectAssistantCitations(both).map((match) => match.citation)).toEqual([first, second]);
   });
 });
 

@@ -39,6 +39,34 @@ export function mobileAssistantCitation(input: {
   };
 }
 
+const REPLY_QUOTE_MAX_LENGTH = 280;
+
+/**
+ * Quotes a whole assistant message for a reply. The agent already has the message, so the quote
+ * only has to say which one: its opening lines as plain text.
+ */
+export function mobileReplyCitation(input: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly messageId: MessageId;
+  readonly markdown: string;
+}): AssistantCitation | null {
+  const plain = input.markdown
+    .replace(/^\s*(`{3,}|~{3,}).*$/gm, "")
+    .replace(/!?\[([^\]]*)\]\([^)\s]*\)/g, "$1")
+    .replace(/^\s{0,3}(#{1,6}|>)\s+/gm, "")
+    .replace(/\*\*|~~|`/g, "")
+    .replace(/(^|[^\w*])\*(?=\S)|(?<=\S)\*(?![\w*])/g, "$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  const text =
+    plain.length > REPLY_QUOTE_MAX_LENGTH
+      ? `${plain.slice(0, REPLY_QUOTE_MAX_LENGTH).replace(/\s+\S*$/, "")}…`
+      : plain;
+  const { markdown: _markdown, ...source } = input;
+  return mobileAssistantCitation({ ...source, text, start: 0 });
+}
+
 export interface DraftCitationRange {
   readonly source: string;
   readonly start: number;
@@ -56,6 +84,12 @@ export function appendAssistantCitationToDraft(
     text: `${draft}${separator}${source} `,
     range: { source, start, end: start + source.length },
   };
+}
+
+/** A reply the draft already quotes is not quoted again. */
+export function appendReplyCitationToDraft(draft: string, citation: AssistantCitation): string {
+  const appended = appendAssistantCitationToDraft(draft, citation);
+  return draft.includes(appended.range.source) ? draft : appended.text;
 }
 
 /** Null when the draft no longer holds that citation where it was. */

@@ -63,6 +63,7 @@ import {
 import { useDeadlinePassed } from "../../lib/clock";
 import {
   appendAssistantCitationToDraft,
+  appendReplyCitationToDraft,
   draftCitationAt,
   removeDraftCitation,
   setDraftCitationComment,
@@ -1500,6 +1501,17 @@ function ThreadDetailBody(
     props.onChangeDraftMessage(next.text);
     setNewCitation(next.range);
   };
+  // A reply already says what it is about, so it skips the comment editor and opens the keyboard.
+  const handleReply = (citation: AssistantCitation) => {
+    if (props.composerDraftKey === null) return;
+    const draftMessage = getComposerDraftSnapshot(props.composerDraftKey).text;
+    const next = appendReplyCitationToDraft(draftMessage, citation);
+    if (next !== draftMessage) props.onChangeDraftMessage(next);
+    requestAnimationFrame(() => {
+      composerEditorRef.current?.focus();
+      composerEditorRef.current?.setSelection({ start: next.length, end: next.length });
+    });
+  };
   const editNewCitation = (edit: (draft: string, range: DraftCitationRange) => string | null) => {
     if (props.composerDraftKey === null || newCitation === null) return;
     const next = edit(getComposerDraftSnapshot(props.composerDraftKey).text, newCitation);
@@ -1683,6 +1695,7 @@ function ThreadDetailBody(
                 skills={selectedProviderSkills}
                 onUseArtifactTemplate={handleUseArtifactTemplate}
                 onCite={props.composerDraftKey === null ? null : handleCite}
+                onReply={props.composerDraftKey === null ? null : handleReply}
               />
             </WorkspaceMutationIdProvider>
           </RenderErrorBoundary>

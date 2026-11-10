@@ -15,6 +15,7 @@ import {
   enrichedSkillReference,
 } from "../../lib/enrichedLinkPresentation";
 import { ThreadContextDivider } from "./thread-context-divider";
+import { MessageSwipeReply } from "./MessageSwipeReply";
 import {
   ThreadHandoffDivider,
   ThreadHandoffRow,
@@ -165,7 +166,7 @@ import { SYSTEM_FONT_FAMILY } from "../../lib/fontFamilies";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { downloadAndShareAttachment } from "../../lib/attachmentDownload";
-import { mobileAssistantCitation } from "../../lib/composerCitation";
+import { mobileAssistantCitation, mobileReplyCitation } from "../../lib/composerCitation";
 import { splitMarkdownDetails } from "../../lib/markdownDetails";
 import { hasWideMarkdownBlock } from "../../lib/wideMarkdownBlocks";
 import {
@@ -305,6 +306,8 @@ const WIDE_MARKDOWN_BLOCK_OPTIONS = {
   includeOrderedLists: Platform.OS === "android",
 } as const;
 
+const SIDEWAYS_BLOCK_OPTIONS = { includeBlockquotes: false, includeOrderedLists: false } as const;
+
 const MESSAGE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
   minute: "2-digit",
@@ -408,6 +411,8 @@ export interface ThreadFeedProps {
   readonly onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   /** Null hides Cite, e.g. with no composer draft to cite into. */
   readonly onCite?: ((citation: AssistantCitation) => void) | null;
+  /** Swiping a bot's bubble replies to it. Absent or null leaves bubbles still. */
+  readonly onReply?: ((citation: AssistantCitation) => void) | null;
 }
 
 async function waitForThreadShell(
@@ -1721,6 +1726,28 @@ function RunFoldButton({
   );
 }
 
+/** Primitive props keep the reply callback, and so the row's native gesture, stable across feed renders. */
+function BotBubbleSwipeReply(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly messageId: MessageId;
+  readonly markdown: string;
+  readonly iconColor: string | import("react-native").ColorValue;
+  readonly onReply: (citation: AssistantCitation) => void;
+  readonly children: ReactNode;
+}) {
+  const { environmentId, threadId, messageId, markdown, onReply } = props;
+  const reply = () => {
+    const citation = mobileReplyCitation({ environmentId, threadId, messageId, markdown });
+    if (citation) onReply(citation);
+  };
+  return (
+    <MessageSwipeReply iconColor={props.iconColor} onReply={reply}>
+      {props.children}
+    </MessageSwipeReply>
+  );
+}
+
 function renderFeedEntry(
   info: { item: ThreadFeedRow; index: number },
   props: Pick<
@@ -1728,6 +1755,7 @@ function renderFeedEntry(
     | "environmentId"
     | "onUseArtifactTemplate"
     | "onCite"
+    | "onReply"
     | "skills"
     | "dispatchingMessageId"
     | "onEditPendingMessage"
@@ -2464,7 +2492,14 @@ function renderFeedEntry(
         sender?.bot === undefined
           ? null
           : botBubbleColors(sender.bot.avatar ?? specFor(sender.name));
-      return (
+      // Code blocks and tables scroll sideways under the same drag.
+      const onReply =
+        !message.streaming &&
+        renderedText.trim().length > 0 &&
+        !hasWideMarkdownBlock(renderedText, SIDEWAYS_BLOCK_OPTIONS)
+          ? props.onReply
+          : null;
+      const bubble = (
         <Animated.View
           className={cn("items-start", props.messageGrouping.groupedWithNext ? "mb-1" : "mb-5")}
           {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
@@ -2524,6 +2559,20 @@ function renderFeedEntry(
             />
           </View>
         </Animated.View>
+      );
+      return onReply ? (
+        <BotBubbleSwipeReply
+          environmentId={props.environmentId}
+          threadId={props.threadId}
+          messageId={message.id}
+          markdown={renderedText}
+          iconColor={iconSubtleColor}
+          onReply={onReply}
+        >
+          {bubble}
+        </BotBubbleSwipeReply>
+      ) : (
+        bubble
       );
     }
     return (
@@ -4027,6 +4076,7 @@ export const ThreadFeed = memo(function ThreadFeed({
             onEditSentMessage: props.onEditSentMessage,
             onUseArtifactTemplate: props.onUseArtifactTemplate,
             onCite: props.onCite,
+            onReply: props.onReply,
             threadId: props.threadId,
             copiedRowId,
             expandedWorkRows,
