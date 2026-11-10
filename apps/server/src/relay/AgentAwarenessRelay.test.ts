@@ -624,6 +624,24 @@ describe("AgentAwarenessRelay", () => {
     }),
   );
 
+  it.effect("clears a completion without alerting when its reply is read during the hold", () =>
+    Effect.gen(function* () {
+      const { relay, currentShell, publications } = yield* makeTestRelay();
+      yield* relay.publishThread(THREAD_ID);
+      const completedAt = DateTime.makeUnsafe(NOW);
+      const completed = shell({ status: "completed", latestRunCompletedAt: completedAt });
+      yield* Ref.set(currentShell, completed);
+      yield* relay.publishThread(THREAD_ID);
+      yield* Ref.set(currentShell, { ...completed, lastVisitedAt: completedAt });
+      yield* TestClock.adjust("5 seconds");
+      yield* relay.drain;
+      assert.deepEqual(
+        publications.map((publication) => publication.state?.phase ?? null),
+        ["running", null],
+      );
+    }),
+  );
+
   it.effect("still publishes a completion when the thread settles during the hold", () =>
     Effect.gen(function* () {
       const { relay, currentShell, publications } = yield* makeTestRelay();

@@ -59,6 +59,8 @@ it("records the visit of the next thread at once after switching threads", async
   setShell(threadA, "2026-01-02T00:00:00.000Z");
   setShell(threadB, "2026-01-03T00:00:00.000Z");
   using _timers = fakeTimers();
+  // The headless page is not the focused window, and an unfocused window sends no visits.
+  using _focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
   vi.setSystemTime(NOW);
   // A palette pick already sent B's open with its query, so B's visit is a plain watermark advance.
   claimThreadOpen(threadB.environmentId, threadB.threadId, NOW);

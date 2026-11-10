@@ -43,10 +43,16 @@ export interface ThreadVisitTrackerOptions {
    * that keeps its own watermark for them records the visit here instead.
    */
   readonly markLocalVisit?: (ref: ScopedThreadRef, visitedAt: string) => void;
+  /**
+   * Whether the user is in front of this client. While false nothing is
+   * sent: the server withholds pushes for replies a visit marks as read, so
+   * a thread left open in an unfocused window must not count as read.
+   */
+  readonly activeAtom?: Atom.Atom<boolean>;
 }
 
 /**
- * While mounted, a tracker counts as the user viewing the thread: mounting it
+ * While mounted and active, a tracker counts as the user viewing the thread: mounting it
  * records one open (which also feeds search ranking), and every shell update
  * after that advances the visit watermark, throttled while a run streams.
  */
@@ -92,9 +98,12 @@ export function createThreadVisitTracker(options: ThreadVisitTrackerOptions) {
         );
       };
 
+      let active = true;
+      let latestShell: VisitedShell | null = null;
       const onShell = (shell: VisitedShell | null) => {
+        latestShell = shell;
         clearTimer();
-        if (shell === null) return;
+        if (shell === null || !active) return;
 
         const shellUpdatedAtMs = Date.parse(shell.updatedAt);
         if (Number.isNaN(shellUpdatedAtMs)) return;
@@ -142,6 +151,16 @@ export function createThreadVisitTracker(options: ThreadVisitTrackerOptions) {
 
       // `subscribe`, not `get`: a rebuild would reset the open and throttle
       // state on every streaming tick.
+      if (options.activeAtom !== undefined) {
+        get.subscribe(
+          options.activeAtom,
+          (next) => {
+            active = next;
+            onShell(latestShell);
+          },
+          { immediate: true },
+        );
+      }
       get.subscribe(options.threadShellAtom(ref), onShell, { immediate: true });
     }).pipe(Atom.withLabel(`thread-visit-tracker:${key}`));
   });

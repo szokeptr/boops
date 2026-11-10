@@ -22,13 +22,18 @@ function at(seconds: number) {
 }
 
 // claimThreadOpen dedupes per thread in module state, so each test opens its own thread.
-function setup(threadName: string, initial: Omit<Shell, "environmentId" | "id"> | null) {
+function setup(
+  threadName: string,
+  initial: Omit<Shell, "environmentId" | "id"> | null,
+  options: { readonly active?: boolean } = {},
+) {
   vi.useFakeTimers({ now: Date.UTC(2026, 0, 1) });
   const threadId = ThreadId.make(threadName);
   const ref = { environmentId, threadId };
   const shellAtom = Atom.make<Shell | null>(
     initial === null ? null : { environmentId, id: threadId, ...initial },
   );
+  const activeAtom = Atom.make(options.active ?? true);
   const visits: Array<VisitThreadInput> = [];
   const localVisits: Array<string> = [];
   const tracker = createThreadVisitTracker({
@@ -41,6 +46,7 @@ function setup(threadName: string, initial: Omit<Shell, "environmentId" | "id"> 
       },
     },
     markLocalVisit: (_ref, visitedAt) => localVisits.push(visitedAt),
+    activeAtom,
   });
   const registry = AtomRegistry.make();
   return {
@@ -48,6 +54,7 @@ function setup(threadName: string, initial: Omit<Shell, "environmentId" | "id"> 
     visits,
     localVisits,
     mount: () => registry.mount(tracker(ref)),
+    setActive: (active: boolean) => registry.set(activeAtom, active),
     update: (patch: Partial<Shell>) => {
       const current = registry.get(shellAtom);
       registry.set(shellAtom, {
@@ -190,4 +197,23 @@ it("advances the watermark to a wake without waiting for the throttle", () => {
   vi.advanceTimersByTime(1_000);
   t.update({ updatedAt: at(16) });
   expect(t.visits).toHaveLength(2);
+});
+
+it("sends nothing while the user is away, then catches up on return", () => {
+  using t = setup(
+    "thread-away",
+    { updatedAt: at(10), lastVisitedAt: at(0), latestRun: null },
+    { active: false },
+  );
+  t.mount();
+  t.update({ updatedAt: at(20), latestRun: { completedAt: at(20) } });
+  vi.advanceTimersByTime(VISIT_DISPATCH_THROTTLE_MS);
+  expect(t.visits).toEqual([]);
+
+  t.setActive(true);
+  expect(t.visits).toEqual([{ threadId: t.ref.threadId, visitedAt: at(20), opened: true }]);
+
+  t.setActive(false);
+  t.update({ updatedAt: at(30), latestRun: { completedAt: at(30) } });
+  expect(t.visits).toHaveLength(1);
 });

@@ -234,7 +234,20 @@ function assistantReply(thread: AgentAwarenessThread) {
   return latest?.role === "assistant" && latest.text.trim() !== "" ? latest : null;
 }
 
-/** What the phone hears of a thread. A finished turn counts only when the bot said something. */
+/** Clients send a read receipt only while the thread is in front of the user, on any device. */
+function replyAlreadyRead(thread: AgentAwarenessThread): boolean {
+  const { lastVisitedAt, latestRunCompletedAt } = thread;
+  return (
+    lastVisitedAt != null &&
+    latestRunCompletedAt != null &&
+    DateTime.toEpochMillis(lastVisitedAt) >= DateTime.toEpochMillis(latestRunCompletedAt)
+  );
+}
+
+/**
+ * What the phone hears of a thread. A finished turn counts only when the bot said something
+ * the user has not already read.
+ */
 function notifiableAwarenessState(input: {
   readonly environmentId: EnvironmentId;
   readonly project: AwarenessProject;
@@ -242,7 +255,10 @@ function notifiableAwarenessState(input: {
 }) {
   if (!isNotifiableThread(input.project, input.thread)) return null;
   const state = projectThreadAwarenessV2(input);
-  return state?.phase === "completed" && assistantReply(input.thread) === null ? null : state;
+  return state?.phase === "completed" &&
+    (assistantReply(input.thread) === null || replyAlreadyRead(input.thread))
+    ? null
+    : state;
 }
 
 /** A conversation that finished or asks something speaks as the bot. */

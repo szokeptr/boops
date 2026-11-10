@@ -375,9 +375,18 @@ const wakeAwareVisitShell = Atom.family((key: string) => {
   }).pipe(Atom.withLabel(`mobile-thread-visit-shell:${key}`));
 });
 
+const appActiveAtom = Atom.make((get) => {
+  const subscription = AppState.addEventListener("change", (state) =>
+    get.setSelf(state === "active"),
+  );
+  get.addFinalizer(() => subscription.remove());
+  return AppState.currentState === "active";
+}).pipe(Atom.withLabel("mobile-thread-visit-app-active"));
+
 const threadVisitTracker = createThreadVisitTracker({
   threadShellAtom: (ref) => wakeAwareVisitShell(threadKey(ref)),
   visit: threadEnvironment.visit,
+  activeAtom: appActiveAtom,
 });
 
 // Past the composer's 180 ms height animation.

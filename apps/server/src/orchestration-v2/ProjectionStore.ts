@@ -1007,6 +1007,7 @@ export type AgentAwarenessThread = ProjectThreadAwarenessV2Input["thread"] &
     | "hasActionableProposedPlan"
     | "linkOrigin"
     | "latestVisibleMessage"
+    | "lastVisitedAt"
   >;
 
 type ShellThreadRow = {
@@ -7182,6 +7183,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               pendingRuntimeRequest: state.pendingRuntimeRequest,
               pendingBackgroundTasks: state.pendingBackgroundTasks,
               latestVisibleMessage: state.latestVisibleMessage,
+              lastVisitedAt: state.thread.lastVisitedAt,
               ...(state.thread.linkOrigin === undefined
                 ? {}
                 : { linkOrigin: state.thread.linkOrigin }),
