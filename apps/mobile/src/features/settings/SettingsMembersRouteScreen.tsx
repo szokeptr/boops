@@ -1,21 +1,26 @@
 import { useAtomValue } from "@effect/atom-react";
 import { isBotSharedWith } from "@t3tools/client-runtime/state/members";
 import { resolveEnvironmentMachineKind, type ProjectId } from "@t3tools/contracts";
-import { useState } from "react";
-import { Modal, Platform, ScrollView as NativeScrollView, View } from "react-native";
+import { useEffect, useEffectEvent, useState } from "react";
+import { AppState, Modal, Platform, ScrollView as NativeScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
-import { AppText as Text } from "../../components/ui/AppText";
+import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import * as Dialog from "../../components/ui/Dialog";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { ListActionRow } from "../../components/ui/ListActionRow";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useEnvironmentBots } from "../../state/connectors";
 import { memberEnvironment, useEnvironmentMembers } from "../../state/members";
+import { useRooms } from "../../state/rooms";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { MEMBER_PRIVACY_NOTE } from "../members/BotSharingSection";
 import { MemberInviteForm, memberStatusText } from "../members/MemberInviteForm";
 import { useMemberCommands } from "../members/useMemberCommands";
+import { useRoomCommands } from "../rooms/useRoomCommands";
 import {
   SettingsEnvironmentFilterHeader,
   useSettingsEnvironmentMenu,
@@ -154,6 +159,8 @@ function EnvironmentMembersContent(props: EnvironmentMembersProps) {
           fullWidth
         />
       ) : null}
+      <OwnerNameSection environment={props.environment} />
+      <OthersRoomsSection environment={props.environment} />
       {inviting ? (
         <MemberInviteSheet
           bots={bots}
@@ -162,6 +169,103 @@ function EnvironmentMembersContent(props: EnvironmentMembersProps) {
         />
       ) : null}
     </View>
+  );
+}
+
+/** What people and bots in group chats call the owner. Saved when the field loses focus. */
+function OwnerNameSection(props: { readonly environment: SettingsTarget }) {
+  const { environmentId } = props.environment;
+  const saved = props.environment.serverConfig.settings.ownerName;
+  const updateSettings = useAtomCommand(
+    serverEnvironment.updateSettings,
+    "Could not save your name",
+  );
+  const [draft, setDraft] = useState<string | null>(null);
+  const send = () => {
+    const next = draft?.trim();
+    if (next !== undefined && next !== saved)
+      void updateSettings({ environmentId, input: { patch: { ownerName: next } } });
+  };
+  const save = () => {
+    send();
+    setDraft(null);
+  };
+  const sendPending = useEffectEvent(send);
+  const editing = draft !== null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the field may never blur: the app can be backgrounded and killed, or the screen closed, mid-edit
+  useEffect(() => {
+    if (!editing) return;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") sendPending();
+    });
+    return () => {
+      subscription.remove();
+      sendPending();
+    };
+  }, [editing]);
+  return (
+    <SettingsSection
+      title="Group chats"
+      footer="What people and bots in your group chats call you."
+    >
+      <View className="gap-2 bg-grouped-card p-4">
+        <Text className="text-sm font-t3-medium text-foreground-muted">Your name</Text>
+        <AppTextInput
+          accessibilityLabel="Your name in group chats"
+          className="min-h-11 rounded-xl border-continuous bg-card px-3 text-base text-foreground"
+          value={draft ?? saved}
+          maxLength={60}
+          placeholder="Owner"
+          placeholderTextColorClassName="accent-placeholder"
+          returnKeyType="done"
+          onChangeText={setDraft}
+          onSubmitEditing={save}
+          onBlur={save}
+        />
+      </View>
+    </SettingsSection>
+  );
+}
+
+/** Group chats members started without the owner: who is in them, and a way in or to end one. */
+function OthersRoomsSection(props: { readonly environment: SettingsTarget }) {
+  const { environmentId } = props.environment;
+  const { rooms } = useRooms(environmentId);
+  const commands = useRoomCommands(environmentId);
+  const others = rooms.filter((room) => !room.joined);
+  if (others.length === 0) return null;
+  return (
+    <SettingsSection title="Group chats you're not in">
+      {others.map((room) => {
+        const people = room.participants.map((entry) => entry.name).join(", ");
+        return (
+          <ListActionRow
+            key={room.id}
+            icon="person.2"
+            label={room.title}
+            description={people}
+            onPress={() =>
+              Dialog.alert(
+                room.title,
+                `${people}\n\nJoin to read and write in it. Everyone in it sees you there.`,
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Delete…",
+                    style: "destructive",
+                    onPress: () => commands.delete(room.id, room.title, () => undefined),
+                  },
+                  {
+                    text: "Join",
+                    onPress: () => void commands.add(room.id, { kind: "owner" }),
+                  },
+                ],
+              )
+            }
+          />
+        );
+      })}
+    </SettingsSection>
   );
 }
 

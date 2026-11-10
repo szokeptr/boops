@@ -41,6 +41,7 @@ import {
   useEnvironments,
   usePrimaryEnvironmentId,
 } from "../../state/environments";
+import { roomLastActivity } from "@t3tools/client-runtime/state/room-list";
 import { useOpenRooms } from "../../state/rooms";
 import { useSidebarLayout } from "../../state/sidebarLayout";
 import {
@@ -61,7 +62,7 @@ import { SidebarContent, SidebarGroup, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ArchivedBotList } from "./ArchivedBotList";
 import { BotList, BotListRow } from "./BotList";
-import { DraggableRoomRow, lastActivity, RoomSidebarSection } from "../rooms/RoomSidebarSection";
+import { DraggableRoomRow, RoomSidebarSection } from "../rooms/RoomSidebarSection";
 import { useSidebarEntryDnd } from "./sidebarDnd";
 import {
   moveToSectionMenu,
@@ -194,7 +195,7 @@ export function BotListPanel({ onNavigate }: { readonly onNavigate?: () => void 
   const organized = organizeSidebar<SidebarEntry>(layout, [
     ...botRows.map((row) => ({ kind: "bot" as const, sidebarKey: botKey(row), row })),
     ...rooms
-      .toSorted((a, b) => lastActivity(b.room).localeCompare(lastActivity(a.room)))
+      .toSorted((a, b) => roomLastActivity(b.room).localeCompare(roomLastActivity(a.room)))
       .map(({ environmentId, room }) => ({
         kind: "room" as const,
         sidebarKey: sidebarRoomKey(environmentId, room.id),

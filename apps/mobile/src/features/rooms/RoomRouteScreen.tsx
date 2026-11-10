@@ -1,5 +1,6 @@
 import { useKeyboardChatComposerInset, useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
 import type { LegendListRef } from "@legendapp/list/react-native";
+import { joinRoomMessages } from "@t3tools/client-runtime/state/rooms";
 import {
   EnvironmentId,
   type RoomMessage,
@@ -9,30 +10,54 @@ import {
   type RoomSummary,
   ThreadId,
 } from "@t3tools/contracts";
-import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { useEffect, useRef, useState } from "react";
-import { AppState, Platform, View, type ViewInstance } from "react-native";
+import {
+  StackActions,
+  useIsFocused,
+  useNavigation,
+  type StaticScreenProps,
+} from "@react-navigation/native";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import {
+  AppState,
+  Platform,
+  ScrollView,
+  useWindowDimensions,
+  View,
+  type ViewInstance,
+} from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppBar } from "../../components/ui/AppBar";
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { ANDROID_READING_MAX_WIDTH, CHAT_CONTENT_MAX_WIDTH } from "../../lib/layout";
+import { MarkdownMentionNamesContext } from "../../native/MarkdownMentionNamesContext";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import { environmentCatalog } from "../../connection/catalog";
 import { useProjects } from "../../state/entities";
 import { useEnvironmentMembers } from "../../state/members";
+import { useEnvironmentPresentation } from "../../state/presentation";
 import { roomEnvironment, useRoomFeed, useRooms } from "../../state/rooms";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { EnvironmentConnectionNotice } from "../connection/EnvironmentConnectionNotice";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { threadHeaderAppearance } from "../threads/thread-header-appearance";
 import { ThreadFeed, type ThreadFeedHistoryControls } from "../threads/ThreadFeed";
+import { useOpenLinkedThread } from "../threads/useOpenLinkedThread";
 import { RoomAvatar } from "./RoomAvatar";
 import { RoomComposer } from "./RoomComposer";
 import { RoomRequestCard, type RoomRequestAnswer } from "./RoomRequestCard";
-import { canManageRoom, roomBots, roomFeedEntry, roomTypingName } from "./roomPresentation";
+import {
+  canManageRoom,
+  type RoomBot,
+  roomBots,
+  roomFeedEntry,
+  roomTypingName,
+} from "./roomPresentation";
 import { useRoomCommands, useRoomViewer } from "./useRoomCommands";
 
 type RoomRouteScreenProps = StaticScreenProps<{
@@ -41,7 +66,13 @@ type RoomRouteScreenProps = StaticScreenProps<{
 }>;
 
 const NO_QUEUED: ReadonlyArray<never> = [];
+const NO_NAMES: ReadonlyArray<string> = [];
 const READY = { kind: "ready" } as const;
+const LOADING = { kind: "loading" } as const;
+const EMPTY_ROOM = {
+  title: "No messages yet",
+  detail: "Say hello, or type @ to ask one of the bots.",
+};
 
 /** A group chat: everyone's messages as bubbles, its bots' requests, and a composer. */
 export function RoomRouteScreen(props: RoomRouteScreenProps) {
@@ -49,17 +80,24 @@ export function RoomRouteScreen(props: RoomRouteScreenProps) {
   const environmentId = EnvironmentId.make(props.route.params.environmentId);
   const roomId = RoomId.make(props.route.params.roomId);
   const { rooms, loaded } = useRooms(environmentId);
+  const environment = useEnvironmentPresentation(environmentId);
+  const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, "environment retry");
   const room = rooms.find((entry) => entry.id === roomId);
   if (room !== undefined && room.joined) {
-    return <RoomScreen key={room.id} environmentId={environmentId} room={room} />;
+    // Keyed so paging and the composer start fresh in each room, even one reusing this screen.
+    return (
+      <RoomScreen key={`${environmentId}:${room.id}`} environmentId={environmentId} room={room} />
+    );
   }
+  const connection = environment.presentation?.connection ?? null;
+  const unknownEnvironment = environment.isReady && environment.presentation === null;
   return (
     <View className="flex-1 bg-screen">
       <AppBar
         title="Group chat"
         {...(navigation.canGoBack() ? { onBack: () => navigation.goBack() } : {})}
       />
-      {loaded ? (
+      {loaded || unknownEnvironment ? (
         <View className="flex-1 items-center justify-center px-8">
           <EmptyState
             title="Group chat not found"
@@ -67,7 +105,18 @@ export function RoomRouteScreen(props: RoomRouteScreenProps) {
             variant="plain"
           />
         </View>
-      ) : null}
+      ) : connection !== null && connection.phase !== "connected" ? (
+        <EnvironmentConnectionNotice
+          environmentLabel={environment.presentation?.entry.target.label ?? "Environment"}
+          connection={connection}
+          resourceName="group chat"
+          onRetry={() => void retryEnvironment(environmentId)}
+        />
+      ) : (
+        <View className="flex-1 items-center justify-center">
+          <AppActivityIndicator size="small" colorClassName="accent-icon-muted" />
+        </View>
+      )}
     </View>
   );
 }
@@ -113,9 +162,16 @@ function RoomHeaderTitle(props: {
   );
 }
 
-function useRoomMenu(environmentId: EnvironmentId, room: RoomSummary, viewer: RoomParticipant) {
+function useRoomMenu(
+  environmentId: EnvironmentId,
+  room: RoomSummary,
+  viewer: RoomParticipant,
+  bots: ReadonlyArray<RoomBot>,
+  working: ReadonlyArray<RoomBot>,
+  commands: ReturnType<typeof useRoomCommands>,
+) {
   const navigation = useNavigation();
-  const commands = useRoomCommands(environmentId);
+  const openLinkedThread = useOpenLinkedThread();
   const projects = useProjects();
   const isOwner = viewer.kind === "owner";
   const { members } = useEnvironmentMembers(isOwner ? environmentId : null);
@@ -140,7 +196,30 @@ function useRoomMenu(environmentId: EnvironmentId, room: RoomSummary, viewer: Ro
     navigation.canGoBack()
       ? navigation.goBack()
       : navigation.dispatch(StackActions.replace("Home"));
+  const botChats = bots.flatMap((bot) =>
+    bot.threadId === null ? [] : [{ ...bot, threadId: bot.threadId }],
+  );
   const items: AppBarMenuItem[] = [
+    ...working.map((bot) => ({
+      id: `stop:${bot.projectId}`,
+      title: `Stop ${bot.name}`,
+      icon: "stop.fill",
+      onPress: () => void commands.stop(room.id, bot),
+    })),
+    ...(botChats.length > 0
+      ? [
+          {
+            id: "bot-chat",
+            title: "Your chat with",
+            icon: "bubble.left",
+            items: botChats.map((bot) => ({
+              id: `bot-chat:${bot.projectId}`,
+              title: bot.name,
+              onPress: () => openLinkedThread({ environmentId, threadId: bot.threadId }),
+            })),
+          },
+        ]
+      : []),
     ...(manages && addableBots.length > 0
       ? [
           {
@@ -233,25 +312,36 @@ function RoomScreen(props: { readonly environmentId: EnvironmentId; readonly roo
   const { environmentId, room } = props;
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const { layout } = useAdaptiveWorkspaceLayout();
-  const { viewer, viewerKey, avatarOf } = useRoomViewer(environmentId);
-  const menuItems = useRoomMenu(environmentId, room, viewer);
-  const bots = roomBots(room.participants, avatarOf);
+  const { viewer, viewerKey, avatarOf, threadOf } = useRoomViewer(environmentId);
+  const bots = roomBots(room.participants, avatarOf, threadOf);
+  // Derived from a string so the compiler keeps the same list, and the feed's rows, while only
+  // the room's other details change.
+  const mentionNamesKey = bots.map((bot) => bot.name).join("\0");
+  const mentionNames = mentionNamesKey === "" ? NO_NAMES : mentionNamesKey.split("\0");
+  const commands = useRoomCommands(environmentId);
   const feed = useRoomFeed(environmentId, room.id).data;
+  const workingIds = feed?.working ?? room.working;
+  const working =
+    room.archivedAt === null ? bots.filter((bot) => workingIds.includes(bot.projectId)) : [];
+  const menuItems = useRoomMenu(environmentId, room, viewer, bots, working, commands);
   const respond = useAtomCommand(roomEnvironment.respond, "Could not answer");
   const markRead = useAtomCommand(roomEnvironment.markRead, { reportFailure: false });
   const newestSeq = feed?.messages.at(-1)?.seq ?? null;
+  const focused = useIsFocused();
+  // useAtomCommand returns a new function every render, so it cannot be an effect dependency.
+  const reportRead = useEffectEvent((throughSeq: number) => {
+    if (AppState.currentState !== "active") return;
+    void markRead({ environmentId, input: { roomId: room.id, throughSeq } });
+  });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the server what this person has seen, while the room is on screen and the app in front
   useEffect(() => {
-    if (newestSeq === null) return;
-    const report = () => {
-      if (AppState.currentState !== "active") return;
-      void markRead({ environmentId, input: { roomId: room.id, throughSeq: newestSeq } });
-    };
-    report();
-    const subscription = AppState.addEventListener("change", report);
+    if (newestSeq === null || !focused) return;
+    reportRead(newestSeq);
+    const subscription = AppState.addEventListener("change", () => reportRead(newestSeq));
     return () => subscription.remove();
-  }, [environmentId, room.id, newestSeq, markRead]);
+  }, [newestSeq, focused]);
   const loadHistory = useAtomCommand(roomEnvironment.history, { reportFailure: false });
   const [older, setOlder] = useState<{
     readonly messages: ReadonlyArray<RoomMessage>;
@@ -259,11 +349,12 @@ function RoomScreen(props: { readonly environmentId: EnvironmentId; readonly roo
   } | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [olderError, setOlderError] = useState<string | null>(null);
-  const messages = [...(older?.messages ?? []), ...(feed?.messages ?? [])];
+  const joined = feed === null ? null : joinRoomMessages(older, feed);
+  const messages = joined?.messages ?? [];
   const entries = messages.map((message) => roomFeedEntry(message, viewerKey, bots));
   const requests = feed?.requests ?? [];
   // A bot waiting on someone is not typing.
-  const typing = (feed?.working ?? room.working).filter(
+  const typing = workingIds.filter(
     (projectId) => !requests.some((request) => request.projectId === projectId),
   );
   const typingName = roomTypingName(bots, typing);
@@ -285,12 +376,12 @@ function RoomScreen(props: { readonly environmentId: EnvironmentId; readonly roo
     }
     setOlderError(null);
     setOlder({
-      messages: [...result.value.messages, ...(older?.messages ?? [])],
+      messages: [...result.value.messages, ...(joined?.olderUsed ? (older?.messages ?? []) : [])],
       hasOlder: result.value.hasOlder,
     });
   };
   const historyControls: ThreadFeedHistoryControls = {
-    hasMoreHistory: older === null ? (feed?.hasOlder ?? false) : older.hasOlder,
+    hasMoreHistory: joined?.hasOlder ?? false,
     loading: loadingOlder,
     error: olderError,
     onLoadEarlier: () => void loadEarlier(),
@@ -355,41 +446,57 @@ function RoomScreen(props: { readonly environmentId: EnvironmentId; readonly roo
               }
             : undefined
         }
-        optionsVersion={[room.title, room.muted, subtitle, menuItems.length, room.archivedAt]}
+        optionsVersion={[
+          room.title,
+          room.muted,
+          subtitle,
+          menuItems.length,
+          room.archivedAt,
+          bots.map((bot) => bot.threadId).join(","),
+          working.map((bot) => bot.name).join(","),
+        ]}
       />
-      <ThreadFeed
-        environmentId={environmentId}
-        threadId={threadId}
-        detailRef={null}
-        threadTitle={room.title}
-        feed={entries}
-        contentPresentation={READY}
-        latestRun={null}
-        activeWorkStartedAt={null}
-        directMessage={{
-          typingSince,
-          typingName,
-          ownBubble: null,
-          bot: { name: room.title, avatar: null },
-          parentProjectId: null,
-        }}
-        queuedMessages={NO_QUEUED}
-        dispatchingMessageId={null}
-        onEditPendingMessage={null}
-        onEditSentMessage={null}
-        onCite={null}
-        listRef={listRef}
-        freeze={freeze}
-        anchorMessageId={null}
-        contentInsetEndAdjustment={contentInsetEndAdjustment}
-        keyboardOffset={composerBottomInset}
-        contentTopInset={0}
-        contentBottomInset={overlayHeight}
-        contentMaxWidth={contentMaxWidth}
-        historyControls={historyControls}
-        layoutVariant={layout.variant}
-        usesAutomaticContentInsets={NATIVE_LIQUID_GLASS_SUPPORTED}
-      />
+      <MarkdownMentionNamesContext value={mentionNames}>
+        <ThreadFeed
+          environmentId={environmentId}
+          threadId={threadId}
+          detailRef={null}
+          threadTitle={room.title}
+          feed={entries}
+          contentPresentation={feed === null ? LOADING : READY}
+          emptyPlaceholder={EMPTY_ROOM}
+          latestRun={null}
+          activeWorkStartedAt={null}
+          directMessage={{
+            typingSince,
+            typingName,
+            ownBubble: null,
+            bot: { name: room.title, avatar: null },
+            parentProjectId: null,
+          }}
+          queuedMessages={NO_QUEUED}
+          dispatchingMessageId={null}
+          onEditPendingMessage={null}
+          onEditSentMessage={null}
+          onCite={null}
+          listRef={listRef}
+          freeze={freeze}
+          anchorMessageId={null}
+          contentInsetEndAdjustment={contentInsetEndAdjustment}
+          keyboardOffset={composerBottomInset}
+          contentTopInset={0}
+          contentBottomInset={overlayHeight}
+          contentMaxWidth={contentMaxWidth}
+          historyControls={historyControls}
+          layoutVariant={layout.variant}
+          usesAutomaticContentInsets={NATIVE_LIQUID_GLASS_SUPPORTED}
+        />
+      </MarkdownMentionNamesContext>
+      {feed === null ? (
+        <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
+          <AppActivityIndicator size="small" colorClassName="accent-icon-muted" />
+        </View>
+      ) : null}
       <KeyboardStickyView
         pointerEvents="box-none"
         style={{ position: "absolute", bottom: 0, left: 0, right: 0, top: 0 }}
@@ -408,9 +515,11 @@ function RoomScreen(props: { readonly environmentId: EnvironmentId; readonly roo
             className="w-full"
           >
             {requests.length > 0 ? (
-              <View
-                className="w-full gap-3 self-center px-4 pb-3"
-                style={{ maxWidth: contentMaxWidth }}
+              <ScrollView
+                className="w-full grow-0 self-center"
+                style={{ maxWidth: contentMaxWidth, maxHeight: windowHeight * 0.45 }}
+                contentContainerClassName="gap-3 px-4 pb-3"
+                keyboardShouldPersistTaps="handled"
               >
                 {requests.map((request) => (
                   <RoomRequestCard
@@ -420,7 +529,7 @@ function RoomScreen(props: { readonly environmentId: EnvironmentId; readonly roo
                     onRespond={(response) => answer(request, response)}
                   />
                 ))}
-              </View>
+              </ScrollView>
             ) : null}
             {room.archivedAt === null ? (
               <RoomComposer
@@ -428,6 +537,8 @@ function RoomScreen(props: { readonly environmentId: EnvironmentId; readonly roo
                 roomId={room.id}
                 roomTitle={room.title}
                 bots={bots}
+                working={working}
+                onStop={(bot) => void commands.stop(room.id, bot)}
                 bottomInset={composerBottomInset}
                 contentMaxWidth={contentMaxWidth}
               />

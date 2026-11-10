@@ -151,7 +151,10 @@ export interface ThreadFeedMessage {
   readonly sender?: {
     readonly key: string;
     readonly name: string;
-    readonly bot?: { readonly avatar: ProjectAvatar | null };
+    /** `threadId` is the viewer's own conversation with the bot, which its name opens. */
+    readonly bot?: { readonly avatar: ProjectAvatar | null; readonly threadId?: ThreadId | null };
+    /** The room's own note, such as bots pausing: a centred line, not a bubble. */
+    readonly notice?: true;
   };
   readonly idleCompaction?: import("@t3tools/contracts").OrchestrationV2IdleCompaction;
   readonly visibility: OrchestrationV2ProjectedTurnItem["visibility"];

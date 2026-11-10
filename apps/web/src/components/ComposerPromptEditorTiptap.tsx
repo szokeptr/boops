@@ -113,6 +113,7 @@ import { SkillChipPopover, skillPopoverDescription } from "./chat/SkillInlineTex
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { getTimelinePageScrollKey } from "./chat/pageScrollController";
 import { ContextChip } from "./ContextChip";
+import { roomMentionSpans } from "@t3tools/contracts";
 import {
   ComposerContextActionsContext,
   ComposerContextReferenceChip,
@@ -156,6 +157,8 @@ export interface ComposerPromptEditorProps {
     | ((fragment: ComposerContextClipboardFragment) => ReadonlyMap<string, string>)
     | undefined;
   skills: ReadonlyArray<ServerProviderSkill>;
+  /** Highlights each `@Name` that a group chat would deliver to that bot. */
+  mentionNames?: ReadonlyArray<string> | undefined;
   disabled: boolean;
   placeholder: string;
   ariaLabel?: string | undefined;
@@ -234,6 +237,9 @@ function resolvedThemeFromDocument(): "light" | "dark" {
 
 const CHIP_NODE_SELECTION_CLASS_NAME =
   "relative inline-flex min-w-0 max-w-full select-none items-baseline data-[composer-chip-selected]:after:pointer-events-none data-[composer-chip-selected]:after:absolute data-[composer-chip-selected]:after:inset-0 data-[composer-chip-selected]:after:rounded-sm data-[composer-chip-selected]:after:bg-[Highlight] data-[composer-chip-selected]:after:opacity-30 data-[composer-chip-selected]:after:content-['']";
+
+// Colour only: a weight change would shift the line as a typed name completes.
+const MENTION_HIGHLIGHT_CLASS_NAME = "rounded-sm bg-primary/10 text-primary";
 
 const ComposerMentionExtension = Node.create({
   name: "composer-mention",
@@ -753,6 +759,55 @@ const ComposerMarkersExtension = Extension.create({
   },
 });
 
+const NO_MENTION_NAMES: ReadonlyArray<string> = [];
+
+const MentionHighlightPluginKey = new PluginKey<{
+  names: ReadonlyArray<string>;
+  decorations: DecorationSet;
+}>("composer-mention-highlight");
+
+// Spans come from the serialized prompt, the text that is sent, so a highlight
+// shows exactly the mentions the recipient will see. A span the document shows
+// differently, such as inside a chip, is left plain.
+function mentionDecorations(doc: ProseMirrorNode, names: ReadonlyArray<string>): DecorationSet {
+  if (names.length === 0) return DecorationSet.empty;
+  const map = serializeEditorDoc(doc);
+  return DecorationSet.create(
+    doc,
+    roomMentionSpans(map.value, names).flatMap(({ start, end }) => {
+      const from = flatToPm(map, markdownToFlat(map, start));
+      const to = flatToPm(map, markdownToFlat(map, end));
+      return doc.textBetween(from, to, "\n", "\uFFFC") === map.value.slice(start, end)
+        ? [Decoration.inline(from, to, { class: MENTION_HIGHLIGHT_CLASS_NAME, "data-mention": "" })]
+        : [];
+    }),
+  );
+}
+
+const ComposerMentionHighlightPlugin = new Plugin({
+  key: MentionHighlightPluginKey,
+  state: {
+    init: () => ({ names: NO_MENTION_NAMES, decorations: DecorationSet.empty }),
+    apply: (tr, old, _, state) => {
+      const names: ReadonlyArray<string> = tr.getMeta(MentionHighlightPluginKey) ?? old.names;
+      if (names === old.names && !tr.docChanged) return old;
+      return { names, decorations: mentionDecorations(state.doc, names) };
+    },
+  },
+  props: {
+    decorations(state) {
+      return MentionHighlightPluginKey.getState(state)?.decorations;
+    },
+  },
+});
+
+const ComposerMentionHighlightExtension = Extension.create({
+  name: "composer-mention-highlight",
+  addProseMirrorPlugins() {
+    return [ComposerMentionHighlightPlugin];
+  },
+});
+
 type TiptapEditor = NonNullable<ReturnType<typeof useEditor>>;
 
 function replaceSkillChips(
@@ -843,6 +898,7 @@ function createComposerExtensions(richText: boolean) {
     ComposerCitationExtension,
     ComposerContextReferenceExtension,
     ComposerMarkersExtension,
+    ComposerMentionHighlightExtension,
     ...(richText
       ? [
           ComposerBoldSelectionOnlyExtension,
@@ -937,6 +993,7 @@ function ComposerPromptEditorTiptapInner(
     buildContextClipboardFragment,
     importContextFragment,
     skills,
+    mentionNames = NO_MENTION_NAMES,
     disabled,
     placeholder,
     ariaLabel,
@@ -1610,6 +1667,23 @@ function ComposerPromptEditorTiptapInner(
     );
     if (replacements.length > 0) replaceSkillChips(editor, replacements);
   }, [editor, literalText, skills]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands the mention names to the ProseMirror highlight plugin before paint
+  useLayoutEffect(() => {
+    if (!editor) return;
+    const current = MentionHighlightPluginKey.getState(editor.state)?.names ?? NO_MENTION_NAMES;
+    if (
+      current.length === mentionNames.length &&
+      current.every((name, index) => name === mentionNames[index])
+    ) {
+      return;
+    }
+    editor.view.dispatch(
+      editor.state.tr
+        .setMeta(MentionHighlightPluginKey, mentionNames)
+        .setMeta("addToHistory", false),
+    );
+  }, [editor, mentionNames]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores ProseMirror focus and caret scroll when the keyed editor remounts, capturing focus on teardown
   useLayoutEffect(() => {

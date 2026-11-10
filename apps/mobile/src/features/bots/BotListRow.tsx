@@ -3,7 +3,7 @@ import { sidebarBotKey } from "@t3tools/client-runtime/state/sidebar-sections";
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import type { ReactNode } from "react";
-import { Platform, Pressable, View, type ViewStyle } from "react-native";
+import { Pressable, View, type ViewStyle } from "react-native";
 
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { RelativeTime } from "../../components/RelativeTime";
@@ -101,19 +101,19 @@ function BotEntryMenu(
             ? {
                 id: "unpin",
                 title: "Unpin",
-                image: Platform.OS === "ios" ? "pin.slash" : "keep_off",
+                image: "pin.slash",
               }
-            : { id: "pin", title: "Pin", image: Platform.OS === "ios" ? "pin" : "keep" },
+            : { id: "pin", title: "Pin", image: "pin" },
         ]),
     ...(props.onShare && canShare && !member
-      ? [{ id: "share", title: "Share…", image: Platform.OS === "ios" ? "person.2" : "group" }]
+      ? [{ id: "share", title: "Share…", image: "person.2" }]
       : []),
     ...(row.activityThreadCount > 0
       ? [
           {
             id: "activity",
             title: `Activity (${row.activityThreadCount})`,
-            image: Platform.OS === "ios" ? "clock" : "history",
+            image: "clock",
           },
         ]
       : []),

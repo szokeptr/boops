@@ -1,4 +1,9 @@
-import type { ComposerContextRecord, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import {
+  type ComposerContextRecord,
+  type EnvironmentId,
+  roomMentionSpans,
+  type ThreadId,
+} from "@t3tools/contracts";
 import {
   composerChipSizeSuffix,
   contextChipIcon,
@@ -101,6 +106,32 @@ export function enrichedSkillLinkRegex(skills?: ReadonlyArray<SelectableMarkdown
     `(?<![A-Za-z0-9_-])(?<!\\p{Sc})\\p{Sc}(?:${alternatives.join("|")})(?![A-Za-z0-9_-])`,
     "u",
   );
+}
+
+const NO_MENTIONS: ReadonlyArray<string> = [];
+
+/** The distinct `@Name` texts in `markdown` that would ask a bot, by the room's own rule. */
+export function enrichedMentionTexts(
+  markdown: string,
+  names: ReadonlyArray<string>,
+): ReadonlyArray<string> {
+  const spans = roomMentionSpans(markdown, names);
+  if (spans.length === 0) return NO_MENTIONS;
+  return [...new Set(spans.map((span) => markdown.slice(span.start, span.end)))];
+}
+
+/**
+ * Finds only the exact texts `enrichedMentionTexts` returned, with the same word edges, so the
+ * native renderer decides nothing but which of them sit in prose rather than code or a link.
+ */
+export function enrichedMentionLinkRegex(texts: ReadonlyArray<string>): RegExp | null {
+  if (texts.length === 0) return null;
+  const alternatives = [...texts]
+    .sort((a, b) => b.length - a.length)
+    .map((text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  // The library refuses any lookbehind whose source has a brace, so `\p{L}` cannot be used; the
+  // native engines read `\w` as every letter and digit.
+  return new RegExp(`(?<![\\w-])(?:${alternatives.join("|")})(?![\\w-])`, "u");
 }
 
 export function enrichedSkillDisplayName(skill: SelectableMarkdownSkill) {

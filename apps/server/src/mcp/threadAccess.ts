@@ -1,6 +1,8 @@
 import type { ProjectionRecordField } from "../orchestration-v2/ProjectionStore.ts";
 import {
   CommandId,
+  isRoomThreadId,
+  type OrchestrationV2LinkOrigin,
   OrchestratorMcpFailure,
   type ProjectId,
   type ProviderInstanceId,
@@ -11,9 +13,11 @@ import {
 } from "@t3tools/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 import type { OrchestratorV2Error } from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import * as Rooms from "../rooms/Rooms.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 
@@ -69,8 +73,39 @@ export interface Caller {
   readonly scope: McpInvocationContext.McpInvocationScope;
   readonly threads: ThreadManagement.ThreadManagementService["Service"];
   readonly caller: OrchestrationV2ThreadShell | undefined;
+  /** The link or member the calling thread's work is for; see `threadActsFor`. */
+  readonly actsFor: OrchestrationV2LinkOrigin | undefined;
   readonly limits: CallerLimits;
 }
+
+const roomTurnEnded = () =>
+  new OrchestratorMcpFailure({
+    code: "capability_denied",
+    message: "This group chat turn has ended, so its work can no longer use these tools.",
+  });
+
+/**
+ * Whom a thread's work is for: its own `linkOrigin`, else, under a room thread, the member whose
+ * message started the turn that room thread is running. Work the room cannot place, such as a
+ * call that outlived its turn, is for nobody and is refused.
+ */
+export const threadActsFor = Effect.fn("mcp.threadActsFor")(function* (
+  thread: Pick<OrchestrationV2ThreadShell, "id" | "lineage" | "linkOrigin">,
+) {
+  if (thread.linkOrigin !== undefined) return thread.linkOrigin;
+  if (!isRoomThreadId(thread.id) && !isRoomThreadId(thread.lineage.rootThreadId)) return undefined;
+  // Optional so tool tests build without it; without it a room's work is refused.
+  const rooms = yield* Effect.serviceOption(Rooms.Rooms);
+  if (Option.isNone(rooms)) return yield* roomTurnEnded();
+  const turn = yield* rooms.value
+    .turnOf(thread)
+    .pipe(
+      Effect.mapError((error) =>
+        error.reason === "not-allowed" ? roomTurnEnded() : unavailable(),
+      ),
+    );
+  return turn?.linkOrigin;
+});
 
 export const readCaller = Effect.fn("mcp.readCaller")(function* () {
   const scope = yield* McpInvocationContext.McpInvocationContext;
@@ -91,6 +126,7 @@ export const loadCaller = Effect.fn("mcp.loadCaller")(function* () {
       scope,
       threads,
       caller: undefined,
+      actsFor: undefined,
       limits: McpInvocationContext.clientModeCeiling(scope.client),
     } satisfies Caller;
   }
@@ -107,6 +143,7 @@ export const loadCaller = Effect.fn("mcp.loadCaller")(function* () {
     scope,
     threads,
     caller,
+    actsFor: yield* threadActsFor(caller),
     limits: { runtimeMode: caller.runtimeMode, interactionMode: caller.interactionMode },
   } satisfies Caller;
 });

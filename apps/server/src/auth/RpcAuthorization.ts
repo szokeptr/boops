@@ -286,6 +286,7 @@ const MEMBER_RPC_POLICY = {
   [WS_METHODS.roomsHistory]: "allow",
   [WS_METHODS.roomsSubscribeFeed]: "allow",
   [WS_METHODS.roomsRespond]: "allow",
+  [WS_METHODS.roomsInterrupt]: "allow",
   [WS_METHODS.roomsMarkRead]: "allow",
   // Her own sidebar layout, stored under her member id.
   [WS_METHODS.sidebarLayoutSubscribe]: "allow",

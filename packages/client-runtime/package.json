@@ -163,6 +163,10 @@
       "types": "./src/state/sidebarSections.ts",
       "default": "./src/state/sidebarSections.ts"
     },
+    "./state/room-list": {
+      "types": "./src/state/roomList.ts",
+      "default": "./src/state/roomList.ts"
+    },
     "./state/auth": {
       "types": "./src/state/auth.ts",
       "default": "./src/state/auth.ts"

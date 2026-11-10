@@ -653,6 +653,7 @@ const botLifecycleHarness = (input: {
         Effect.succeed({
           id: threadId,
           projectId,
+          lineage: { rootThreadId: threadId, parentThreadId: null, relationshipToParent: null },
           providerInstanceId,
           activeRunId: "run:1",
           runtimeMode: "full-access",

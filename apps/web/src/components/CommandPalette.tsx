@@ -242,7 +242,7 @@ import {
 } from "./CommandPaletteAddProject";
 import { openCreateBotDialog } from "./CreateBotDialog";
 import { openCreateRoomDialog } from "./rooms/CreateRoomDialog";
-import { useRooms } from "../state/rooms";
+import { useRoomLists } from "../state/rooms";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
 import {
@@ -541,9 +541,8 @@ function OpenCommandPaletteDialog(props: {
   const canManageContextualBot = useCanManageBot(contextualProjectRef?.environmentId ?? null);
   const canShareContextualBot = useCanManageMembers(contextualProjectRef?.environmentId ?? null);
   const memberOnly = useIsMemberOnly();
-  // Group chats live on the machine the bots do; a member's only machine is someone else's.
-  const roomEnvironmentId = primaryEnvironmentId;
-  const roomList = useRooms(roomEnvironmentId);
+  // Group chats live on each machine with its bots, as threads and bots do.
+  const roomLists = useRoomLists(environments.map((environment) => environment.environmentId));
   const { archiveBot, unarchiveBot } = useBotArchive();
   const projectPickerEntries = buildSidebarProjectPickerEntries({
     groups: pickableProjectGroups(projectGroups),
@@ -1233,30 +1232,52 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  if (roomEnvironmentId !== null && roomList.canCreate) {
+  const creatableRoomLists = roomLists.filter((list) => list.snapshot?.canCreate === true);
+  const labelRoomMachines = roomLists.filter((list) => list.snapshot !== null).length > 1;
+  for (const list of creatableRoomLists) {
+    const label = environmentLabelById.get(list.environmentId) ?? null;
+    const named = creatableRoomLists.length > 1 && label !== null;
     actionItems.push({
       kind: "action",
-      value: "action:new-group-chat",
-      searchTerms: ["new group chat", "group", "room", "people", "together", "chat with"],
-      title: "New group chat",
+      value: `action:new-group-chat:${list.environmentId}`,
+      searchTerms: [
+        "new group chat",
+        "group",
+        "room",
+        "people",
+        "together",
+        "chat with",
+        ...(named ? [label] : []),
+      ],
+      title: named ? `New group chat on ${label}` : "New group chat",
       icon: <UsersIcon className={ITEM_ICON_CLASS} />,
-      run: async () => openCreateRoomDialog(roomEnvironmentId),
+      run: async () => openCreateRoomDialog(list.environmentId),
     });
   }
-  if (roomEnvironmentId !== null) {
-    for (const room of roomList.rooms) {
-      if (!room.joined || room.archivedAt !== null) continue;
+  for (const list of roomLists) {
+    const label = labelRoomMachines ? (environmentLabelById.get(list.environmentId) ?? null) : null;
+    for (const room of list.snapshot?.rooms ?? []) {
+      if (!room.joined) continue;
+      const archived = room.archivedAt !== null;
+      const description = [archived ? "Archived" : null, label].filter(Boolean).join(" · ");
       actionItems.push({
         kind: "action",
-        value: `room:${room.id}`,
-        searchTerms: [room.title, ...room.participants.map((entry) => entry.name), "group chat"],
+        value: `room:${list.environmentId}:${room.id}`,
+        searchTerms: [
+          room.title,
+          ...room.participants.map((entry) => entry.name),
+          "group chat",
+          ...(label === null ? [] : [label]),
+        ],
         title: room.title,
         searchTitle: room.title,
+        ...(description === "" ? {} : { description }),
+        ...(archived ? { secondary: true } : {}),
         icon: <UsersIcon className={ITEM_ICON_CLASS} />,
         run: async () => {
           await navigate({
             to: "/rooms/$environmentId/$roomId",
-            params: { environmentId: roomEnvironmentId, roomId: room.id },
+            params: { environmentId: list.environmentId, roomId: room.id },
           });
         },
       });

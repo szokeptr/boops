@@ -260,6 +260,18 @@ it.effect("queues provider and resource cleanup and preserves an earlier deletio
             mimeType: "text/plain",
             sizeBytes: 10,
           },
+          // A group chat's photo a bot was handed: the room removes it, not the bot's thread.
+          ...(index === 1
+            ? [
+                {
+                  type: "file" as const,
+                  id: "room-8a6e0f8e-1d2c-4b5a-9e7f-0a1b2c3d4e5f-1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+                  name: "photo.txt",
+                  mimeType: "text/plain",
+                  sizeBytes: 10,
+                },
+              ]
+            : []),
         ],
         streaming: false,
         createdAt,

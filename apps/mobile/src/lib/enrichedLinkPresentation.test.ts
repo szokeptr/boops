@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 import type { ComposerContextId, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   enrichedLinkVariantPattern,
+  enrichedMentionLinkRegex,
+  enrichedMentionTexts,
   enrichedSkillLinkRegex,
   enrichedThreadLinkPresentation,
   ENRICHED_INLINE_FILE_LINK_REGEX,
@@ -40,6 +42,18 @@ describe("Enriched link presentation", () => {
     expect(regex?.exec("Try $checkXmobile next")).toBeNull();
     expect(regex?.exec("prefix$check next")).toBeNull();
     expect(enrichedSkillLinkRegex([])).toBeNull();
+  });
+
+  it("recognizes only the mentions the room's rule finds, as typed", () => {
+    const names = ["Scout", "Scout Pro", "C.J."];
+    const markdown = "@scout pro, then @Scout and @C.J. but not @Scouting or me@scout.dev";
+    const texts = enrichedMentionTexts(markdown, names);
+    expect(texts).toEqual(["@scout pro", "@Scout", "@C.J."]);
+    const regex = new RegExp(enrichedMentionLinkRegex(texts)!.source, "gu");
+    expect(markdown.match(regex)).toEqual(["@scout pro", "@Scout", "@C.J."]);
+    expect("@CxJ. @Scouts".match(regex)).toBeNull();
+    expect(enrichedMentionTexts("no mentions", names)).toEqual([]);
+    expect(enrichedMentionLinkRegex([])).toBeNull();
   });
 
   it("matches only the complete URL, including literal regex metacharacters", () => {

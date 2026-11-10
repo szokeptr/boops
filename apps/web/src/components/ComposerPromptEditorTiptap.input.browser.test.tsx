@@ -33,11 +33,13 @@ function Composer({
   value,
   richTextEnabled,
   skills,
+  mentionNames,
   onChange,
 }: {
   value: string;
   richTextEnabled: boolean;
   skills: ReadonlyArray<ServerProviderSkill>;
+  mentionNames?: ReadonlyArray<string>;
   onChange?: ComposerPromptEditorProps["onChange"] | undefined;
 }) {
   const [prompt, setPrompt] = useState({ value, cursor: value.length });
@@ -49,6 +51,7 @@ function Composer({
       richTextEnabled={richTextEnabled}
       contextRecords={new Map()}
       skills={skills}
+      mentionNames={mentionNames}
       disabled={false}
       placeholder=""
       onChange={(...args) => {
@@ -148,6 +151,30 @@ it.each([
   expect(textWithMark(editor, "italic")).toEqual([]);
   expect(textWithMark(editor, "code")).toEqual(code);
 });
+
+it.each([false, true])(
+  "highlights exactly the bot mentions that will be sent (rich text: %s)",
+  async (richTextEnabled) => {
+    await using screen = await render(
+      <Composer
+        value="**@Scout**, "
+        richTextEnabled={richTextEnabled}
+        skills={[]}
+        mentionNames={["Scout", "Chef Bot"]}
+      />,
+    );
+    const editor = editorIn(screen.container);
+    const marked = () =>
+      Array.from(editor.view.dom.querySelectorAll("[data-mention]"), (node) => node.textContent);
+    expect(marked()).toEqual(["@Scout"]);
+    await act(async () => {
+      editor.commands.focus("end");
+      const { from, to } = editor.state.selection;
+      typeText(editor, from, to, "@chef bot not @Scouting or @nobody, ask @Scout");
+    });
+    expect(marked()).toEqual(["@Scout", "@chef bot", "@Scout"]);
+  },
+);
 
 it("bolds with Mod+B only when text is selected", async () => {
   await using screen = await mountEditor("ship it");

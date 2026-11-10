@@ -40,6 +40,7 @@ import {
   type Caller,
   loadCaller,
   readCaller,
+  threadActsFor,
   unavailable,
 } from "./threadAccess.ts";
 
@@ -459,10 +460,12 @@ const refuseMemberCaller = Effect.fn("McpToolAccess.refuseMemberCaller")(functio
   const caller = yield* threads.value
     .getThreadShell(scope.thread.threadId)
     .pipe(Effect.mapError(unavailable));
-  if (caller?.linkOrigin?.memberId === undefined) return;
+  if (caller === null) return;
+  const actsFor = yield* threadActsFor(caller);
+  if (actsFor?.memberId === undefined) return;
   return yield* new OrchestratorMcpFailure({
     code: "capability_denied",
-    message: `${tool} is not available in a conversation with ${caller.linkOrigin.label}, whom the owner invited to chat with this bot.`,
+    message: `${tool} is not available in a conversation with ${actsFor.label}, whom the owner invited to chat with this bot.`,
   });
 });
 

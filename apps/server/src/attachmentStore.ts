@@ -128,6 +128,17 @@ export function parseThreadSegmentFromAttachmentId(attachmentId: string): string
   return match[1]?.toLowerCase() ?? null;
 }
 
+const ROOM_ATTACHMENT_SEGMENT = new RegExp(`^room-${ATTACHMENT_ID_UUID_PATTERN}$`);
+
+/** Where a group chat files its uploads: one folder per room, not per bot thread. */
+export const roomAttachmentThreadId = (roomId: string) => `room-${roomId}`;
+
+/** A file a group chat owns. Its bots' threads only borrow it; the room removes it when deleted. */
+export function isRoomAttachmentId(attachmentId: string): boolean {
+  const segment = parseThreadSegmentFromAttachmentId(attachmentId);
+  return segment !== null && ROOM_ATTACHMENT_SEGMENT.test(segment);
+}
+
 /** Only this thread's ids qualify, preserving source pages when deleting a fork. */
 export function threadHtmlRenderAttachmentIds(
   threadId: string,

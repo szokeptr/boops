@@ -9,6 +9,7 @@ import { requestConfirmDialog } from "../../confirmDialog";
 import { roomEnvironment } from "../../state/rooms";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { toastManager } from "../ui/toast";
+import { discardRoomFiles } from "./roomUploads";
 
 function reportFailure(title: string, result: AtomCommandResult<unknown, unknown>) {
   if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return false;
@@ -38,10 +39,15 @@ export function useRoomCommands(environmentId: EnvironmentId) {
       runRename({ environmentId, input: { roomId, title } }).then(ok("Could not rename")),
     add: (roomId: RoomId, participant: RoomParticipant) =>
       runAdd({ environmentId, input: { roomId, participant } }).then(ok("Could not add them")),
-    remove: (roomId: RoomId, participant: RoomParticipant) =>
-      runRemove({ environmentId, input: { roomId, participant } }).then(
+    remove: async (roomId: RoomId, participant: RoomParticipant, name: string) => {
+      const confirmed = await (requestConfirmDialog(
+        `Take ${name} out of this group chat? They stop seeing new messages.`,
+      ) ?? Promise.resolve(true));
+      if (!confirmed) return false;
+      return runRemove({ environmentId, input: { roomId, participant } }).then(
         ok("Could not take them out"),
-      ),
+      );
+    },
     setArchived: (roomId: RoomId, archived: boolean) =>
       runArchive({ environmentId, input: { roomId, archived } }).then(
         ok(archived ? "Could not archive" : "Could not unarchive"),
@@ -53,7 +59,9 @@ export function useRoomCommands(environmentId: EnvironmentId) {
         `Leave "${title}"? Someone has to add you back.`,
       ) ?? Promise.resolve(true));
       if (!confirmed) return false;
-      return runLeave({ environmentId, input: { roomId } }).then(ok("Could not leave"));
+      const left = await runLeave({ environmentId, input: { roomId } }).then(ok("Could not leave"));
+      if (left) discardRoomFiles(environmentId, roomId);
+      return left;
     },
     delete: async (roomId: RoomId, title: string) => {
       const confirmed = await (requestConfirmDialog(
@@ -61,7 +69,11 @@ export function useRoomCommands(environmentId: EnvironmentId) {
         { variant: "destructive" },
       ) ?? Promise.resolve(true));
       if (!confirmed) return false;
-      return runDelete({ environmentId, input: { roomId } }).then(ok("Could not delete"));
+      const deleted = await runDelete({ environmentId, input: { roomId } }).then(
+        ok("Could not delete"),
+      );
+      if (deleted) discardRoomFiles(environmentId, roomId);
+      return deleted;
     },
   };
 }

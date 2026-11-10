@@ -6,6 +6,7 @@ import IconAlertCircle from "@tabler/icons-react-native/IconAlertCircle";
 import IconAlertTriangle from "@tabler/icons-react-native/IconAlertTriangle";
 import IconApps from "@tabler/icons-react-native/IconApps";
 import IconArchive from "@tabler/icons-react-native/IconArchive";
+import IconBell from "@tabler/icons-react-native/IconBell";
 import IconBellOff from "@tabler/icons-react-native/IconBellOff";
 import IconCalendarClock from "@tabler/icons-react-native/IconCalendarClock";
 import IconArrowBackUp from "@tabler/icons-react-native/IconArrowBackUp";
@@ -80,6 +81,7 @@ import IconInfoCircle from "@tabler/icons-react-native/IconInfoCircle";
 import IconKeyboard from "@tabler/icons-react-native/IconKeyboard";
 import IconKeyboardHide from "@tabler/icons-react-native/IconKeyboardHide";
 import IconLock from "@tabler/icons-react-native/IconLock";
+import IconLogout from "@tabler/icons-react-native/IconLogout";
 import IconLayoutColumns from "@tabler/icons-react-native/IconLayoutColumns";
 import IconLayoutSidebar from "@tabler/icons-react-native/IconLayoutSidebar";
 import IconLayoutSidebarRight from "@tabler/icons-react-native/IconLayoutSidebarRight";
@@ -171,7 +173,9 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "arrow.uturn.forward": IconArrowForwardUp,
   archivebox: IconArchive,
   "archivebox.fill": IconArchive,
+  bell: IconBell,
   "bell.badge": IconBellRinging,
+  "bell.slash": IconBellOff,
   "bell.slash.fill": IconBellOff,
   "bolt.circle": IconBolt,
   "bolt.horizontal.circle": IconBolt,
@@ -259,6 +263,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   minus: IconMinus,
   "slash.circle": IconBan,
   "qrcode.viewfinder": IconQrcode,
+  "rectangle.portrait.and.arrow.right": IconLogout,
   "point.3.connected.trianglepath.dotted": IconNetwork,
   "point.topleft.down.curvedto.point.bottomright.up": IconGitMerge,
   safari: IconExternalLink,

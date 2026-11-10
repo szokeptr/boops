@@ -31,7 +31,8 @@ export const BotQuestionCard = memo(function BotQuestionCard({
 }: {
   prompt: PendingUserInput;
   cwd: string | undefined;
-  threadRef: ScopedThreadRef;
+  /** Undefined outside a thread, such as in a group chat. */
+  threadRef: ScopedThreadRef | undefined;
   disabled: boolean;
   isResponding: boolean;
   answers: Record<string, PendingUserInputDraftAnswer>;

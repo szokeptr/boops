@@ -6,15 +6,18 @@ import {
   type RoomId,
   type RoomParticipant,
   roomParticipantKey,
+  type RoomPerson,
   type RoomSummary,
 } from "@t3tools/contracts";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { BellOffIcon, EllipsisIcon } from "lucide-react";
 
 import { useProjects } from "../../state/entities";
-import { memberEnvironment, useMembers } from "../../state/members";
-import { useRooms } from "../../state/rooms";
+import { memberEnvironment } from "../../state/members";
+import { useEnvironmentPresentation } from "../../state/presentation";
+import { useRoom, useRoomBotLooks } from "../../state/rooms";
 import { Button } from "../ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import {
   Menu,
   MenuItem,
@@ -25,58 +28,97 @@ import {
   MenuSubTrigger,
   MenuTrigger,
 } from "../ui/menu";
+import { openRenameRoomDialog } from "./RenameRoomDialog";
 import { RoomAvatar } from "./RoomAvatar";
 import { RoomComposer } from "./RoomComposer";
 import { RoomRequests } from "./RoomRequests";
 import { type RoomBot, RoomTimeline } from "./RoomTimeline";
 import { useRoomCommands } from "./useRoomCommands";
 
+function RoomNotice({ children }: { readonly children?: string }) {
+  return (
+    <div className="flex flex-1 items-center justify-center p-6 text-center text-muted-foreground text-sm">
+      {children}
+    </div>
+  );
+}
+
 export function RoomPage(props: {
   readonly environmentId: EnvironmentId;
   readonly roomId: RoomId;
 }) {
-  const { rooms, loaded } = useRooms(props.environmentId);
-  const room = rooms.find((entry) => entry.id === props.roomId);
-  if (!loaded) return null;
-  if (room === undefined || !room.joined) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-6 text-muted-foreground text-sm">
-        This group chat is gone, or you are not in it.
-      </div>
+  const { loaded, room, people } = useRoom(props.environmentId, props.roomId);
+  const { presentation } = useEnvironmentPresentation(props.environmentId);
+  if (!loaded) {
+    // Still connecting shows nothing yet, as a thread does while it loads.
+    return presentation === null || presentation.connection.phase === "connected" ? (
+      <RoomNotice />
+    ) : (
+      <RoomNotice>
+        {`Can't reach ${presentation.entry.target.label} right now. This group chat opens when it reconnects.`}
+      </RoomNotice>
     );
   }
-  return <RoomView environmentId={props.environmentId} room={room} />;
+  if (room === null || !room.joined) {
+    return (
+      <Empty className="flex-1">
+        <EmptyHeader>
+          <EmptyTitle>This group chat is gone</EmptyTitle>
+          <EmptyDescription>It was deleted, or you are no longer in it.</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button render={<Link to="/" />} size="sm" variant="outline">
+            Go back
+          </Button>
+        </EmptyContent>
+      </Empty>
+    );
+  }
+  // Keyed so paging, the caret and menus start fresh in each room.
+  return (
+    <RoomView
+      key={`${props.environmentId}:${room.id}`}
+      environmentId={props.environmentId}
+      room={room}
+      people={people}
+    />
+  );
 }
 
-function RoomView({ environmentId, room }: { environmentId: EnvironmentId; room: RoomSummary }) {
-  const projects = useProjects();
+function RoomView({
+  environmentId,
+  room,
+  people,
+}: {
+  environmentId: EnvironmentId;
+  room: RoomSummary;
+  people: ReadonlyArray<RoomPerson>;
+}) {
   const sessionMember = useAtomValue(memberEnvironment.sessionMemberAtom(environmentId));
   const me: RoomParticipant =
     sessionMember === null
       ? { kind: "owner" }
       : { kind: "member", memberId: EnvironmentMemberId.make(sessionMember.id) };
   const myKey = roomParticipantKey(me);
-  const bots: ReadonlyArray<RoomBot> = room.participants.flatMap((entry) =>
+  const botEntries = room.participants.flatMap((entry) =>
     entry.participant.kind === "bot"
-      ? [
-          {
-            projectId: entry.participant.projectId,
-            name: entry.name,
-            avatar:
-              projects.find(
-                (project) =>
-                  project.environmentId === environmentId &&
-                  project.id === (entry.participant as { projectId: ProjectId }).projectId,
-              )?.avatar ?? null,
-          },
-        ]
+      ? [{ projectId: entry.participant.projectId, name: entry.name }]
       : [],
   );
+  const looks = useRoomBotLooks(
+    environmentId,
+    botEntries.map((entry) => entry.projectId),
+  );
+  const bots: ReadonlyArray<RoomBot> = botEntries.map((entry, index) => ({
+    ...entry,
+    avatar: looks[index]?.avatar ?? null,
+    threadId: looks[index]?.threadId ?? null,
+  }));
   const working = bots.filter((bot) => room.working.includes(bot.projectId));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <RoomHeader environmentId={environmentId} room={room} me={me} />
+      <RoomHeader environmentId={environmentId} room={room} me={me} people={people} />
       <RoomTimeline
         environmentId={environmentId}
         roomId={room.id}
@@ -92,6 +134,7 @@ function RoomView({ environmentId, room }: { environmentId: EnvironmentId; room:
             roomId={room.id}
             roomTitle={room.title}
             bots={bots}
+            working={working}
           />
         ) : (
           <p className="mx-auto max-w-(--chat-content-max-width) py-3 text-center text-muted-foreground text-sm">
@@ -103,38 +146,49 @@ function RoomView({ environmentId, room }: { environmentId: EnvironmentId; room:
   );
 }
 
+/** Bots the viewer may bring in: on a member's session, only those shared with them. */
+function AddBotItems(props: {
+  readonly environmentId: EnvironmentId;
+  readonly inRoom: ReadonlySet<string>;
+  readonly onAdd: (projectId: ProjectId) => void;
+}) {
+  const addable = useProjects().filter(
+    (project) =>
+      project.environmentId === props.environmentId &&
+      !project.isScratch &&
+      !props.inRoom.has(roomParticipantKey({ kind: "bot", projectId: project.id })),
+  );
+  if (addable.length === 0) {
+    return <MenuItem disabled>No other bots</MenuItem>;
+  }
+  return addable.map((bot) => (
+    <MenuItem key={bot.id} onClick={() => props.onAdd(bot.id)}>
+      {bot.title}
+    </MenuItem>
+  ));
+}
+
 function RoomHeader({
   environmentId,
   room,
   me,
+  people,
 }: {
   environmentId: EnvironmentId;
   room: RoomSummary;
   me: RoomParticipant;
+  people: ReadonlyArray<RoomPerson>;
 }) {
   const navigate = useNavigate();
   const commands = useRoomCommands(environmentId);
-  const projects = useProjects();
-  const { members } = useMembers(environmentId);
-  const isOwner = me.kind === "owner";
-  const canManage = isOwner || roomParticipantKey(room.createdBy) === roomParticipantKey(me);
+  const myKey = roomParticipantKey(me);
+  const canManage = me.kind === "owner" || roomParticipantKey(room.createdBy) === myKey;
   const inRoom = new Set(room.participants.map((entry) => roomParticipantKey(entry.participant)));
-  const addableBots = projects.filter(
-    (project) =>
-      project.environmentId === environmentId &&
-      !project.isScratch &&
-      !inRoom.has(roomParticipantKey({ kind: "bot", projectId: project.id })),
-  );
-  const addablePeople = members.filter(
-    (member) => !inRoom.has(roomParticipantKey({ kind: "member", memberId: member.id })),
-  );
+  // The list names who this session may bring in: the owner and members, minus the viewer.
+  const addablePeople = people.filter((entry) => !inRoom.has(roomParticipantKey(entry.person)));
   const others = room.participants.filter(
-    (entry) => roomParticipantKey(entry.participant) !== roomParticipantKey(me),
+    (entry) => roomParticipantKey(entry.participant) !== myKey,
   );
-  const rename = () => {
-    const title = window.prompt("Rename group chat", room.title)?.trim();
-    if (title && title !== room.title) void commands.rename(room.id, title);
-  };
 
   return (
     <header className="flex items-center gap-3 border-b px-4 py-2.5">
@@ -155,33 +209,28 @@ function RoomHeader({
           <EllipsisIcon />
         </MenuTrigger>
         <MenuPopup align="end">
-          {canManage && addableBots.length > 0 ? (
+          {canManage ? (
             <MenuSub>
               <MenuSubTrigger>Add a bot</MenuSubTrigger>
               <MenuSubPopup>
-                {addableBots.map((bot) => (
-                  <MenuItem
-                    key={bot.id}
-                    onClick={() => void commands.add(room.id, { kind: "bot", projectId: bot.id })}
-                  >
-                    {bot.title}
-                  </MenuItem>
-                ))}
+                <AddBotItems
+                  environmentId={environmentId}
+                  inRoom={inRoom}
+                  onAdd={(projectId) => void commands.add(room.id, { kind: "bot", projectId })}
+                />
               </MenuSubPopup>
             </MenuSub>
           ) : null}
-          {canManage && isOwner && addablePeople.length > 0 ? (
+          {canManage && addablePeople.length > 0 ? (
             <MenuSub>
               <MenuSubTrigger>Add a person</MenuSubTrigger>
               <MenuSubPopup>
-                {addablePeople.map((member) => (
+                {addablePeople.map((entry) => (
                   <MenuItem
-                    key={member.id}
-                    onClick={() =>
-                      void commands.add(room.id, { kind: "member", memberId: member.id })
-                    }
+                    key={roomParticipantKey(entry.person)}
+                    onClick={() => void commands.add(room.id, entry.person)}
                   >
-                    {member.label}
+                    {entry.name}
                   </MenuItem>
                 ))}
               </MenuSubPopup>
@@ -194,7 +243,7 @@ function RoomHeader({
                 {others.map((entry) => (
                   <MenuItem
                     key={roomParticipantKey(entry.participant)}
-                    onClick={() => void commands.remove(room.id, entry.participant)}
+                    onClick={() => void commands.remove(room.id, entry.participant, entry.name)}
                   >
                     {entry.name}
                   </MenuItem>
@@ -202,7 +251,15 @@ function RoomHeader({
               </MenuSubPopup>
             </MenuSub>
           ) : null}
-          {canManage ? <MenuItem onClick={rename}>Rename…</MenuItem> : null}
+          {canManage ? (
+            <MenuItem
+              onClick={() =>
+                openRenameRoomDialog({ environmentId, roomId: room.id, title: room.title })
+              }
+            >
+              Rename…
+            </MenuItem>
+          ) : null}
           <MenuItem onClick={() => void commands.setMuted(room.id, !room.muted)}>
             {room.muted ? "Unmute" : "Mute"}
           </MenuItem>

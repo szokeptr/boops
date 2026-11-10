@@ -222,6 +222,7 @@ import {
   isSecretRequestActivityGroup,
   type ThreadFeedEntry,
   type ThreadFeedLatestRun,
+  type ThreadFeedMessage,
   messageFoldRunId,
 } from "../../lib/threadActivity";
 import type { ThreadContentPresentation } from "./threadContentPresentation";
@@ -320,6 +321,37 @@ function formatMessageTime(input: string): string {
   return MESSAGE_TIME_FORMATTER.format(timestamp);
 }
 
+function DirectMessageSenderLabel(props: {
+  readonly environmentId: EnvironmentId;
+  readonly sender: NonNullable<ThreadFeedMessage["sender"]>;
+}) {
+  const { sender } = props;
+  const openLinkedThread = useOpenLinkedThread();
+  const threadId = sender.bot?.threadId ?? null;
+  const label = (
+    <>
+      {sender.bot === undefined ? null : (
+        <BotAvatarSlot avatar={sender.bot.avatar} name={sender.name} status="idle" size={16} />
+      )}
+      <Text className="font-t3-medium text-2xs text-foreground-muted">{sender.name}</Text>
+    </>
+  );
+  if (threadId === null) {
+    return <View className="mb-1 ml-1 flex-row items-center gap-1.5">{label}</View>;
+  }
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={`${sender.name}, open your conversation`}
+      hitSlop={8}
+      className="mb-1 ml-1 flex-row items-center gap-1.5 self-start active:opacity-60"
+      onPress={() => openLinkedThread({ environmentId: props.environmentId, threadId })}
+    >
+      {label}
+    </Pressable>
+  );
+}
+
 const TURN_FOLD_HEIGHT = 42;
 const FEED_PADDING_TOP = 12;
 // Rows re-measure within a commit or two of a width change. LegendList also defers imperative
@@ -374,6 +406,8 @@ export interface ThreadFeedProps {
   /** Shown after the last entry, such as a bot's open question. */
   readonly footer?: ReactNode;
   readonly contentPresentation: ThreadContentPresentation;
+  /** What an empty, loaded feed says instead of the agent thread's prompt. */
+  readonly emptyPlaceholder?: { readonly title: string; readonly detail: string };
   readonly latestRun: ThreadFeedLatestRun | null;
   readonly activeWorkStartedAt: string | null;
   readonly runlessWorkActive?: boolean;
@@ -2485,6 +2519,16 @@ function renderFeedEntry(
     }
 
     const enterAnimated = isFreshTimestamp(message.createdAt);
+    if (props.directMessage && message.sender?.notice) {
+      return (
+        <Text
+          accessibilityRole="text"
+          className="mb-5 self-center px-6 text-center text-xs text-foreground-muted"
+        >
+          {renderedText}
+        </Text>
+      );
+    }
     if (props.directMessage) {
       const bubbleMaxWidth = props.duoColumns ? "85%" : props.userBubbleMaxWidth;
       const { sender } = message;
@@ -2505,17 +2549,7 @@ function renderFeedEntry(
           {...(enterAnimated ? { entering: FadeIn.duration(220) } : {})}
         >
           {sender !== undefined && !props.messageGrouping.groupedWithPrevious ? (
-            <View className="mb-1 ml-1 flex-row items-center gap-1.5">
-              {sender.bot === undefined ? null : (
-                <BotAvatarSlot
-                  avatar={sender.bot.avatar}
-                  name={sender.name}
-                  status="idle"
-                  size={16}
-                />
-              )}
-              <Text className="font-t3-medium text-2xs text-foreground-muted">{sender.name}</Text>
-            </View>
+            <DirectMessageSenderLabel environmentId={props.environmentId} sender={sender} />
           ) : null}
           <View
             className={cn(
@@ -2558,6 +2592,11 @@ function renderFeedEntry(
               onPlaybackStart={props.onPlaybackStart}
             />
           </View>
+          {sender !== undefined && !props.messageGrouping.groupedWithNext ? (
+            <Text className="mt-1 pl-1 font-t3-medium text-xs tabular-nums text-foreground-secondary">
+              {timestampLabel}
+            </Text>
+          ) : null}
         </Animated.View>
       );
       return onReply ? (
@@ -4298,8 +4337,11 @@ export const ThreadFeed = memo(function ThreadFeed({
             style={[StyleSheet.absoluteFill, { left: contentLeftInset, right: contentRightInset }]}
           >
             <ThreadFeedPlaceholder
-              title="No conversation yet"
-              detail="Ask the agent to inspect the repo, run a command, or continue the active thread."
+              title={props.emptyPlaceholder?.title ?? "No conversation yet"}
+              detail={
+                props.emptyPlaceholder?.detail ??
+                "Ask the agent to inspect the repo, run a command, or continue the active thread."
+              }
               topInset={topContentInset}
               bottomInset={bottomContentInset}
               horizontalPadding={horizontalPadding}

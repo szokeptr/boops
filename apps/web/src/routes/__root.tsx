@@ -18,6 +18,7 @@ import { GuestShareDialogHost } from "../components/chat/GuestShareControls";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
 import { CreateBotDialogHost } from "../components/CreateBotDialog";
 import { CreateRoomDialogHost } from "../components/rooms/CreateRoomDialog";
+import { RenameRoomDialogHost } from "../components/rooms/RenameRoomDialog";
 import { ArchiveBotDialogHost, DeleteBotDialogHost } from "../components/bots/BotLifecycle";
 import { ShareBotDialogHost } from "../components/members/ShareBotDialog";
 import { BotCallHost } from "../components/bots/BotCallPanel";
@@ -204,6 +205,7 @@ function RootRouteBranch() {
         <AddProjectToMachineDialogHost />
         <CreateBotDialogHost />
         <CreateRoomDialogHost />
+        <RenameRoomDialogHost />
         <ArchiveBotDialogHost />
         <DeleteBotDialogHost />
         <ShareBotDialogHost />

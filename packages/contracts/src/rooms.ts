@@ -9,7 +9,11 @@ import {
 } from "./baseSchemas.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { OrchestrationV2UserInputQuestion } from "./orchestrationV2.ts";
-import { ProviderApprovalDecision, ProviderUserInputAnswers } from "./providerPolicy.ts";
+import {
+  ProviderApprovalDecision,
+  ProviderApprovalOption,
+  ProviderUserInputAnswers,
+} from "./providerPolicy.ts";
 import { EnvironmentMemberId } from "./members.ts";
 
 /**
@@ -141,6 +145,9 @@ export type RoomsParticipantInput = typeof RoomsParticipantInput.Type;
 export const RoomsRoomInput = Schema.Struct({ roomId: RoomId });
 export type RoomsRoomInput = typeof RoomsRoomInput.Type;
 
+export const RoomsInterruptInput = Schema.Struct({ roomId: RoomId, projectId: ProjectId });
+export type RoomsInterruptInput = typeof RoomsInterruptInput.Type;
+
 export const RoomsSetArchivedInput = Schema.Struct({ roomId: RoomId, archived: Schema.Boolean });
 export type RoomsSetArchivedInput = typeof RoomsSetArchivedInput.Type;
 
@@ -198,6 +205,11 @@ export const RoomPendingRequest = Schema.Struct({
   prompt: Schema.NullOr(Schema.String),
   /** For an approval: command, file-change, permission and the like. */
   requestKind: Schema.String,
+  /**
+   * For an approval: the provider's own choices, those a room allows (once, decline, cancel).
+   * Absent when the provider offers none; clients then show Allow and Decline.
+   */
+  options: Schema.optionalKey(Schema.Array(ProviderApprovalOption)),
   questions: Schema.Array(OrchestrationV2UserInputQuestion),
   /** Whose message started the turn the bot is asking in. */
   askedFor: RoomHuman,
@@ -216,11 +228,18 @@ export const RoomFeedItem = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("requests"), requests: Schema.Array(RoomPendingRequest) }),
 ]);
 
+/** Decisions a room accepts. A grant for the session would carry into turns other people start. */
+export const ROOM_APPROVAL_DECISIONS: ReadonlySet<ProviderApprovalDecision> = new Set([
+  "accept",
+  "decline",
+  "cancel",
+]);
+
 export const RoomsRespondInput = Schema.Struct({
   roomId: RoomId,
   projectId: ProjectId,
   requestId: RuntimeRequestId,
-  /** For an approval. */
+  /** For an approval; one of `ROOM_APPROVAL_DECISIONS`. */
   decision: Schema.optionalKey(ProviderApprovalDecision),
   /** For a question: answers by question id. */
   answers: Schema.optionalKey(ProviderUserInputAnswers),
@@ -255,33 +274,96 @@ export class RoomsError extends Schema.TaggedError<RoomsError>()("RoomsError", {
 
 const isNameChar = (char: string | undefined) => char !== undefined && /[\p{L}\p{N}_-]/u.test(char);
 
+// Offsets must line up with the original text, and a few characters (`İ`) lengthen when lowered.
+const foldCase = (text: string) => {
+  const lower = text.toLowerCase();
+  if (lower.length === text.length) return lower;
+  return Array.from(text, (char) => {
+    const folded = char.toLowerCase();
+    return folded.length === char.length ? folded : char;
+  }).join("");
+};
+
+/** Indices of `names`, longest name first, so `@Chef Bot` claims its text before `@Chef`. */
+const longestFirst = (names: ReadonlyArray<string>) =>
+  names
+    .map((name, index) => ({ name, index }))
+    .filter((entry) => entry.name.trim() !== "")
+    .sort((a, b) => b.name.length - a.name.length);
+
+export interface RoomMentionSpan {
+  readonly start: number;
+  readonly end: number;
+  /** Which of the given names. */
+  readonly index: number;
+}
+
 /**
- * The bots a bot's reply addresses: `@Name` for a bot in the room, ignoring case, not inside a
- * longer word. Longer names are tried first, so `@Chef Bot` is not also `@Chef`.
+ * Every `@Name` in a message that sets a bot off: ignoring case, not inside a longer word, longer
+ * names first so `@Chef Bot` is not also `@Chef`. Sorted by position.
  */
+export function roomMentionSpans(
+  text: string,
+  names: ReadonlyArray<string>,
+): ReadonlyArray<RoomMentionSpan> {
+  if (names.length === 0 || !text.includes("@")) return [];
+  const lower = foldCase(text);
+  const claimed = new Array<boolean>(lower.length).fill(false);
+  const spans: Array<RoomMentionSpan> = [];
+  for (const { name, index } of longestFirst(names)) {
+    const needle = `@${foldCase(name)}`;
+    for (let at = lower.indexOf(needle); at !== -1; at = lower.indexOf(needle, at + 1)) {
+      const end = at + needle.length;
+      if (claimed[at] || isNameChar(lower[at - 1]) || isNameChar(lower[end])) continue;
+      claimed.fill(true, at, end);
+      spans.push({ start: at, end, index });
+    }
+  }
+  return spans.sort((a, b) => a.start - b.start);
+}
+
+export interface RoomMentionSegment {
+  readonly start: number;
+  readonly text: string;
+  /** The bot's name, when this piece is a mention of it. */
+  readonly mention?: string;
+}
+
+/** A message cut into plain text and `@Name` mentions, in order, for drawing them apart. */
+export function roomMentionSegments(
+  text: string,
+  names: ReadonlyArray<string>,
+): ReadonlyArray<RoomMentionSegment> {
+  const segments: Array<RoomMentionSegment> = [];
+  let cursor = 0;
+  for (const span of roomMentionSpans(text, names)) {
+    if (span.start > cursor) {
+      segments.push({ start: cursor, text: text.slice(cursor, span.start) });
+    }
+    segments.push({
+      start: span.start,
+      text: text.slice(span.start, span.end),
+      mention: names[span.index]!,
+    });
+    cursor = span.end;
+  }
+  if (cursor < text.length || segments.length === 0) {
+    segments.push({ start: cursor, text: text.slice(cursor) });
+  }
+  return segments;
+}
+
+/** The bots a message addresses, by `roomMentionSpans`, longest name first. */
 export function mentionedBots(
   text: string,
   bots: ReadonlyArray<{ readonly projectId: ProjectId; readonly name: string }>,
 ): ReadonlyArray<ProjectId> {
-  const lower = text.toLowerCase();
-  const claimed = new Array<boolean>(lower.length).fill(false);
+  const names = bots.map((bot) => bot.name);
+  const mentioned = new Set(roomMentionSpans(text, names).map((span) => span.index));
   const found: Array<ProjectId> = [];
-  const byLength = bots
-    .filter((bot) => bot.name.trim() !== "")
-    .sort((a, b) => b.name.length - a.name.length);
-  for (const bot of byLength) {
-    const needle = `@${bot.name.toLowerCase()}`;
-    let from = 0;
-    while (true) {
-      const at = lower.indexOf(needle, from);
-      if (at === -1) break;
-      from = at + 1;
-      if (claimed[at] || isNameChar(lower[at - 1]) || isNameChar(lower[at + needle.length]))
-        continue;
-      for (let index = at; index < at + needle.length; index += 1) claimed[index] = true;
-      if (!found.includes(bot.projectId)) found.push(bot.projectId);
-      break;
-    }
+  for (const { index } of longestFirst(names)) {
+    const projectId = bots[index]!.projectId;
+    if (mentioned.has(index) && !found.includes(projectId)) found.push(projectId);
   }
   return found;
 }

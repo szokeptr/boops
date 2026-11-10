@@ -15,11 +15,11 @@ import type { Caller } from "./threadAccess.ts";
  * still run as this environment's user, so a full-access link is not fenced at all.
  */
 
-/** The link a caller acts for: its own session, or the link that started its thread. */
+/** The link a caller acts for: its own session, or the link or member its thread's work is for. */
 export const callerLinkOrigin = (
-  caller: Pick<Caller, "scope" | "caller">,
+  caller: Pick<Caller, "scope" | "actsFor">,
 ): OrchestrationV2LinkOrigin | undefined =>
-  caller.caller?.linkOrigin ??
+  caller.actsFor ??
   (caller.scope.client?.linked === true
     ? {
         sessionId: caller.scope.client.sessionId,
@@ -33,7 +33,7 @@ export const callerLinkOrigin = (
  * any access. A member is matched by member, not session (each device has one), and her reads are
  * fenced too, so she never learns about the owner's work.
  */
-const fencingLinkOrigin = (caller: Pick<Caller, "scope" | "caller">) => {
+const fencingLinkOrigin = (caller: Pick<Caller, "scope" | "actsFor">) => {
   const origin = callerLinkOrigin(caller);
   return origin !== undefined && (origin.memberId !== undefined || linkOriginIsFenced(origin))
     ? origin
@@ -59,7 +59,7 @@ const isSameOrigin = (
 
 /** A thread a fenced caller may change: one its own link, or its own member, started. */
 export const assertSameLink = (
-  caller: Pick<Caller, "scope" | "caller">,
+  caller: Pick<Caller, "scope" | "actsFor">,
   target: Pick<OrchestrationV2ThreadShell, "id" | "linkOrigin">,
 ) => {
   const origin = fencingLinkOrigin(caller);
@@ -77,7 +77,7 @@ export const assertSameLink = (
 
 /** A thread a member's work may read: only hers. Other callers read anything. */
 export const assertMayRead = (
-  caller: Pick<Caller, "scope" | "caller">,
+  caller: Pick<Caller, "scope" | "actsFor">,
   target: Pick<OrchestrationV2ThreadShell, "id" | "linkOrigin">,
 ) => {
   const origin = callerLinkOrigin(caller);
@@ -87,7 +87,7 @@ export const assertMayRead = (
 };
 
 /** Fenced work never changes what the environment already has: projects, settings, scheduled runs. */
-export const assertNotLinked = (caller: Pick<Caller, "scope" | "caller">, what: string) => {
+export const assertNotLinked = (caller: Pick<Caller, "scope" | "actsFor">, what: string) => {
   const origin = fencingLinkOrigin(caller);
   return origin === undefined
     ? Effect.void
@@ -95,5 +95,5 @@ export const assertNotLinked = (caller: Pick<Caller, "scope" | "caller">, what: 
 };
 
 /** Whether a caller's work is an invited member's, which reaches only the tools her chat needs. */
-export const isMemberCaller = (caller: Pick<Caller, "caller">) =>
-  caller.caller?.linkOrigin?.memberId !== undefined;
+export const isMemberCaller = (caller: Pick<Caller, "actsFor">) =>
+  caller.actsFor?.memberId !== undefined;

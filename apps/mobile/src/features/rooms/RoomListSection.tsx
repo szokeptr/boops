@@ -1,20 +1,34 @@
 import { sidebarRoomKey } from "@t3tools/client-runtime/state/sidebar-sections";
+import { sortRoomsByActivity } from "@t3tools/client-runtime/state/room-list";
 import type { EnvironmentId, RoomSummary } from "@t3tools/contracts";
-import { useNavigation, useNavigationState, type NavigationState } from "@react-navigation/native";
-import { useState } from "react";
-import { Platform, Pressable, View } from "react-native";
+import {
+  StackActions,
+  useNavigation,
+  useNavigationState,
+  type NavigationState,
+} from "@react-navigation/native";
+import { useAtomValue } from "@effect/atom-react";
+import { useEffect, useState } from "react";
+import { Pressable, View } from "react-native";
 
 import { RelativeTime } from "../../components/RelativeTime";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Menu } from "../../components/ui/Menu";
 import { cn } from "../../lib/cn";
+import { appAtomRegistry } from "../../state/atom-registry";
 import { useEnvironments } from "../../state/environments";
 import { useRooms } from "../../state/rooms";
+import {
+  clearComposerDraft,
+  composerDraftsAtom,
+  composerDraftsLoadedAtom,
+} from "../../state/use-composer-drafts";
 import { BotStatusLabel } from "../bots/BotListRow";
 import { useMoveToSectionAction } from "../bots/sidebarSections";
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 import { RoomAvatar } from "./RoomAvatar";
+import { staleRoomDraftKeys } from "./roomDrafts";
 import { canManageRoom, roomRowSubtitle } from "./roomPresentation";
 import { useRoomCommands, useRoomViewer } from "./useRoomCommands";
 
@@ -61,13 +75,23 @@ function EnvironmentRooms(props: {
 }) {
   const { environmentId } = props;
   const navigation = useNavigation();
-  const { rooms, canCreate } = useRooms(environmentId);
+  const { rooms, canCreate, loaded } = useRooms(environmentId);
+  const draftsLoaded = useAtomValue(composerDraftsLoadedAtom);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops persisted drafts of rooms the server no longer lists as joined
+  useEffect(() => {
+    if (!loaded || !draftsLoaded) return;
+    const joinedIds = rooms.flatMap((room) => (room.joined ? [room.id] : []));
+    const drafts = Object.keys(appAtomRegistry.get(composerDraftsAtom));
+    for (const key of staleRoomDraftKeys(drafts, environmentId, joinedIds)) {
+      clearComposerDraft(key);
+    }
+  }, [environmentId, rooms, loaded, draftsLoaded]);
   const [showArchived, setShowArchived] = useState(false);
   const openKey = useNavigationState(openRoomKey);
   const needle = props.searchQuery.trim().toLocaleLowerCase();
   const matches = (room: RoomSummary) =>
     needle.length === 0 || room.title.toLocaleLowerCase().includes(needle);
-  const joined = rooms.filter((room) => room.joined && matches(room));
+  const joined = sortRoomsByActivity(rooms.filter((room) => room.joined && matches(room)));
   const active = joined.filter(
     (room) =>
       room.archivedAt === null && !props.placedKeys?.has(sidebarRoomKey(environmentId, room.id)),
@@ -166,6 +190,7 @@ function RoomListRow(props: {
   readonly selected: boolean;
 }) {
   const { room, environmentId, selected } = props;
+  const navigation = useNavigation();
   const selectDetail = useSelectWorkspaceDetail();
   const commands = useRoomCommands(environmentId);
   const { viewer, viewerKey, avatarOf } = useRoomViewer(environmentId);
@@ -175,30 +200,27 @@ function RoomListRow(props: {
   const mutedTint = selected
     ? "accent-thread-selected-foreground-muted"
     : "accent-foreground-muted";
-  const subtitle = roomRowSubtitle(room);
+  const subtitle = roomRowSubtitle(room, viewerKey);
   const archived = room.archivedAt !== null;
   const move = useMoveToSectionAction(sidebarRoomKey(environmentId, room.id));
+  // Beside the list (split view) the room may be open; it is gone, so close it like its own menu.
+  const done = () => {
+    if (selected) navigation.dispatch(StackActions.popToTop());
+  };
+  // Same entries and gating as the room screen's header menu; SF names map to Android icons.
   const actions = [
+    ...(manages ? [{ id: "rename", title: "Rename…", image: "pencil" }] : []),
     {
       id: "mute",
       title: room.muted ? "Unmute" : "Mute",
-      image:
-        Platform.OS === "ios"
-          ? room.muted
-            ? "bell"
-            : "bell.slash"
-          : room.muted
-            ? "notifications"
-            : "notifications_off",
+      image: room.muted ? "bell" : "bell.slash",
     },
     ...(manages
-      ? [
-          {
-            id: "archive",
-            title: archived ? "Unarchive" : "Archive",
-            image: Platform.OS === "ios" ? "archivebox" : "archive",
-          },
-        ]
+      ? [{ id: "archive", title: archived ? "Unarchive" : "Archive", image: "archivebox" }]
+      : []),
+    { id: "leave", title: "Leave", image: "rectangle.portrait.and.arrow.right" },
+    ...(manages
+      ? [{ id: "delete", title: "Delete…", image: "trash", attributes: { destructive: true } }]
       : []),
     ...(archived ? [] : move.actions),
   ];
@@ -209,8 +231,11 @@ function RoomListRow(props: {
         shouldOpenOnLongPress
         onPressAction={({ nativeEvent }) => {
           if (move.handle(nativeEvent.event)) return;
+          if (nativeEvent.event === "rename") commands.rename(room.id, room.title);
           if (nativeEvent.event === "mute") void commands.setMuted(room.id, !room.muted);
           if (nativeEvent.event === "archive") void commands.setArchived(room.id, !archived);
+          if (nativeEvent.event === "leave") commands.leave(room.id, room.title, done);
+          if (nativeEvent.event === "delete") commands.delete(room.id, room.title, done);
         }}
       >
         <Pressable

@@ -14,11 +14,13 @@ Type `@` and pick a bot, or write its name after `@`. Only the bots you mention 
 
 Bots can mention each other to hand work along. After a few hand-offs they stop and wait for a person.
 
+Anyone in the chat can stop a bot that is working: clear the message box and press stop, then pick the bot if several are answering. That also cancels what it was asked to do next.
+
 Attach photos and files with the paperclip, by pasting, or by dropping them on the message box. A bot you mention gets the files sent since it last spoke.
 
 ## Approvals and questions
 
-When a bot needs a go-ahead or an answer, a card appears above the message box. The person whose message the bot is working on answers it; you can always answer it too. Everyone else sees who it is waiting on.
+When a bot needs a go-ahead or an answer, a card appears above the message box. The person whose message the bot is working on answers it; you can always answer it too. Everyone else sees who it is waiting on. An approval in a group chat covers that one action; there is no "always allow", since the bot's next turn may be for someone else.
 
 ## What bots share
 
@@ -26,8 +28,8 @@ A bot answers a group chat with what it knows: its notes, its files, and the Con
 
 ## Notifications
 
-Every message notifies everyone else in the chat on their phones. Mute a chat from its menu, or right-click it in the sidebar, to silence it.
+Every message notifies everyone else in the chat on their phones, and in the desktop and web app with your usual notification settings. Mute a chat from its menu, or right-click it in the sidebar, to silence it. A bot waiting on your answer still notifies you in a muted chat. In the desktop and web app, bots handing work along notify you once, when the last one answers.
 
 ## Leave, archive or delete
 
-Anyone can leave a chat. Whoever started it, and you as owner, can add or remove people and bots, rename it, archive it, or delete it. Archived chats sit under **Archived** below your group chats until you unarchive them. You can see and delete chats that people you invited started without you in **Settings → Members**.
+Anyone can leave a chat. Whoever started it, and you as owner, can add or remove people and bots, rename it, archive it, or delete it. Only you can remove yourself. When someone leaves or is removed, bots stop the work they asked for. Deleting a chat also deletes its files. Archived chats sit under **Archived** below your group chats until you unarchive them. Chats you left, and ones people you invited started without you, are listed in **Settings → Members**, where you can join or delete them.

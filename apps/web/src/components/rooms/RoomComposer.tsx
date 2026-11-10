@@ -1,15 +1,20 @@
 import { useAtomValue } from "@effect/atom-react";
+import { type EnvironmentId, mentionedBots, type RoomId, RoomMessageId } from "@t3tools/contracts";
+import { PaperclipIcon, RotateCcwIcon, XIcon } from "lucide-react";
 import {
-  type ChatAttachment,
-  type EnvironmentId,
-  mentionedBots,
-  type RoomId,
-  RoomMessageId,
-} from "@t3tools/contracts";
-import { PaperclipIcon, XIcon } from "lucide-react";
-import { type ClipboardEvent, type DragEvent, useId, useRef, useState } from "react";
+  type ClipboardEvent,
+  type DragEvent,
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
+import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { composerSubmissionIntentForKey } from "~/composer-logic";
+import { resolveShortcutCommand } from "~/keybindings";
+import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useSoftwareKeyboardOpen } from "~/hooks/useSoftwareKeyboardOpen";
 import { useTheme } from "~/hooks/useTheme";
@@ -24,72 +29,107 @@ import {
 } from "../chat/ComposerCommandMenu";
 import { ComposerCommandMenuLayer } from "../chat/ComposerCommandMenuLayer";
 import { ComposerControl, ComposerControlIcon } from "../chat/ComposerControl";
-import { PierreEntryIcon } from "../chat/PierreEntryIcon";
-import { Button } from "../ui/button";
-import { uploadRoomFile } from "./roomUploads";
 import { ComposerPrimaryActions } from "../chat/ComposerPrimaryActions";
 import { ComposerSurface } from "../chat/ComposerSurface";
+import { PierreEntryIcon } from "../chat/PierreEntryIcon";
 import { EMPTY_COMPOSER_CONTEXT_RECORDS } from "../composerContextPresentation";
 import {
   type ComposerPromptEditorHandle,
   ComposerPromptEditorTiptap,
 } from "../ComposerPromptEditorTiptap";
+import { Button } from "../ui/button";
+import { toastManager } from "../ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { roomMentionQuery } from "./roomMentions";
 import type { RoomBot } from "./RoomTimeline";
+import {
+  clearSentRoomFiles,
+  removeRoomFile,
+  retryRoomFile,
+  roomDraftKey,
+  ROOM_MAX_FILES,
+  type StagedFile,
+  stageRoomFiles,
+  useStagedRoomFiles,
+} from "./roomUploads";
 
-/** `@partial` right before the caret: the bots whose names start with it are offered. */
-const MENTION_QUERY = /(?:^|\s)@([\p{L}\p{N}_-]*)$/u;
 const NO_SKILLS: ReadonlyArray<never> = [];
-const MAX_FILES = 8;
-
-/** A file on its way into the next message: uploading, ready to send, or failed. */
-interface StagedFile {
-  readonly key: string;
-  readonly file: File;
-  readonly progress: number;
-  readonly attachment: ChatAttachment | null;
-  readonly failed: boolean;
-}
 const ignore = () => {};
 
 /**
  * The thread composer's editor, menu and send button, for a group chat: `@` offers the room's
- * bots, and sending posts to the room.
+ * bots, and sending posts to the room. What is typed and attached stays with the room.
  */
 export function RoomComposer(props: {
   readonly environmentId: EnvironmentId;
   readonly roomId: RoomId;
   readonly roomTitle: string;
   readonly bots: ReadonlyArray<RoomBot>;
+  readonly working: ReadonlyArray<RoomBot>;
 }) {
+  const { environmentId } = props;
   const post = useAtomCommand(roomEnvironment.post, "Could not send");
+  const interrupt = useAtomCommand(roomEnvironment.interrupt, "Could not stop the bot");
+  const canOperate = useAtomValue(roomEnvironment.interrupt.permissionAtom(environmentId));
+  const onlyWorking = props.working.length === 1 ? props.working[0]! : null;
+  const stop = (projectId: string) => {
+    const bot = props.working.find((candidate) => candidate.projectId === projectId);
+    if (bot === undefined || !canOperate) return;
+    return interrupt({
+      environmentId,
+      input: { roomId: props.roomId, projectId: bot.projectId },
+    });
+  };
+  const draftKey = roomDraftKey(environmentId, props.roomId);
+  const draftTarget = DraftId.make(draftKey);
+  const value = useComposerDraftStore((state) => state.draftsByThreadKey[draftKey]?.prompt ?? "");
+  const setValue = (prompt: string) =>
+    useComposerDraftStore.getState().setPrompt(draftTarget, prompt);
+  const staged = useStagedRoomFiles(draftKey);
   const editorRef = useRef<ComposerPromptEditorHandle | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-  const [value, setValue] = useState("");
-  const [cursor, setCursor] = useState(0);
+  const [cursor, setCursor] = useState(() => value.length);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [staged, setStaged] = useState<ReadonlyArray<StagedFile>>([]);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const nextKey = useRef(0);
   // One id per message until it lands, so a retry after a dropped reply posts it once.
   const pendingMessageId = useRef<RoomMessageId | null>(null);
   const listId = `${useId()}-room-mentions`;
   const { resolvedTheme } = useTheme();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const sendShortcut = useClientSettings((settings) => settings.sendShortcut);
-  const richTextEnabled = useClientSettings((settings) => settings.composerRichTextEnabled);
   const isSoftwareKeyboardOpen = useSoftwareKeyboardOpen();
+  // A thread's stop chord stops the room's bot only while one is working; with several it is
+  // unclear which, so the key passes through.
+  const onStopShortcut = useEffectEvent((event: KeyboardEvent) => {
+    if (onlyWorking === null || !canOperate || event.defaultPrevented || isCommandPaletteOpen()) {
+      return;
+    }
+    const command = resolveShortcutCommand(event, keybindings, {
+      context: { turnRunning: true },
+    });
+    if (command !== "thread.stop") return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) void stop(onlyWorking.projectId);
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- listens on the window for the stop chord, as the thread view does
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => onStopShortcut(event);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
 
-  const match = MENTION_QUERY.exec(value.slice(0, cursor));
-  const query = match === null ? null : match[1]!;
-  const queryStart = match === null ? null : cursor - query!.length - 1;
+  const botNames = props.bots.map((bot) => bot.name);
+  const mention = roomMentionQuery(value.slice(0, cursor), botNames);
+  const queryStart = mention?.start ?? null;
   const items: Array<ComposerCommandItem> =
-    query === null || queryStart === dismissedAt
+    mention === null || queryStart === dismissedAt
       ? []
       : props.bots
-          .filter((bot) => bot.name.toLowerCase().startsWith(query.toLowerCase()))
+          .filter((bot) => bot.name.toLowerCase().startsWith(mention.query.toLowerCase()))
           .map((bot) => ({
             id: bot.projectId,
             type: "bot",
@@ -112,33 +152,23 @@ export function RoomComposer(props: {
     window.requestAnimationFrame(() => editorRef.current?.focusAt(nextCursor));
   };
 
-  const updateStaged = (key: string, change: Partial<StagedFile>) =>
-    setStaged((current) =>
-      current.map((entry) => (entry.key === key ? { ...entry, ...change } : entry)),
-    );
-
   const addFiles = (files: ReadonlyArray<File>) => {
-    const room = MAX_FILES - staged.length;
-    for (const file of files.slice(0, Math.max(room, 0))) {
-      const key = `staged-${nextKey.current++}`;
-      setStaged((current) => [
-        ...current,
-        { key, file, progress: 0, attachment: null, failed: false },
-      ]);
-      uploadRoomFile({
-        environmentId: props.environmentId,
-        file,
-        onProgress: (progress) => updateStaged(key, { progress }),
-      }).then(
-        (attachment) => updateStaged(key, { attachment, progress: 1 }),
-        () => updateStaged(key, { failed: true }),
-      );
+    if (files.length === 0) return;
+    const left = stageRoomFiles(environmentId, props.roomId, files);
+    if (left > 0) {
+      toastManager.add({
+        type: "warning",
+        title: `A message can carry ${ROOM_MAX_FILES} files`,
+        description: left === 1 ? "One file was not attached." : `${left} files were not attached.`,
+      });
     }
   };
 
-  const uploading = staged.some((entry) => entry.attachment === null && !entry.failed);
+  const uploading = staged.some((entry) => entry.attachment === null && entry.error === null);
+  const failed = staged.some((entry) => entry.error !== null);
   const ready = staged.flatMap((entry) => (entry.attachment === null ? [] : [entry.attachment]));
-  const canSend = !sending && !uploading && (value.trim() !== "" || ready.length > 0);
+  const sendDisabledReason = failed ? "Retry or remove the files that didn't upload" : null;
+  const canSend = !sending && !uploading && !failed && (value.trim() !== "" || ready.length > 0);
 
   const send = async () => {
     const text = value.trim();
@@ -147,9 +177,9 @@ export function RoomComposer(props: {
     if (pendingMessageId.current === null) {
       pendingMessageId.current = RoomMessageId.make(randomUUID());
     }
-    const sentFiles = staged;
+    const sentKeys = staged.map((entry) => entry.key);
     const result = await post({
-      environmentId: props.environmentId,
+      environmentId,
       input: {
         roomId: props.roomId,
         messageId: pendingMessageId.current,
@@ -162,9 +192,12 @@ export function RoomComposer(props: {
     if (result._tag !== "Success") return;
     pendingMessageId.current = null;
     // Keep anything typed or attached while the post was in flight.
-    setValue((current) => (current.trim() === text ? "" : current));
-    setCursor(0);
-    setStaged((current) => current.filter((entry) => !sentFiles.includes(entry)));
+    const current = useComposerDraftStore.getState().draftsByThreadKey[draftKey]?.prompt ?? "";
+    if (current.trim() === text) {
+      setValue("");
+      setCursor(0);
+    }
+    clearSentRoomFiles(draftKey, sentKeys);
   };
 
   const onPaste = (event: ClipboardEvent<HTMLElement>) => {
@@ -254,11 +287,8 @@ export function RoomComposer(props: {
                         key={entry.key}
                         entry={entry}
                         resolvedTheme={resolvedTheme}
-                        onRemove={() =>
-                          setStaged((current) =>
-                            current.filter((candidate) => candidate.key !== entry.key),
-                          )
-                        }
+                        onRetry={() => retryRoomFile(draftKey, environmentId, entry.key)}
+                        onRemove={() => removeRoomFile(draftKey, environmentId, entry.key)}
                       />
                     ))}
                   </ul>
@@ -278,18 +308,20 @@ export function RoomComposer(props: {
                   </ComposerCommandMenuLayer>
                 ) : null}
                 <ComposerPromptEditorTiptap
-                  draftKey={`room:${props.roomId}`}
+                  draftKey={draftKey}
                   ariaLabel={`Message ${props.roomTitle}`}
                   suggestionListId={listId}
                   activeSuggestionId={
                     active === null ? undefined : composerSuggestionOptionId(listId, active.id)
                   }
                   editorRef={editorRef}
-                  richTextEnabled={richTextEnabled}
+                  // A room has no files or skills to chip; `@Name` must stay the text it is.
+                  literalText
                   value={value}
                   cursor={cursor}
                   contextRecords={EMPTY_COMPOSER_CONTEXT_RECORDS}
                   skills={NO_SKILLS}
+                  mentionNames={botNames}
                   disabled={false}
                   placeholder={
                     props.bots[0] === undefined
@@ -325,7 +357,7 @@ export function RoomComposer(props: {
                 />
                 <ComposerControl
                   aria-label="Attach files"
-                  disabled={staged.length >= MAX_FILES}
+                  disabled={staged.length >= ROOM_MAX_FILES}
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <ComposerControlIcon icon={PaperclipIcon} />
@@ -333,19 +365,27 @@ export function RoomComposer(props: {
                 <div className="flex-1" />
                 <ComposerPrimaryActions
                   compact={false}
-                  canOperateThread
+                  canOperateThread={canOperate}
                   pendingAction={null}
                   isRunning={false}
-                  canInterrupt={false}
+                  canInterrupt={props.working.length > 0}
+                  interruptLabel={onlyWorking === null ? "Stop a bot" : `Stop ${onlyWorking.name}`}
+                  interruptChoices={props.working.map((bot) => ({
+                    key: bot.projectId,
+                    label: `Stop ${bot.name}`,
+                  }))}
+                  onInterruptChoice={(projectId) => void stop(projectId)}
                   showPlanFollowUpPrompt={false}
                   promptHasText={value.trim() !== ""}
                   isSendBusy={sending || uploading}
-                  sendDisabledReason={null}
+                  sendDisabledReason={sendDisabledReason}
                   isEnvironmentUnavailable={false}
                   isPreparingWorktree={false}
                   hasSendableContent={value.trim() !== "" || ready.length > 0}
                   onPreviousPendingQuestion={ignore}
-                  onInterrupt={ignore}
+                  onInterrupt={() => {
+                    if (onlyWorking !== null) void stop(onlyWorking.projectId);
+                  }}
                   onImplementPlanInNewThread={ignore}
                 />
               </div>
@@ -376,21 +416,26 @@ function StagedImage({ file }: { readonly file: File }) {
 function StagedFileChip(props: {
   readonly entry: StagedFile;
   readonly resolvedTheme: "light" | "dark";
+  readonly onRetry: () => void;
   readonly onRemove: () => void;
 }) {
   const { entry } = props;
   const isImage = entry.file.type.startsWith("image/");
-  const pending = entry.attachment === null && !entry.failed;
-  return (
+  const pending = entry.attachment === null && entry.error === null;
+  const chip = (
     <li
       className={cn(
         "relative flex h-14 min-w-0 items-center gap-2 overflow-hidden rounded-lg border bg-background/70 pe-1",
-        entry.failed ? "border-destructive/60" : "border-border/80",
+        entry.error !== null ? "border-destructive/60" : "border-border/80",
       )}
-      aria-label={entry.failed ? `${entry.file.name} could not be uploaded` : entry.file.name}
+      aria-label={
+        entry.error !== null
+          ? `${entry.file.name} could not be uploaded: ${entry.error}`
+          : entry.file.name
+      }
     >
       {isImage ? (
-        <span className={cn("size-14 shrink-0", pending && "opacity-60")}>
+        <span className={cn("size-14 shrink-0", (pending || entry.error !== null) && "opacity-60")}>
           <StagedImage file={entry.file} />
         </span>
       ) : (
@@ -406,6 +451,16 @@ function StagedFileChip(props: {
           style={{ width: `${Math.round(entry.progress * 100)}%` }}
         />
       ) : null}
+      {entry.error !== null ? (
+        <Button
+          size="icon-xs"
+          variant="ghost-muted"
+          aria-label={`Retry ${entry.file.name}`}
+          onClick={props.onRetry}
+        >
+          <RotateCcwIcon />
+        </Button>
+      ) : null}
       <Button
         size="icon-xs"
         variant="ghost-muted"
@@ -415,5 +470,13 @@ function StagedFileChip(props: {
         <XIcon />
       </Button>
     </li>
+  );
+  return entry.error === null ? (
+    chip
+  ) : (
+    <Tooltip>
+      <TooltipTrigger render={chip} />
+      <TooltipPopup side="top">{`Didn't upload: ${entry.error}`}</TooltipPopup>
+    </Tooltip>
   );
 }

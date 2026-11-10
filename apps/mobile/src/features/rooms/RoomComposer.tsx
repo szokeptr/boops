@@ -1,17 +1,20 @@
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   type ChatAttachment,
   type EnvironmentId,
   mentionedBots,
   type RoomId,
+  roomMentionSegments,
   RoomMessageId,
 } from "@t3tools/contracts";
-import { useState } from "react";
-import { Platform, TextInput, View } from "react-native";
+import { useRef, useState } from "react";
+import { Platform, Pressable, Text as NativeText, TextInput, View } from "react-native";
 
 import { ComposerAttachmentStrip } from "../../components/ComposerAttachmentStrip";
 import { ComposerActionButton } from "../../components/ComposerToolbar";
 import { AppText as Text } from "../../components/ui/AppText";
 import * as Dialog from "../../components/ui/Dialog";
+import { Menu } from "../../components/ui/Menu";
 import { prepareTurnAttachments } from "../../lib/attachmentUpload";
 import {
   type DraftComposerAttachment,
@@ -20,6 +23,14 @@ import {
   removePersistedComposerAttachmentFile,
 } from "../../lib/composerImages";
 import { uuidv4 } from "../../lib/uuid";
+import {
+  appendComposerDraftAttachments,
+  clearComposerDraftContent,
+  removeComposerDraftAttachment,
+  replaceComposerDraftAttachments,
+  setComposerDraftText,
+  useComposerDraft,
+} from "../../state/use-composer-drafts";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { roomEnvironment } from "../../state/rooms";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -31,28 +42,36 @@ import {
 } from "../threads/ComposerCommandPopover";
 import { ComposerPopoverAnchor } from "../threads/ComposerPopoverAnchor";
 import { ComposerSurface, THREAD_COMPOSER_BOTTOM_GUTTER } from "../threads/ThreadComposer";
-import { insertRoomMention, type RoomBot, roomMentionQuery } from "./roomPresentation";
+import { roomDraftKey } from "./roomDrafts";
+import {
+  insertRoomMention,
+  type RoomBot,
+  roomMentionQuery,
+  roomPostFailure,
+} from "./roomPresentation";
 
 const ROOM_MESSAGE_MAX_ATTACHMENTS = 8;
 
-const discardFiles = (attachments: ReadonlyArray<DraftComposerAttachment>) =>
+// The room claimed the uploads; only the local copies are ours to remove.
+const discardLocalFiles = (attachments: ReadonlyArray<DraftComposerAttachment>) =>
   Promise.all(
     attachments.flatMap((attachment) =>
-      attachment.type === "file" && attachment.fileUri
-        ? [removePersistedComposerAttachmentFile(attachment.fileUri)]
-        : [],
+      attachment.fileUri ? [removePersistedComposerAttachmentFile(attachment.fileUri)] : [],
     ),
   );
 
 /**
  * The thread composer's pill for a group chat: `@` offers the room's bots, the plus attaches
- * photos and files, and sending posts to the room.
+ * photos and files, and sending posts to the room. The draft is kept per room like a thread's.
  */
 export function RoomComposer(props: {
   readonly environmentId: EnvironmentId;
   readonly roomId: RoomId;
   readonly roomTitle: string;
   readonly bots: ReadonlyArray<RoomBot>;
+  /** Bots taking a turn; the stop button beside Send stops one, or offers a choice of several. */
+  readonly working: ReadonlyArray<RoomBot>;
+  readonly onStop: (bot: RoomBot) => void;
   readonly bottomInset: number;
   readonly contentMaxWidth: number | undefined;
 }) {
@@ -60,13 +79,22 @@ export function RoomComposer(props: {
   const serverConfig = useEnvironmentServerConfig(props.environmentId);
   const maxUploadBytes = serverConfig?.environment.capabilities.fileAttachments?.maxUploadBytes;
   const bodyText = useScaledTextRole("body");
-  const [text, setText] = useState("");
-  const [selection, setSelection] = useState({ start: 0, end: 0 });
-  const [attachments, setAttachments] = useState<ReadonlyArray<DraftComposerAttachment>>([]);
+  const draftKey = roomDraftKey(props.environmentId, props.roomId);
+  const { text, attachments } = useComposerDraft(draftKey);
+  // Until the caret moves, it sits after a saved draft's text, which can load after mounting.
+  const [movedSelection, setSelection] = useState<{ start: number; end: number } | null>(null);
+  const selection = movedSelection ?? { start: text.length, end: text.length };
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
-  const [sending, setSending] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "uploading" | "posting">("idle");
+  const upload = useRef<AbortController | null>(null);
   // A retry of the same message reuses its id, so the room posts it once.
   const [pendingMessageId, setPendingMessageId] = useState<RoomMessageId | null>(null);
+  const sending = phase !== "idle";
+
+  const segments = roomMentionSegments(
+    text,
+    props.bots.map((bot) => bot.name),
+  );
 
   const cursor = selection.end;
   const mention = selection.start === selection.end ? roomMentionQuery(text, cursor) : null;
@@ -84,7 +112,7 @@ export function RoomComposer(props: {
           }));
 
   const edit = (next: { readonly text: string; readonly cursor: number }) => {
-    setText(next.text);
+    setComposerDraftText(draftKey, next.text);
     setSelection({ start: next.cursor, end: next.cursor });
     setPendingMessageId(null);
   };
@@ -93,41 +121,44 @@ export function RoomComposer(props: {
     edit(insertRoomMention(text, mention, cursor, item.label));
   };
   const addAttachments = (picked: ReadonlyArray<DraftComposerAttachment>, error: string | null) => {
-    const room = ROOM_MESSAGE_MAX_ATTACHMENTS - attachments.length;
-    const accepted = picked.slice(0, Math.max(0, room));
-    void discardFiles(picked.slice(accepted.length));
-    if (accepted.length > 0) {
-      setAttachments((current) => [...current, ...accepted]);
-      setPendingMessageId(null);
-    }
+    const rejected = appendComposerDraftAttachments(draftKey, picked, {
+      maxAttachments: ROOM_MESSAGE_MAX_ATTACHMENTS,
+    });
+    if (rejected < picked.length) setPendingMessageId(null);
     const problem =
       error ??
-      (accepted.length < picked.length
+      (rejected > 0
         ? `You can attach up to ${ROOM_MESSAGE_MAX_ATTACHMENTS} files per message.`
         : null);
     if (problem !== null) Dialog.alert("Could not attach that", problem);
   };
   const removeAttachment = (id: string) => {
-    void discardFiles(attachments.filter((attachment) => attachment.id === id));
-    setAttachments((current) => current.filter((attachment) => attachment.id !== id));
+    removeComposerDraftAttachment(draftKey, id);
     setPendingMessageId(null);
   };
 
   const canSend = !sending && (text.trim() !== "" || attachments.length > 0);
-  /** Uploads, then posts; resolves to null once sent, or to why it was not. */
+  /** Uploads, then posts; resolves to "sent", "cancelled", or why it was not sent. */
   const deliver = async (
     body: string,
     sent: ReadonlyArray<DraftComposerAttachment>,
     messageId: RoomMessageId,
-  ): Promise<string | null> => {
+  ): Promise<"sent" | "cancelled" | { readonly failure: string }> => {
+    const controller = new AbortController();
+    upload.current = controller;
+    setPhase(sent.length > 0 ? "uploading" : "posting");
     const prepared = await prepareTurnAttachments({
       environmentId: props.environmentId,
       attachments: sent,
       supportsImageUploads: true,
+      signal: controller.signal,
+    }).finally(() => {
+      upload.current = null;
     });
-    if (prepared.status !== "ready") return "The upload was cancelled.";
+    if (prepared.status !== "ready") return "cancelled";
+    setPhase("posting");
     // Keep the uploaded ids so a retry reuses the bytes.
-    setAttachments(prepared.draftAttachments);
+    replaceComposerDraftAttachments(draftKey, prepared.draftAttachments);
     // Every upload is by reference here; inline image data is for providers, not rooms.
     const uploaded: ReadonlyArray<ChatAttachment> = prepared.attachments.flatMap((attachment) =>
       "dataUrl" in attachment ? [] : [attachment],
@@ -142,7 +173,9 @@ export function RoomComposer(props: {
         ...(uploaded.length > 0 ? { attachments: uploaded } : {}),
       },
     });
-    return result._tag === "Success" ? null : "Check the connection and try again.";
+    return result._tag === "Success"
+      ? "sent"
+      : { failure: roomPostFailure(squashAtomCommandFailure(result)) };
   };
 
   const send = async () => {
@@ -151,21 +184,19 @@ export function RoomComposer(props: {
     const sent = attachments;
     const messageId = pendingMessageId ?? RoomMessageId.make(uuidv4());
     setPendingMessageId(messageId);
-    setSending(true);
-    const failure = await deliver(body, sent, messageId).catch((error: unknown) =>
-      error instanceof Error ? error.message : "Check the connection and try again.",
+    const outcome = await deliver(body, sent, messageId).catch(
+      (error: unknown) => ({ failure: roomPostFailure(error) }) as const,
     );
-    setSending(false);
-    if (failure !== null) {
-      Dialog.alert("Could not send", failure);
+    setPhase("idle");
+    if (outcome === "cancelled") return;
+    if (outcome !== "sent") {
+      Dialog.alert("Could not send", outcome.failure);
       return;
     }
-    // Keep anything typed while the post was in flight.
-    setText((current) => (current.trim() === body ? "" : current));
-    setSelection({ start: 0, end: 0 });
-    setAttachments([]);
+    clearComposerDraftContent(draftKey, { deferAttachmentCleanup: true });
+    setSelection(null);
     setPendingMessageId(null);
-    void discardFiles(sent);
+    void discardLocalFiles(sent);
   };
 
   return (
@@ -235,7 +266,6 @@ export function RoomComposer(props: {
               accessibilityLabel={`Message ${props.roomTitle}`}
               multiline
               editable={!sending}
-              value={text}
               selection={selection}
               placeholder={
                 props.bots[0] === undefined
@@ -244,7 +274,7 @@ export function RoomComposer(props: {
               }
               placeholderTextColorClassName="accent-placeholder"
               onChangeText={(next) => {
-                setText(next);
+                setComposerDraftText(draftKey, next);
                 setPendingMessageId(null);
                 if (dismissedAt !== null && next.length <= dismissedAt) setDismissedAt(null);
               }}
@@ -264,7 +294,22 @@ export function RoomComposer(props: {
                 paddingBottom: 11,
                 textAlignVertical: "center",
               }}
-            />
+            >
+              {/* The text as styled spans rather than `value`, so mentions can be coloured in place. */}
+              <NativeText>
+                {segments.map((segment) =>
+                  segment.mention === undefined ? (
+                    segment.text
+                  ) : (
+                    // Colour only: anything that changes glyph widths would move the caret.
+                    <NativeText key={segment.start} className="bg-primary/10 text-primary-text">
+                      {segment.text}
+                    </NativeText>
+                  ),
+                )}
+              </NativeText>
+            </TextInput>
+            <RoomStopButton working={props.working} onStop={props.onStop} />
             <ComposerActionButton
               accessibilityLabel="Send"
               icon="arrow.up"
@@ -274,10 +319,58 @@ export function RoomComposer(props: {
             />
           </View>
         </ComposerSurface>
-        {sending && attachments.length > 0 ? (
-          <Text className="pt-1.5 text-center text-xs text-foreground-muted">Uploading…</Text>
+        {phase === "uploading" ? (
+          <View className="flex-row items-center justify-center gap-2 pt-1.5">
+            <Text className="text-xs text-foreground-muted">Uploading…</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel upload"
+              hitSlop={8}
+              className="active:opacity-60"
+              onPress={() => upload.current?.abort()}
+            >
+              <Text className="font-t3-medium text-xs text-foreground-secondary">Cancel</Text>
+            </Pressable>
+          </View>
         ) : null}
       </View>
     </View>
+  );
+}
+
+function RoomStopButton(props: {
+  readonly working: ReadonlyArray<RoomBot>;
+  readonly onStop: (bot: RoomBot) => void;
+}) {
+  const [only, ...others] = props.working;
+  if (only === undefined) return null;
+  if (others.length === 0) {
+    return (
+      <ComposerActionButton
+        accessibilityLabel={`Stop ${only.name}`}
+        icon="stop.fill"
+        variant="danger"
+        onPress={() => props.onStop(only)}
+      />
+    );
+  }
+  return (
+    <Menu
+      accessible
+      accessibilityLabel="Stop a bot"
+      accessibilityRole="button"
+      actions={props.working.map((bot) => ({
+        id: bot.projectId,
+        title: `Stop ${bot.name}`,
+        image: "stop.fill",
+        attributes: { destructive: true },
+      }))}
+      onPressAction={({ nativeEvent }) => {
+        const bot = props.working.find((candidate) => candidate.projectId === nativeEvent.event);
+        if (bot !== undefined) props.onStop(bot);
+      }}
+    >
+      <ComposerActionButton accessibilityLabel="Stop a bot" icon="stop.fill" variant="danger" />
+    </Menu>
   );
 }

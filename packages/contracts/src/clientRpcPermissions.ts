@@ -50,6 +50,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.roomsDelete]: AuthOrchestrationOperateScope,
   [WS_METHODS.roomsPost]: AuthOrchestrationOperateScope,
   [WS_METHODS.roomsRespond]: AuthOrchestrationOperateScope,
+  [WS_METHODS.roomsInterrupt]: AuthOrchestrationOperateScope,
   // Inviting someone hands them access to this environment, like a pairing link.
   [WS_METHODS.membersInvite]: AuthAccessWriteScope,
   [WS_METHODS.membersUpdate]: AuthAccessWriteScope,

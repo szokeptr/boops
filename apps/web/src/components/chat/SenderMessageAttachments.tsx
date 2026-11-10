@@ -1,18 +1,21 @@
 import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
 
 import { useAssetUrls } from "../../assets/assetUrls";
-import type { ChatAttachment } from "../../types";
+import { type ChatAttachment, isImageAttachment } from "../../types";
+import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import { GuestMessageAttachments } from "./GuestMessageAttachments";
 
 const openInNewTab = (url: string) => window.open(url, "_blank", "noopener,noreferrer");
 
 /**
  * Files on a message from someone else in a shared timeline, such as a group chat: images
- * inline, files as rows that open in a new tab. Both load through asset URLs.
+ * inline and in the timeline's image preview, files as rows that open in a new tab. Both load
+ * through asset URLs.
  */
 export function SenderMessageAttachments(props: {
   readonly environmentId: EnvironmentId;
   readonly attachments: ReadonlyArray<ChatAttachment>;
+  readonly onImageExpand: (preview: ExpandedImagePreview) => void;
 }) {
   const resources: ReadonlyArray<AssetResource> = props.attachments.map((attachment) => ({
     _tag: "attachment",
@@ -27,7 +30,21 @@ export function SenderMessageAttachments(props: {
       return url ? [[attachment.id, url] as const] : [];
     }),
   );
-  const open = (attachment: ChatAttachment) => {
+  const openImage = (attachment: ChatAttachment) => {
+    const images = props.attachments.flatMap((candidate) => {
+      const src = urlById.get(candidate.id);
+      return isImageAttachment(candidate) && src
+        ? [{ id: candidate.id, src, name: candidate.name, mimeType: candidate.mimeType }]
+        : [];
+    });
+    const index = images.findIndex((image) => image.id === attachment.id);
+    if (index === -1) return;
+    props.onImageExpand({
+      images: images.map(({ src, name, mimeType }) => ({ src, name, mimeType })),
+      index,
+    });
+  };
+  const openFile = (attachment: ChatAttachment) => {
     const url = urlById.get(attachment.id);
     if (url) openInNewTab(url);
   };
@@ -35,8 +52,8 @@ export function SenderMessageAttachments(props: {
     <GuestMessageAttachments
       attachments={props.attachments}
       imageUrl={(attachment) => urlById.get(attachment.id)}
-      onOpenImage={open}
-      onOpenFile={open}
+      onOpenImage={openImage}
+      onOpenFile={openFile}
     />
   );
 }

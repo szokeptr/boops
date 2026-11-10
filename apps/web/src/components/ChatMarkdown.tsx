@@ -102,6 +102,7 @@ import {
   renderCodexInlineDirectivesAsMarkdown,
 } from "@t3tools/shared/codexMarkdownDirectives";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
+import { renderMentionMarkdownChildren } from "./chat/MentionInlineText";
 import { MarkdownMath } from "./chat/MarkdownMath";
 import {
   resolveMarkdownMediaPreview,
@@ -231,6 +232,8 @@ interface ChatMarkdownProps {
   onTaskListChange?: ((input: { markerOffset: number; checked: boolean }) => void) | undefined;
   isStreaming?: boolean;
   skills?: ReadonlyArray<ServerProviderSkill>;
+  /** Names whose `@Name` mentions stand out, as in a group chat. */
+  mentionNames?: ReadonlyArray<string>;
   className?: string;
   lineBreaks?: boolean;
   parseRawHtml?: boolean;
@@ -255,6 +258,7 @@ export interface ChatMarkdownContextReference {
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<ServerProviderSkill> = [];
+const EMPTY_MENTION_NAMES: ReadonlyArray<string> = [];
 const EMPTY_REMARK_PLUGINS: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = [];
 
 const ARTIFACT_TEMPLATE_ICON_BY_KIND = {
@@ -493,6 +497,7 @@ function useChatMarkdownState({
   onTaskListChange,
   isStreaming = false,
   skills = EMPTY_MARKDOWN_SKILLS,
+  mentionNames = EMPTY_MENTION_NAMES,
   onUseArtifactTemplate,
   onRunShellCommand,
   imageBaseDir,
@@ -919,6 +924,7 @@ function useChatMarkdownState({
     resolvedTheme,
     pullRequestsEnabled,
     skills,
+    mentionNames,
     threadRef,
     updateThreadPullRequestLink,
   };
@@ -977,8 +983,16 @@ const CHAT_MARKDOWN_COMPONENTS = {
     return <div {...props}>{children}</div>;
   },
   p: function MarkdownParagraph({ node: _node, children, ...props }) {
-    const { skills, threadRef } = use(ChatMarkdownRendererContext);
-    return <p {...props}>{renderSkillInlineMarkdownChildren(children, skills, threadRef)}</p>;
+    const { skills, mentionNames, threadRef } = use(ChatMarkdownRendererContext);
+    return (
+      <p {...props}>
+        {renderSkillInlineMarkdownChildren(
+          renderMentionMarkdownChildren(children, mentionNames),
+          skills,
+          threadRef,
+        )}
+      </p>
+    );
   },
   blockquote: function MarkdownBlockquote({ node: _node, children, ...props }) {
     const alert =
@@ -1013,12 +1027,16 @@ const CHAT_MARKDOWN_COMPONENTS = {
     );
   },
   li: function MarkdownListItem({ node, children, ...props }) {
-    const { skills, threadRef } = use(ChatMarkdownRendererContext);
+    const { skills, mentionNames, threadRef } = use(ChatMarkdownRendererContext);
     // Resolve checkbox markers by offset to avoid rerendering list items on every streamed token.
     const isTaskItem = String(props.className ?? "").includes("task-list-item");
     return (
       <li {...props} data-list-item-offset={isTaskItem ? node?.position?.start.offset : undefined}>
-        {renderSkillInlineMarkdownChildren(children, skills, threadRef)}
+        {renderSkillInlineMarkdownChildren(
+          renderMentionMarkdownChildren(children, mentionNames),
+          skills,
+          threadRef,
+        )}
       </li>
     );
   },

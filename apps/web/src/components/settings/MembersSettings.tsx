@@ -271,7 +271,7 @@ function InviteMemberDialog(props: {
   );
 }
 
-/** Group chats members started without the owner: who is in them, and a way to end one. */
+/** Group chats members started without the owner, or the owner left: join one, or end it. */
 function OthersRooms({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const { rooms } = useRooms(environmentId);
   const commands = useRoomCommands(environmentId);
@@ -285,13 +285,22 @@ function OthersRooms({ environmentId }: { readonly environmentId: EnvironmentId 
           title={room.title}
           description={room.participants.map((entry) => entry.name).join(", ")}
           control={
-            <Button
-              size="xs"
-              variant="ghost-destructive"
-              onClick={() => void commands.delete(room.id, room.title)}
-            >
-              Delete…
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => void commands.add(room.id, { kind: "owner" })}
+              >
+                Join
+              </Button>
+              <Button
+                size="xs"
+                variant="ghost-destructive"
+                onClick={() => void commands.delete(room.id, room.title)}
+              >
+                Delete…
+              </Button>
+            </div>
           }
         />
       ))}

@@ -124,7 +124,7 @@ import {
   runtimeModeRank,
   taskPrompt,
 } from "./delegatedTaskModes.ts";
-import { isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
+import { isLiveCallerShell, threadActsFor, threadNotFound } from "./threadAccess.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as SecretVaults from "../secrets/SecretVaults.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
@@ -2808,6 +2808,8 @@ const make = Effect.gen(function* () {
           );
         }
         const parentNodeId = parentRun.rootNodeId;
+        // A room turn a member started makes threads that are hers, as her conversation would.
+        const linkOrigin = yield* threadActsFor(parent.thread);
         const providers = yield* loadProviders;
         const key = yield* requestKey(input.clientRequestId);
         const created = yield* Effect.forEach(
@@ -2873,9 +2875,7 @@ const make = Effect.gen(function* () {
                   interactionMode,
                   branch: parent.thread.branch,
                   worktreePath: parent.thread.worktreePath,
-                  ...(parent.thread.linkOrigin === undefined
-                    ? {}
-                    : { linkOrigin: parent.thread.linkOrigin }),
+                  ...(linkOrigin === undefined ? {} : { linkOrigin }),
                 })
                 .pipe(
                   Effect.mapError((error) =>

@@ -154,10 +154,10 @@ const handlers = {
   ),
   post_to_group_chat: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
-      const projectId = yield* callerBot;
+      const from = yield* callerThread;
       const rooms = yield* Rooms.Rooms;
       yield* rooms
-        .postAsBot({ projectId, roomId: RoomId.make(input.roomId), text: input.text })
+        .postAsBot({ from, roomId: RoomId.make(input.roomId), text: input.text })
         .pipe(Effect.mapError(roomFailure));
       return { posted: true };
     }),

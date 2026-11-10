@@ -1,8 +1,15 @@
 import { type ChatAttachment, type RoomId, RoomsError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 
+import {
+  isRoomAttachmentId,
+  resolveAttachmentPathById,
+  roomAttachmentThreadId,
+} from "../attachmentStore.ts";
+import * as ServerConfig from "../config.ts";
 import { claimPendingAttachments } from "../orchestration-v2/AttachmentClaims.ts";
 
 /**
@@ -16,6 +23,11 @@ export class RoomAttachmentClaims extends Context.Service<
       roomId: RoomId,
       attachments: ReadonlyArray<ChatAttachment>,
     ) => Effect.Effect<ReadonlyArray<ChatAttachment>, RoomsError>;
+    /** Removes the files a deleted room claimed; files it only shows, such as bots', stay. */
+    readonly release: (
+      roomId: RoomId,
+      attachments: ReadonlyArray<ChatAttachment>,
+    ) => Effect.Effect<void>;
   }
 >()("boops/rooms/RoomAttachmentClaims") {}
 
@@ -24,17 +36,41 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const context =
       yield* Effect.context<Effect.Services<ReturnType<typeof claimPendingAttachments>>>();
+    const fileSystem = yield* FileSystem.FileSystem;
+    const config = yield* ServerConfig.ServerConfig;
     return RoomAttachmentClaims.of({
       claim: Effect.fn("RoomAttachmentClaims.claim")(function* (roomId, attachments) {
         if (attachments.length === 0) return attachments;
         const claimed = yield* claimPendingAttachments({
-          threadId: `room-${roomId}`,
+          threadId: roomAttachmentThreadId(roomId),
           attachments,
         }).pipe(
           Effect.provideContext(context),
           Effect.mapError((cause) => new RoomsError({ reason: "attachment-failed", cause })),
         );
         return claimed.attachments;
+      }),
+      release: Effect.fn("RoomAttachmentClaims.release")(function* (roomId, attachments) {
+        const prefix = `${roomAttachmentThreadId(roomId)}-`;
+        const paths = attachments.flatMap((attachment) => {
+          if (!isRoomAttachmentId(attachment.id) || !attachment.id.startsWith(prefix)) return [];
+          const path = resolveAttachmentPathById({
+            attachmentsDir: config.attachmentsDir,
+            attachmentId: attachment.id,
+          });
+          return path === null ? [] : [path];
+        });
+        yield* Effect.forEach(
+          paths,
+          (path) =>
+            fileSystem.remove(path, { force: true }).pipe(
+              Effect.andThen(fileSystem.remove(`${path}.txt`, { force: true })),
+              Effect.catch((cause) =>
+                Effect.logWarning("Could not remove a deleted room's file", { cause }),
+              ),
+            ),
+          { discard: true, concurrency: 4 },
+        );
       }),
     });
   }),

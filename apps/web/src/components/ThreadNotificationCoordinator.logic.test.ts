@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   createThreadNotificationGate,
+  observeRoomNotification,
+  type RoomSighting,
   type ThreadNotificationObservation,
 } from "./ThreadNotificationCoordinator.logic";
 
@@ -109,5 +111,103 @@ describe("createThreadNotificationGate", () => {
       gate.observe("thread", working, completed(1), visible);
       expect(notify.mock.calls).toEqual([["thread", "completion"]]);
     }
+  });
+});
+
+describe("observeRoomNotification", () => {
+  const read: RoomSighting = {
+    lastMessageId: "m1",
+    lastAuthor: "person",
+    lastMentionsBots: false,
+    working: false,
+    unread: false,
+    needsYou: false,
+    muted: false,
+    listed: true,
+  };
+  const fromSomeoneElse = { ...read, lastMessageId: "m2", unread: true };
+  const seen = (sighting: RoomSighting) => observeRoomNotification(undefined, sighting).observation;
+  const kindsOf = (sightings: ReadonlyArray<RoomSighting>) => {
+    let prior = seen(sightings[0]!);
+    return sightings.slice(1).map((sighting) => {
+      const result = observeRoomNotification(prior, sighting);
+      prior = result.observation;
+      return result.kind;
+    });
+  };
+
+  it.each([
+    ["someone else's new message", read, fromSomeoneElse, "completion"],
+    [
+      "another while still unread",
+      fromSomeoneElse,
+      { ...fromSomeoneElse, lastMessageId: "m3" },
+      "completion",
+    ],
+    ["the viewer's own message", read, { ...read, lastMessageId: "m2" }, null],
+    ["the same message again", fromSomeoneElse, fromSomeoneElse, null],
+    ["a message in a muted room", read, { ...fromSomeoneElse, muted: true }, null],
+    ["a bot newly waiting on the viewer", read, { ...read, needsYou: true }, "input"],
+    [
+      "a bot waiting on the viewer when muted",
+      read,
+      { ...read, muted: true, needsYou: true },
+      "input",
+    ],
+    [
+      "a message while a bot still waits",
+      { ...read, needsYou: true },
+      { ...fromSomeoneElse, needsYou: true },
+      "completion",
+    ],
+    ["an archived or left room", read, { ...fromSomeoneElse, listed: false }, null],
+    [
+      "a room note while still unread",
+      fromSomeoneElse,
+      { ...fromSomeoneElse, lastMessageId: "note", lastAuthor: "system" },
+      null,
+    ],
+  ] as const)("%s", (_name, prior, next, expected) => {
+    expect(kindsOf([prior, next])).toEqual([expected]);
+  });
+
+  it("stays quiet the first time it sees a room", () => {
+    expect(
+      observeRoomNotification(undefined, { ...fromSomeoneElse, needsYou: true }).kind,
+    ).toBeNull();
+  });
+
+  it("notifies once for a chain of bot replies, when the last one lands", () => {
+    const bot = { ...fromSomeoneElse, lastAuthor: "bot" } as const;
+    expect(
+      kindsOf([
+        read,
+        { ...bot, lastMessageId: "a", lastMentionsBots: true },
+        { ...bot, lastMessageId: "a", lastMentionsBots: true, working: true },
+        { ...bot, lastMessageId: "b", working: true },
+        { ...bot, lastMessageId: "c" },
+      ]),
+    ).toEqual([null, null, null, "completion"]);
+  });
+
+  it("notifies for a held reply when the room's note ends the chain", () => {
+    expect(
+      kindsOf([
+        read,
+        { ...fromSomeoneElse, lastAuthor: "bot", lastMentionsBots: true },
+        { ...read, lastMessageId: "note", lastAuthor: "system" },
+      ]),
+    ).toEqual([null, "completion"]);
+  });
+
+  it("owes nothing once the viewer has read the room", () => {
+    expect(
+      kindsOf([
+        read,
+        { ...fromSomeoneElse, lastAuthor: "bot", working: true },
+        { ...fromSomeoneElse, lastAuthor: "bot", working: true, unread: false },
+        { ...read, lastMessageId: "m2", lastAuthor: "bot" },
+      ]),
+    ).toEqual([null, null, null]);
   });
 });

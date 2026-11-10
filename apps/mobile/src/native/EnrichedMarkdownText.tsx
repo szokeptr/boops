@@ -11,7 +11,7 @@ import {
   markdownWithInlineFileLinks,
   markdownWithTableBreaks,
 } from "../lib/markdownDocument";
-import { isValidElement, useMemo, useState, type ReactNode } from "react";
+import { isValidElement, useContext, useMemo, useState, type ReactNode } from "react";
 import { Platform, Share, StyleSheet, useWindowDimensions, View } from "react-native";
 import {
   EnrichedMarkdownText,
@@ -23,14 +23,18 @@ import type { SelectableMarkdownTextProps } from "./SelectableMarkdownText.types
 
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import { Menu } from "../components/ui/Menu";
+import { MarkdownMentionNamesContext } from "./MarkdownMentionNamesContext";
 import { useEnrichedLinkVariants } from "./useEnrichedLinkVariants";
 import { useRetryingImageSource } from "./useRetryingImageSource";
 import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
 import {
   ENRICHED_INLINE_FILE_LINK_REGEX,
+  enrichedMentionLinkRegex,
+  enrichedMentionTexts,
   enrichedSkillLinkRegex,
   enrichedLinkVariantPattern,
 } from "../lib/enrichedLinkPresentation";
+import { themeColorWithAlpha } from "../lib/mobileTheme";
 
 function enrichedStyle(
   style: SelectableMarkdownTextProps["textStyle"],
@@ -161,6 +165,28 @@ function enrichedStyle(
   };
 }
 
+// A tint of the text's own colour reads on every bubble, a bot's coloured one included.
+function mentionLinkVariants(
+  texts: ReadonlyArray<string>,
+  style: SelectableMarkdownTextProps["textStyle"],
+): NonNullable<MarkdownStyle["linkVariants"]> {
+  const tint = themeColorWithAlpha(style.color, 0.16);
+  const variant = {
+    color: style.color,
+    underline: false,
+    fontFamily: style.fontFamily,
+    backgroundColor: tint === style.color ? "transparent" : tint,
+    pill: {
+      borderRadius: 5,
+      paddingHorizontal: 3,
+      paddingVertical: 0,
+      borderWidth: 0,
+      borderColor: "transparent",
+    },
+  };
+  return Object.fromEntries(texts.map((text) => [enrichedLinkVariantPattern(text), variant]));
+}
+
 export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
   const { renderImage, resolveImageSource, fileEmbedLabel } = props;
   const { themeAppearance, mathRenderingEnabled } = useAppearancePreferences();
@@ -188,6 +214,11 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
     );
   };
   const skillRegex = useMemo(() => enrichedSkillLinkRegex(props.skills), [props.skills]);
+  const mentionNames = useContext(MarkdownMentionNamesContext);
+  const mentionTexts = useMemo(
+    () => enrichedMentionTexts(markdown, mentionNames),
+    [markdown, mentionNames],
+  );
   // Skill links come from linkRecognition, which runs as the text is drawn, so
   // onLinksChange never reports them. Joined so a streaming tick keeps the value.
   const skillLinkKey = useMemo(
@@ -201,14 +232,23 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
     ? [...new Set([...parsedLinkUrls, ...skillLinkKey.split("\n")])]
     : parsedLinkUrls;
   const { linkVariants, linkPillContent } = useEnrichedLinkVariants(linkUrls, props, fileHrefs);
-  const linkRecognition = useMemo(() => ({ text: skillRegex ?? undefined }), [skillRegex]);
+  const linkRecognition = useMemo(() => {
+    const mentionRegex = enrichedMentionLinkRegex(mentionTexts);
+    const text =
+      skillRegex && mentionRegex
+        ? new RegExp(`${skillRegex.source}|${mentionRegex.source}`, "u")
+        : (skillRegex ?? mentionRegex ?? undefined);
+    return { text };
+  }, [skillRegex, mentionTexts]);
   const [activeMenu, setActiveMenu] = useState<{
     url: string;
     menu: NonNullable<ReturnType<NonNullable<typeof props.fileContextMenu>>>;
   } | null>(null);
   const { fileContextMenu, onFileContextMenuAction } = props;
-  const onLinkPress = (url: string) =>
+  const onLinkPress = (url: string) => {
+    if (mentionTexts.includes(url)) return;
     (fileHrefs.has(url) ? (props.onImagePress ?? props.onLinkPress) : props.onLinkPress)?.(url);
+  };
   const performMenuAction = (url: string, actionId: string) => {
     if (actionId === "enriched-open-link") onLinkPress(url);
     else if (actionId === "enriched-copy-link") copyTextWithHaptic(url);
@@ -282,9 +322,12 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
       paragraph: props.textAlign
         ? { ...style.paragraph, textAlign: props.textAlign }
         : style.paragraph,
-      linkVariants,
+      linkVariants:
+        mentionTexts.length === 0
+          ? linkVariants
+          : { ...linkVariants, ...mentionLinkVariants(mentionTexts, props.textStyle) },
     };
-  }, [props.textStyle, props.textAlign, themeAppearance, fontScale, linkVariants]);
+  }, [props.textStyle, props.textAlign, themeAppearance, fontScale, linkVariants, mentionTexts]);
   const renderers = renderImage
     ? {
         image: (block: MarkdownImageBlock) => {
@@ -302,6 +345,7 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
     const onLinkLongPress =
       Platform.OS === "android" && props.fileContextMenu
         ? ({ url }: { url: string }) => {
+            if (mentionTexts.includes(url)) return;
             const menu = props.fileContextMenu?.(url) ?? {
               title: url,
               actions: [

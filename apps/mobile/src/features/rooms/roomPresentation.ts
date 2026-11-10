@@ -1,13 +1,17 @@
+import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
 import { botMessagePreview } from "@t3tools/client-runtime/state/bot-list";
 import {
   EnvironmentMemberId,
   MessageId,
   type ProjectAvatar,
   type ProjectId,
+  type ProviderApprovalOption,
+  ROOM_APPROVAL_DECISIONS,
   type RoomMessage,
   type RoomParticipant,
   roomParticipantKey,
   type RoomParticipantView,
+  RoomsError,
   type RoomSummary,
   ThreadId,
 } from "@t3tools/contracts";
@@ -18,6 +22,8 @@ export interface RoomBot {
   readonly projectId: ProjectId;
   readonly name: string;
   readonly avatar: ProjectAvatar | null;
+  /** The viewer's own conversation with the bot, which its name in the chat opens. */
+  readonly threadId: ThreadId | null;
 }
 
 /** The viewer as a room participant: the owner, or the member this session belongs to. */
@@ -34,10 +40,11 @@ export function canManageRoom(room: RoomSummary, viewer: RoomParticipant): boole
   );
 }
 
-/** The room's bots, with each one's picture when this session can see its project. */
+/** The room's bots, with each one's picture and conversation when this session can see it. */
 export function roomBots(
   participants: ReadonlyArray<RoomParticipantView>,
   avatarOf: (projectId: ProjectId) => ProjectAvatar | null,
+  threadOf: (projectId: ProjectId) => ThreadId | null,
 ): ReadonlyArray<RoomBot> {
   return participants.flatMap((entry) =>
     entry.participant.kind === "bot"
@@ -46,6 +53,7 @@ export function roomBots(
             projectId: entry.participant.projectId,
             name: entry.name,
             avatar: avatarOf(entry.participant.projectId),
+            threadId: threadOf(entry.participant.projectId),
           },
         ]
       : [],
@@ -70,7 +78,7 @@ export function roomFeedEntry(
       ? bots.find((candidate) => candidate.projectId === author.projectId)
       : null;
   // Reuse the entry while nothing it shows changed, so the list keeps its rows.
-  const cacheKey = `${viewerKey}\n${bot?.avatar ? JSON.stringify(bot.avatar) : ""}`;
+  const cacheKey = `${viewerKey}\n${bot?.threadId ?? ""}\n${bot?.avatar ? JSON.stringify(bot.avatar) : ""}`;
   const cached = roomFeedMessages.get(message);
   if (cached?.key === cacheKey) return cached.entry;
   const id = MessageId.make(`room:${message.id}`);
@@ -95,7 +103,10 @@ export function roomFeedEntry(
             sender: {
               key,
               name: message.authorName,
-              ...(author.kind === "bot" ? { bot: { avatar: bot?.avatar ?? null } } : {}),
+              ...(author.kind === "bot"
+                ? { bot: { avatar: bot?.avatar ?? null, threadId: bot?.threadId ?? null } }
+                : {}),
+              ...(author.kind === "system" ? { notice: true as const } : {}),
             },
           }),
     },
@@ -104,14 +115,45 @@ export function roomFeedEntry(
   return entry;
 }
 
+const CONNECTION_FAILURE = "Check the connection and try again.";
+
+/** Why a post did not land: the room's own refusal, or the connection for transport failures. */
+export function roomPostFailure(error: unknown): string {
+  if (error instanceof RoomsError) return error.message;
+  if (
+    !(error instanceof Error) ||
+    ("_tag" in error && error._tag === "RpcClientError") ||
+    isTransportConnectionErrorMessage(error.message)
+  ) {
+    return CONNECTION_FAILURE;
+  }
+  return error.message;
+}
+
 /** The second line of a room's row: who is answering, or the last thing said. */
-export function roomRowSubtitle(room: RoomSummary): string {
+export function roomRowSubtitle(room: RoomSummary, viewerKey: string): string {
   if (room.working.length > 0) return "Answering…";
   const last = room.lastMessage;
   if (last === null) return `${room.participants.length} in the chat`;
   const preview =
     botMessagePreview(last.text) ?? (last.attachments.length > 0 ? "Sent an attachment" : "");
-  return `${last.authorName}: ${preview}`;
+  if (last.author.kind === "system") return preview;
+  const author = roomParticipantKey(last.author) === viewerKey ? "You" : last.authorName;
+  return `${author}: ${preview}`;
+}
+
+// An allow-for-session from one person could carry into a turn someone else starts.
+const ROOM_FALLBACK_APPROVAL_OPTIONS: ReadonlyArray<ProviderApprovalOption> = [
+  { decision: "accept", label: "Allow once" },
+  { decision: "decline", label: "Decline" },
+];
+
+/** An approval's buttons: the provider's own choices a room accepts, else Allow once and Decline. */
+export function roomApprovalOptions(
+  options: ReadonlyArray<ProviderApprovalOption> | undefined,
+): ReadonlyArray<ProviderApprovalOption> {
+  const allowed = (options ?? []).filter((option) => ROOM_APPROVAL_DECISIONS.has(option.decision));
+  return allowed.length > 0 ? allowed : ROOM_FALLBACK_APPROVAL_OPTIONS;
 }
 
 /**

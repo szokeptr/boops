@@ -6,6 +6,7 @@ import type {
 import type * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
+import { isRoomAttachmentId } from "../attachmentStore.ts";
 import type { PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 import type * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 
@@ -226,7 +227,10 @@ export const planThreadDeletion = Effect.fn("ThreadDeletion.planThreadDeletion")
     threadId: command.threadId,
     request: { type: "preview.cleanup" },
   });
-  const attachmentIds = Array.from(new Set(input.attachmentIds));
+  // A group chat's files stay while its messages show them, even when a bot that read them goes.
+  const attachmentIds = Array.from(new Set(input.attachmentIds)).filter(
+    (id) => !isRoomAttachmentId(id),
+  );
   if (attachmentIds.length > 0) {
     effects.push({
       id: `effect:${command.commandId}:attachment.cleanup`,

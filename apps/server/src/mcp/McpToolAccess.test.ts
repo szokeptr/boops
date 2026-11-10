@@ -7,6 +7,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ProviderInteractionMode,
+  RoomsError,
   RuntimeMode,
   ThreadId,
 } from "@t3tools/contracts";
@@ -20,6 +21,7 @@ import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 import { OrchestratorProjectionError } from "../orchestration-v2/Orchestrator.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as Rooms from "../rooms/Rooms.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
@@ -542,11 +544,22 @@ it.effect("fences an invited member's conversation to her own threads, reads inc
     const annaOther = ThreadId.make("thread:anna-other");
     const bobThread = ThreadId.make("thread:bob");
     const ownerThread = ThreadId.make("thread:owner");
+    // Room threads carry no origin; the room knows whose message started the turn they run.
+    const annasRoomTurn = ThreadId.make("room:anna-asked:project:mcp-test");
+    const ownersRoomTurn = ThreadId.make("room:owner-asked:project:mcp-test");
+    const endedRoomTurn = ThreadId.make("room:ended:project:mcp-test");
     const threadShells = new Map([
       [annaThread, { ...liveThreadShell(annaThread), linkOrigin: member("anna") }],
       [annaOther, { ...liveThreadShell(annaOther), linkOrigin: member("anna") }],
       [bobThread, { ...liveThreadShell(bobThread), linkOrigin: member("bob") }],
       [ownerThread, liveThreadShell(ownerThread)],
+      [annasRoomTurn, liveThreadShell(annasRoomTurn)],
+      [ownersRoomTurn, liveThreadShell(ownersRoomTurn)],
+      [endedRoomTurn, liveThreadShell(endedRoomTurn)],
+    ]);
+    const roomTurns = new Map([
+      [annasRoomTurn, { originKey: "member:anna", hop: 1, linkOrigin: member("anna") }],
+      [ownersRoomTurn, { originKey: "owner", hop: 1, linkOrigin: undefined }],
     ]);
     const threadTool = { ...probe, parameters: Schema.Struct({ threadId: ThreadId }) };
     // Real tool names: a member's conversation reaches only the tools listed for it.
@@ -582,9 +595,24 @@ it.effect("fences an invited member's conversation to her own threads, reads inc
           getThreadShell: (threadId) => Effect.succeed(threadShells.get(threadId) ?? null),
         }),
       ),
+      Layer.provideMerge(
+        Layer.mock(Rooms.Rooms)({
+          turnOf: (thread) => {
+            const turn = roomTurns.get(thread.id);
+            return turn !== undefined
+              ? Effect.succeed(turn)
+              : thread.id.startsWith("room:")
+                ? Effect.fail(new RoomsError({ reason: "not-allowed" }))
+                : Effect.succeed(undefined);
+          },
+        }),
+      ),
     );
     const anna = threadCaller(annaThread);
     const owner = threadCaller(ownerThread);
+    const annasRoom = threadCaller(annasRoomTurn);
+    const ownersRoom = threadCaller(ownersRoomTurn);
+    const endedRoom = threadCaller(endedRoomTurn);
     const outcomes = yield* Effect.forEach(
       [
         ["boops_thread_send", anna, { threadId: annaOther }],
@@ -598,6 +626,17 @@ it.effect("fences an invited member's conversation to her own threads, reads inc
         ["schedule_task", anna, {}],
         ["boops_thread_read", owner, { threadId: annaThread }],
         ["schedule_task", owner, {}],
+        // A room turn Anna started is fenced as her own conversation is.
+        ["boops_thread_send", annasRoom, { threadId: annaOther }],
+        ["boops_thread_send", annasRoom, { threadId: ownerThread }],
+        ["boops_thread_read", annasRoom, { threadId: annaOther }],
+        ["boops_thread_read", annasRoom, { threadId: ownerThread }],
+        ["schedule_task", annasRoom, {}],
+        // One the owner started is not; a call that outlived its turn acts for nobody.
+        ["boops_thread_read", ownersRoom, { threadId: annaThread }],
+        ["schedule_task", ownersRoom, {}],
+        ["schedule_task", endedRoom, {}],
+        ["boops_thread_read", endedRoom, { threadId: ownerThread }],
       ] as const,
       ([tool, scope, args]) => call(tool, scope, args),
     ).pipe(Effect.provide(server));
@@ -613,6 +652,15 @@ it.effect("fences an invited member's conversation to her own threads, reads inc
       "capability_denied",
       "ran",
       "ran",
+      "ran",
+      "capability_denied",
+      "ran",
+      "capability_denied",
+      "capability_denied",
+      "ran",
+      "ran",
+      "capability_denied",
+      "capability_denied",
     ]);
   }),
 );

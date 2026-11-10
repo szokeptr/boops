@@ -447,6 +447,7 @@ import {
   RoomsError,
   RoomsHistory,
   RoomsHistoryInput,
+  RoomsInterruptInput,
   RoomsParticipantInput,
   RoomsPostInput,
   RoomsMarkReadInput,
@@ -631,6 +632,7 @@ export const WS_METHODS = {
   roomsHistory: "rooms.history",
   roomsSubscribeFeed: "rooms.subscribeFeed",
   roomsRespond: "rooms.respond",
+  roomsInterrupt: "rooms.interrupt",
   roomsMarkRead: "rooms.markRead",
   sidebarLayoutSubscribe: "sidebarLayout.subscribe",
   sidebarLayoutSet: "sidebarLayout.set",
@@ -1046,6 +1048,11 @@ const WsRoomsMarkReadRpc = Rpc.make(WS_METHODS.roomsMarkRead, {
 });
 const WsRoomsRespondRpc = Rpc.make(WS_METHODS.roomsRespond, {
   payload: RoomsRespondInput,
+  error: RoomsRpcError,
+});
+/** Stops a bot's turn in a room, and the one it was asked for next; anyone in the room may. */
+const WsRoomsInterruptRpc = Rpc.make(WS_METHODS.roomsInterrupt, {
+  payload: RoomsInterruptInput,
   error: RoomsRpcError,
 });
 const WsRoomsSubscribeFeedRpc = Rpc.make(WS_METHODS.roomsSubscribeFeed, {
@@ -2536,6 +2543,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsRoomsHistoryRpc,
   WsRoomsSubscribeFeedRpc,
   WsRoomsRespondRpc,
+  WsRoomsInterruptRpc,
   WsRoomsMarkReadRpc,
   WsSidebarLayoutSubscribeRpc,
   WsSidebarLayoutSetRpc,

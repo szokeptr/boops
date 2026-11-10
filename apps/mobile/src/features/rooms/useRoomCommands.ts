@@ -11,6 +11,7 @@ import {
   type RoomId,
   type RoomParticipant,
   roomParticipantKey,
+  type ThreadId,
 } from "@t3tools/contracts";
 
 import * as Dialog from "../../components/ui/Dialog";
@@ -32,15 +33,19 @@ function reportFailure(title: string, result: AtomCommandResult<unknown, unknown
   return false;
 }
 
-/** Who this session is in an environment's rooms, and the pictures of the bots it can see. */
+/** Who this session is in an environment's rooms, and the bots it can see. */
 export function useRoomViewer(environmentId: EnvironmentId) {
   const sessionMember = useAtomValue(memberEnvironment.sessionMemberAtom(environmentId));
   const projects = useProjects();
   const viewer = roomViewer(sessionMember?.id ?? null);
+  const projectOf = (projectId: ProjectId) =>
+    projects.find((project) => project.environmentId === environmentId && project.id === projectId);
   const avatarOf = (projectId: ProjectId): ProjectAvatar | null =>
-    projects.find((project) => project.environmentId === environmentId && project.id === projectId)
-      ?.avatar ?? null;
-  return { viewer, viewerKey: roomParticipantKey(viewer), avatarOf };
+    projectOf(projectId)?.avatar ?? null;
+  // A member's session gets each bot's main thread rewritten to her own conversation with it.
+  const threadOf = (projectId: ProjectId): ThreadId | null =>
+    projectOf(projectId)?.mainThreadId ?? null;
+  return { viewer, viewerKey: roomParticipantKey(viewer), avatarOf, threadOf };
 }
 
 /** Room changes; every one comes back through `rooms.subscribe`. Confirmations ask first. */
@@ -53,6 +58,7 @@ export function useRoomCommands(environmentId: EnvironmentId) {
   const runArchive = useAtomCommand(roomEnvironment.setArchived, quiet);
   const runMute = useAtomCommand(roomEnvironment.setMuted, quiet);
   const runDelete = useAtomCommand(roomEnvironment.remove, quiet);
+  const runInterrupt = useAtomCommand(roomEnvironment.interrupt, quiet);
   const ok = (title: string) => (result: AtomCommandResult<unknown, unknown>) =>
     reportFailure(title, result);
   return {
@@ -83,6 +89,10 @@ export function useRoomCommands(environmentId: EnvironmentId) {
     setArchived: (roomId: RoomId, archived: boolean) =>
       runArchive({ environmentId, input: { roomId, archived } }).then(
         ok(archived ? "Could not archive" : "Could not unarchive"),
+      ),
+    stop: (roomId: RoomId, bot: { readonly projectId: ProjectId; readonly name: string }) =>
+      runInterrupt({ environmentId, input: { roomId, projectId: bot.projectId } }).then(
+        ok(`Could not stop ${bot.name}`),
       ),
     setMuted: (roomId: RoomId, muted: boolean) =>
       runMute({ environmentId, input: { roomId, muted } }).then(ok("Could not change it")),

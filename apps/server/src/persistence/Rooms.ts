@@ -36,7 +36,10 @@ export interface RoomRecord {
   readonly archivedAt: string | null;
 }
 
-/** For a bot: `turn*` is the one turn its room thread runs; `wanted*` a mention during it. */
+/**
+ * For a bot: `turn*` is the one turn its room thread runs; `wanted*` a mention during it.
+ * `turnOrigin` outlives its turn, so the next one knows whose work may still be running.
+ */
 export interface RoomParticipantRecord {
   readonly roomId: RoomId;
   readonly key: string;
@@ -169,7 +172,6 @@ export class RoomRepository extends Context.Service<
       roomId: RoomId,
       key: string,
     ) => Effect.Effect<void, PersistenceSqlError>;
-    readonly removeParticipantEverywhere: (key: string) => Effect.Effect<void, PersistenceSqlError>;
     /** Moves a person's read position forward, never back. */
     readonly markRead: (
       roomId: RoomId,
@@ -198,6 +200,11 @@ export class RoomRepository extends Context.Service<
     ) => Effect.Effect<ReadonlyArray<RoomMessageRecord>, PersistenceSqlError>;
     readonly lastMessages: Effect.Effect<
       ReadonlyMap<RoomId, RoomMessageRecord>,
+      PersistenceSqlError
+    >;
+    /** Per room, the newest message someone wrote: system notes left out. */
+    readonly lastSpoken: Effect.Effect<
+      ReadonlyMap<RoomId, { readonly seq: number; readonly authorKey: string }>,
       PersistenceSqlError
     >;
     readonly startTurn: (
@@ -326,13 +333,6 @@ const make = Effect.gen(function* () {
     Effect.mapError(sqlError("removeParticipant")),
   );
 
-  const removeParticipantEverywhere = Effect.fn("RoomRepository.removeParticipantEverywhere")(
-    function* (key: string) {
-      yield* sql`DELETE FROM room_participants WHERE participant_key = ${key}`;
-    },
-    Effect.mapError(sqlError("removeParticipantEverywhere")),
-  );
-
   const setMuted = Effect.fn("RoomRepository.setMuted")(
     function* (roomId: RoomId, key: string, muted: boolean) {
       yield* sql`
@@ -459,6 +459,23 @@ const make = Effect.gen(function* () {
     Effect.withSpan("RoomRepository.lastMessages"),
   );
 
+  const lastSpoken = Effect.gen(function* () {
+    const rows = yield* sql<{ room_id: string; seq: number; author_key: string }>`
+      SELECT m.room_id, m.seq, m.author_key FROM rooms r
+      JOIN room_messages m ON m.room_id = r.room_id AND m.seq = (
+        SELECT seq FROM room_messages
+        WHERE room_id = r.room_id AND author_key <> 'system'
+        ORDER BY seq DESC LIMIT 1
+      )
+    `;
+    return new Map(
+      rows.map((row) => [
+        RoomId.make(String(row.room_id)),
+        { seq: Number(row.seq), authorKey: String(row.author_key) },
+      ]),
+    );
+  }).pipe(Effect.mapError(sqlError("lastSpoken")), Effect.withSpan("RoomRepository.lastSpoken"));
+
   const startTurn = Effect.fn("RoomRepository.startTurn")(
     function* (roomId: RoomId, botKey: string, turn: BotTurn) {
       yield* sql`
@@ -475,7 +492,7 @@ const make = Effect.gen(function* () {
     function* (roomId: RoomId, botKey: string) {
       yield* sql`
         UPDATE room_participants
-        SET turn_run_id = NULL, turn_hop = NULL, turn_origin = NULL
+        SET turn_run_id = NULL, turn_hop = NULL
         WHERE room_id = ${roomId} AND participant_key = ${botKey}
       `;
     },
@@ -507,13 +524,13 @@ const make = Effect.gen(function* () {
     deleteRoom,
     addParticipant,
     removeParticipant,
-    removeParticipantEverywhere,
     setMuted,
     markRead,
     appendMessage,
     history,
     messagesBetween,
     lastMessages,
+    lastSpoken,
     startTurn,
     endTurn,
     setWanted,

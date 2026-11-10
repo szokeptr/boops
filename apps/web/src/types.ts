@@ -95,7 +95,13 @@ export interface ChatMessageSender {
   readonly key: string;
   readonly name: string;
   /** Set for a bot: its look names and colours the message. */
-  readonly bot?: { readonly avatar: ProjectAvatar | null } | undefined;
+  readonly bot?:
+    | {
+        readonly avatar: ProjectAvatar | null;
+        /** The viewer's own conversation with the bot, which its name opens. */
+        readonly threadId?: ThreadId | null | undefined;
+      }
+    | undefined;
   /** The conversation itself speaking, such as "Ivy couldn't answer": a quiet centered line. */
   readonly notice?: boolean | undefined;
 }

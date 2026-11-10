@@ -12,27 +12,32 @@ import type {
   OrchestrationProjectShell,
   OrchestrationV2ThreadShell,
   ProjectId,
+  RoomId,
+  RoomSummary,
   ThreadId,
 } from "@t3tools/contracts";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as Option from "effect/Option";
-import type { AtomRegistry } from "effect/reactivity";
+import { AsyncResult, type AtomRegistry } from "effect/reactivity";
 import {
   CircleAlertIcon,
   CircleCheckIcon,
   MessageCircleQuestionIcon,
   ShieldQuestionIcon,
+  UsersIcon,
 } from "lucide-react";
 
 import { getClientSettings, subscribeClientSettings } from "../hooks/useSettings";
 import { isWindowsPlatform } from "../lib/utils";
 import { environmentSummaries } from "../state/presentation";
+import { roomEnvironment } from "../state/rooms";
 import { environmentShell } from "../state/shell";
 import { environmentThreadShells } from "../state/threads";
 import {
   hasDesktopNotifications,
   hasNotificationSound,
   playNotificationSound,
+  roomNotificationTag,
   setNotificationBadge,
   threadNotificationTag,
   unlockNotificationAudio,
@@ -43,9 +48,12 @@ import {
 } from "@t3tools/client-runtime/state/thread-status";
 import {
   createThreadNotificationGate,
+  observeRoomNotification,
+  type RoomNotificationObservation,
   type ThreadNotificationKind,
   type ThreadNotificationObservation,
 } from "./ThreadNotificationCoordinator.logic";
+import { roomMessagePreview } from "./rooms/roomPreview";
 import { toastManager } from "./ui/toast";
 
 interface NotificationState extends ThreadNotificationObservation {
@@ -61,6 +69,7 @@ type ToastId = ReturnType<typeof toastManager.add>;
 interface WatchedEnvironment {
   unsubscribe: () => void;
   previous: Map<ThreadId, NotificationState>;
+  rooms: Map<RoomId, RoomNotificationObservation>;
   reconnecting: boolean;
   readonly gate: ReturnType<typeof createThreadNotificationGate<ThreadId>>;
 }
@@ -73,19 +82,24 @@ export function startThreadNotifications(
   registry: AtomRegistry.AtomRegistry,
   router: AnyRouter,
 ): () => void {
+  // Desktop notifications on screen by tag; `threadKey` is null for a group chat's.
   const pending = new Map<
     string,
-    { environmentId: EnvironmentId; threadId: ThreadId; notification: Notification }
+    { environmentId: EnvironmentId; threadKey: string | null; notification: Notification }
   >();
   const watched = new Map<EnvironmentId, WatchedEnvironment>();
 
   const trackNotification = (
     environmentId: EnvironmentId,
-    threadId: ThreadId,
+    threadKeyOfNotification: string | null,
     notification: Notification,
   ) => {
     pending.get(notification.tag)?.notification.close();
-    pending.set(notification.tag, { environmentId, threadId, notification });
+    pending.set(notification.tag, {
+      environmentId,
+      threadKey: threadKeyOfNotification,
+      notification,
+    });
     setNotificationBadge(pending.size);
   };
   // Toast ids by thread key, so hiding a thread can close its open toasts.
@@ -110,7 +124,7 @@ export function startThreadNotifications(
     }
     const count = pending.size;
     for (const [tag, entry] of pending) {
-      if (!shouldClose(threadKey(entry))) continue;
+      if (entry.threadKey === null || !shouldClose(entry.threadKey)) continue;
       entry.notification.close();
       pending.delete(tag);
     }
@@ -218,7 +232,11 @@ export function startThreadNotifications(
         // Windows drops clicks after a toast moves into Notification Center.
         requireInteraction: kind === "completion" && isWindowsPlatform(navigator.platform),
       });
-      trackNotification(environmentId, thread.id, notification);
+      trackNotification(
+        environmentId,
+        threadKey({ environmentId, threadId: thread.id }),
+        notification,
+      );
       notification.addEventListener("click", () => {
         notification.close();
         window.focus();
@@ -231,6 +249,112 @@ export function startThreadNotifications(
     } catch {
       // Some browsers expose Notification but reject desktop presentation.
     }
+  };
+
+  const presentRoom = (
+    environmentId: EnvironmentId,
+    room: RoomSummary,
+    kind: ThreadNotificationKind,
+  ) => {
+    const { notificationMode: mode, inAppNotificationsEnabled } = getClientSettings();
+    const active = (router.state.matches.at(-1)?.params ?? {}) as {
+      environmentId?: string;
+      roomId?: string;
+    };
+    const inFront = document.visibilityState === "visible" && document.hasFocus();
+    if (inFront && active.environmentId === environmentId && active.roomId === room.id) return;
+    const last = room.lastMessage;
+    const title = kind === "input" ? "Needs you" : room.title;
+    const body =
+      kind === "input" ? room.title : last === null ? room.title : roomMessagePreview(last, null);
+    const open = () =>
+      void router.navigate({
+        to: "/rooms/$environmentId/$roomId",
+        params: { environmentId, roomId: room.id },
+      });
+    if (hasNotificationSound(mode)) {
+      void playNotificationSound(kind, () =>
+        hasNotificationSound(getClientSettings().notificationMode),
+      );
+    }
+    if (inAppNotificationsEnabled && inFront) {
+      const toastId: ToastId = toastManager.add({
+        type: kind === "input" ? "warning" : "info",
+        title,
+        description: body,
+        data: {
+          hideCopyButton: true,
+          leadingIcon:
+            kind === "input" ? (
+              <MessageCircleQuestionIcon aria-hidden className="size-4 text-info-foreground" />
+            ) : (
+              <UsersIcon aria-hidden className="size-4 text-muted-foreground" />
+            ),
+        },
+        actionProps: {
+          children: "Open chat",
+          onClick: () => {
+            toastManager.close(toastId);
+            open();
+          },
+        },
+      });
+      return;
+    }
+    if (
+      !hasDesktopNotifications(mode) ||
+      inFront ||
+      typeof Notification === "undefined" ||
+      Notification.permission !== "granted"
+    )
+      return;
+    try {
+      const notification = new Notification(title, {
+        body,
+        tag: roomNotificationTag(environmentId, room.id),
+        silent: true,
+      });
+      trackNotification(environmentId, null, notification);
+      notification.addEventListener("click", () => {
+        notification.close();
+        window.focus();
+        void window.desktopBridge?.revealWindow().catch(() => undefined);
+        open();
+      });
+    } catch {
+      // Some browsers expose Notification but reject desktop presentation.
+    }
+  };
+
+  const observeRooms = (
+    environmentId: EnvironmentId,
+    entry: WatchedEnvironment,
+    rooms: ReadonlyArray<RoomSummary>,
+  ) => {
+    const next = new Map<RoomId, RoomNotificationObservation>();
+    const changed: Array<[RoomSummary, ThreadNotificationKind]> = [];
+    for (const room of rooms) {
+      const last = room.lastMessage;
+      const { observation, kind } = observeRoomNotification(entry.rooms.get(room.id), {
+        lastMessageId: last?.id ?? null,
+        lastAuthor:
+          last === null
+            ? null
+            : last.author.kind === "bot" || last.author.kind === "system"
+              ? last.author.kind
+              : "person",
+        lastMentionsBots: (last?.mentions.length ?? 0) > 0,
+        working: room.working.length > 0,
+        unread: room.unread,
+        needsYou: room.needsYou,
+        muted: room.muted,
+        listed: room.joined && room.archivedAt === null,
+      });
+      next.set(room.id, observation);
+      if (kind !== null) changed.push([room, kind]);
+    }
+    entry.rooms = next;
+    for (const [room, kind] of changed) presentRoom(environmentId, room, kind);
   };
 
   const observeThreads = (
@@ -320,6 +444,7 @@ export function startThreadNotifications(
   const watchEnvironment = (environmentId: EnvironmentId): WatchedEnvironment => {
     const entry: WatchedEnvironment = {
       previous: new Map(),
+      rooms: new Map(),
       reconnecting: false,
       unsubscribe: () => {},
       gate: createThreadNotificationGate<ThreadId>((threadId, kind) => {
@@ -359,10 +484,20 @@ export function startThreadNotifications(
       environmentThreadShells.delegatedUnderParentAtom,
       reobserve,
     );
+    // Only a room list that changed is compared; failures and reconnects keep the last one.
+    const unsubscribeRooms = registry.subscribe(
+      roomEnvironment.rooms({ environmentId, input: {} }),
+      (result) => {
+        const snapshot = AsyncResult.getOrElse(result, () => null);
+        if (snapshot !== null) observeRooms(environmentId, entry, snapshot.rooms);
+      },
+      { immediate: true },
+    );
     entry.unsubscribe = () => {
       unsubscribeShell();
       unsubscribeRequests();
       unsubscribeDelegated();
+      unsubscribeRooms();
       entry.gate.clear();
     };
     return entry;

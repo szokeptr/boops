@@ -103,6 +103,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.roomsHistory]: "rooms",
   [WS_METHODS.roomsSubscribeFeed]: "rooms",
   [WS_METHODS.roomsRespond]: "rooms",
+  [WS_METHODS.roomsInterrupt]: "rooms",
   [WS_METHODS.roomsMarkRead]: "rooms",
   [WS_METHODS.sidebarLayoutSubscribe]: "sidebarLayout",
   [WS_METHODS.sidebarLayoutSet]: "sidebarLayout",

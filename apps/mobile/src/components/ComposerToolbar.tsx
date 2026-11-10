@@ -247,7 +247,8 @@ export function ComposerActionButton(props: {
   readonly accessibilityLabel: string;
   readonly disabled?: boolean;
   readonly icon: ComponentProps<typeof SymbolView>["name"];
-  readonly onPress: () => void;
+  /** Omitted when a Menu wrapping the button opens on tap. */
+  readonly onPress?: () => void;
   readonly variant?: "primary" | "danger";
   // Menu injects onLongPress on Android and onTouchStart/onPress on iOS.
   readonly onLongPress?: PressableProps["onLongPress"];

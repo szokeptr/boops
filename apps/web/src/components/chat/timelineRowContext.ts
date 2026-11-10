@@ -66,6 +66,8 @@ export interface TimelineRowSharedState {
   resolvedTheme: "light" | "dark";
   workspaceRoot: string | undefined;
   skills: ReadonlyArray<ServerProviderSkill>;
+  /** Names whose `@Name` mentions stand out in messages, in a group chat. */
+  mentionNames: ReadonlyArray<string>;
   runs: ReadonlyArray<HandoffTimelineRun>;
   activeThreadEnvironmentId: EnvironmentId;
   onRevertToTurnCount: ((targetTurnCount: number, messageId: MessageId) => void) | undefined;

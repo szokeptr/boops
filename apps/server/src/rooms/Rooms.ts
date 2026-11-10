@@ -11,11 +11,15 @@ import {
   type EnvironmentMember,
   isRoomThreadId,
   isRuntimeModeAbove,
+  memberSessionSubject,
   mentionedBots,
   MessageId,
+  type OrchestrationV2LinkOrigin,
   type OrchestrationV2Run,
+  type OrchestrationV2ThreadShell,
   type Project,
   type ProjectId,
+  ROOM_APPROVAL_DECISIONS,
   ROOM_BOT_HOP_LIMIT,
   ROOM_HISTORY_PAGE_SIZE,
   type RoomAuthor,
@@ -52,6 +56,7 @@ import * as Stream from "effect/Stream";
 import * as Members from "../members/Members.ts";
 import { isSharedWithMember, narrowToMemberAccess } from "../members/memberFence.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as RoomStore from "../persistence/Rooms.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
@@ -76,12 +81,24 @@ const notAllowed = () => new RoomsError({ reason: "not-allowed" });
 
 const isOwner = (viewer: RoomViewer) => viewer.kind === "owner";
 
+/** The turn a room thread runs: who started it, and after how many bot hand-offs. */
+interface RoomTurn {
+  readonly originKey: string;
+  readonly hop: number;
+  /** The member's stamp, as her own conversations carry it; undefined for the owner. */
+  readonly linkOrigin: OrchestrationV2LinkOrigin | undefined;
+}
+
+type WorkThread = Pick<OrchestrationV2ThreadShell, "id" | "lineage">;
+
 /** A waiting request before it is told whether this viewer may answer it. */
 type PendingRequest = Omit<RoomPendingRequest, "canAnswer">;
 
 type RoomEventItem =
   | Exclude<RoomFeedItem, { readonly kind: "requests" }>
-  | { readonly kind: "requests"; readonly requests: ReadonlyArray<PendingRequest> };
+  | { readonly kind: "requests"; readonly requests: ReadonlyArray<PendingRequest> }
+  /** Someone came or went. Feeds follow it in order, so nothing said while out reaches them. */
+  | { readonly kind: "membership"; readonly key: string; readonly joined: boolean };
 
 interface RoomEvent {
   readonly roomId: RoomId;
@@ -141,6 +158,15 @@ export class Rooms extends Context.Service<
       throughSeq: number,
     ) => Effect.Effect<void, RoomsError>;
     readonly post: (viewer: RoomViewer, input: RoomsPostInput) => Effect.Effect<void, RoomsError>;
+    /**
+     * Stops a bot's turn in the room and drops the one it was asked for next. Anyone in the room
+     * may, as anyone in a group chat may say stop.
+     */
+    readonly interrupt: (
+      viewer: RoomViewer,
+      roomId: RoomId,
+      projectId: ProjectId,
+    ) => Effect.Effect<void, RoomsError>;
     /** Answers a bot's approval or question; the person it asked, or the owner. */
     readonly respond: (
       viewer: RoomViewer,
@@ -162,11 +188,17 @@ export class Rooms extends Context.Service<
       RoomsError
     >;
     /**
-     * A bot speaking up in a room on its own, such as from a routine. @mentions start other bots'
-     * turns, counted as bot-started turns so they still stop.
+     * The turn a room thread, or work it started, runs right now. Undefined outside rooms; fails
+     * `not-allowed` when that room thread is not running the turn the room recorded, as for a call
+     * that outlived its turn.
+     */
+    readonly turnOf: (thread: WorkThread) => Effect.Effect<RoomTurn | undefined, RoomsError>;
+    /**
+     * A bot speaking up in a room from one of its threads, such as a routine's. It acts for the
+     * human that thread acts for, and its @mentions continue that thread's hand-offs.
      */
     readonly postAsBot: (input: {
-      readonly projectId: ProjectId;
+      readonly from: WorkThread & Pick<OrchestrationV2ThreadShell, "projectId" | "linkOrigin">;
       readonly roomId: RoomId;
       readonly text: string;
     }) => Effect.Effect<void, RoomsError>;
@@ -188,13 +220,19 @@ const make = Effect.gen(function* () {
   const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const attachmentClaims = yield* RoomAttachmentClaims.RoomAttachmentClaims;
   const relay = yield* AgentAwarenessRelay.AgentAwarenessRelay;
+  const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
   /** Bots' waiting approvals and questions, by room; refreshed when one opens or closes. */
   const pendingByRoom = new Map<RoomId, ReadonlyArray<PendingRequest>>();
 
-  const listChanges = yield* PubSub.unbounded<void>();
+  /** Whose room lists a change touches: these participant keys, or everyone's. */
+  const listChanges = yield* PubSub.unbounded<ReadonlySet<string> | "everyone">();
   const roomEvents = yield* PubSub.unbounded<RoomEvent>();
   const botLocks = yield* KeyedLock.make<string>();
-  const listChanged = PubSub.publish(listChanges, undefined).pipe(Effect.asVoid);
+  const changedFor = (keys: Iterable<string>) =>
+    PubSub.publish(listChanges, new Set(keys)).pipe(Effect.asVoid);
+  const changedForEveryone = PubSub.publish(listChanges, "everyone").pipe(Effect.asVoid);
+  /** Members' names as last read, so a member who was just removed still has one. */
+  const knownMemberNames = new Map<string, string>();
   const emit = (roomId: RoomId, item: RoomEventItem) =>
     PubSub.publish(roomEvents, { roomId, item }).pipe(Effect.asVoid);
 
@@ -211,6 +249,32 @@ const make = Effect.gen(function* () {
     );
 
   const participantsOf = (roomId: RoomId) => db(store.listParticipants(roomId));
+
+  /** Takes a participant out, or announces one just added, so the room's feeds follow in order. */
+  const setMembership = Effect.fn("Rooms.setMembership")(function* (
+    roomId: RoomId,
+    key: string,
+    joined: boolean,
+  ) {
+    if (!joined) yield* db(store.removeParticipant(roomId, key));
+    yield* emit(roomId, { kind: "membership", key, joined });
+  });
+
+  /**
+   * Tells the room's people their list changed. With `owner`, the owner too, who sees every room's
+   * title and people; `also` for someone who just left it.
+   */
+  const roomChanged = Effect.fn("Rooms.roomChanged")(function* (
+    roomId: RoomId,
+    options?: { readonly owner?: boolean; readonly also?: ReadonlyArray<string> },
+  ) {
+    const keys = (yield* participantsOf(roomId)).map((participant) => participant.key);
+    yield* changedFor([
+      ...keys,
+      ...(options?.owner === true ? ["owner"] : []),
+      ...(options?.also ?? []),
+    ]);
+  });
 
   /** The room and its participants, when the viewer is in it. */
   const requireJoined = Effect.fn("Rooms.requireJoined")(function* (
@@ -307,6 +371,7 @@ const make = Effect.gen(function* () {
 
   const directory = Effect.gen(function* () {
     const [memberRows, botRows, owner] = yield* Effect.all([memberList, bots, ownerName]);
+    for (const member of memberRows) knownMemberNames.set(member.id, member.label);
     return {
       ownerName: owner === "" ? OWNER_FALLBACK_NAME : owner,
       ownerNamed: owner !== "",
@@ -316,10 +381,11 @@ const make = Effect.gen(function* () {
   });
 
   const listFor = Effect.fn("Rooms.list")(function* (viewer: RoomViewer) {
-    const [rooms, participants, lastMessages, names, memberRows] = yield* Effect.all([
+    const [rooms, participants, lastMessages, lastSpoken, names, memberRows] = yield* Effect.all([
       db(store.listRooms),
       db(store.listParticipants()),
       db(store.lastMessages),
+      db(store.lastSpoken),
       directory,
       memberList,
     ]);
@@ -352,14 +418,14 @@ const make = Effect.gen(function* () {
                   ? [participant.participant.projectId]
                   : [],
               ),
+        // System notes never make a room unread, nor hide a message that does.
         unread: (() => {
-          const last = lastMessages.get(room.id);
+          const last = lastSpoken.get(room.id);
           return (
             mine !== undefined &&
             last !== undefined &&
             last.seq > mine.readSeq &&
-            roomParticipantKey(last.author) !== viewerKey &&
-            last.author.kind !== "system"
+            last.authorKey !== viewerKey
           );
         })(),
         needsYou:
@@ -392,9 +458,18 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         // Subscribe before the first read so no change between them is missed.
         const signals = yield* PubSub.subscribe(listChanges);
+        const viewerKey = roomParticipantKey(viewer);
         return Stream.concat(
           Stream.fromEffect(listFor(viewer)),
-          Stream.fromSubscription(signals).pipe(Stream.mapEffect(() => listFor(viewer))),
+          Stream.fromSubscription(signals).pipe(
+            // Changes that piled up while the last list was read make one new read, and only
+            // changes in this viewer's rooms count.
+            Stream.chunks,
+            Stream.filter((batch) =>
+              batch.some((keys) => keys === "everyone" || keys.has(viewerKey)),
+            ),
+            Stream.mapEffect(() => listFor(viewer)),
+          ),
         );
       }),
     );
@@ -444,7 +519,8 @@ const make = Effect.gen(function* () {
     if (stored === undefined) return undefined;
     const { hop: _hop, originKey: _originKey, ...visible } = stored;
     yield* emit(stored.roomId, { kind: "message", message: visible });
-    yield* listChanged;
+    yield* roomChanged(stored.roomId);
+    // System notes are the room talking about itself: they never reach phones.
     if (stored.author.kind !== "system") yield* Effect.forkDetach(pushMessage(stored));
     return stored;
   });
@@ -476,7 +552,7 @@ const make = Effect.gen(function* () {
           : [],
       ),
     });
-    yield* listChanged;
+    yield* roomChanged(roomId);
   });
 
   /** The mode a turn runs in: the bot's own, narrowed to the member who started it. */
@@ -511,7 +587,10 @@ const make = Effect.gen(function* () {
     const [modeA, modeB] = yield* Effect.all([runtimeModeFor(bot, a), runtimeModeFor(bot, b)]);
     if (modeA === undefined) return a;
     if (modeB === undefined) return b;
-    return isRuntimeModeAbove(modeA.mode, modeB.mode) ? b : a;
+    if (isRuntimeModeAbove(modeA.mode, modeB.mode)) return b;
+    if (isRuntimeModeAbove(modeB.mode, modeA.mode)) return a;
+    // At the same mode a member still reaches less than the owner: the tool fence is hers.
+    return a === "owner" ? b : a;
   });
 
   const ensureRoomThread = Effect.fn("Rooms.ensureRoomThread")(function* (
@@ -569,12 +648,34 @@ const make = Effect.gen(function* () {
     return instance !== undefined && IMAGE_DRIVERS.has(instance.driverKind);
   });
 
+  /** Says in the room that a bot could not take the turn it was asked for. */
+  const cannotAnswer = Effect.fn("Rooms.cannotAnswer")(function* (
+    roomId: RoomId,
+    projectId: ProjectId,
+    originKey: string,
+  ) {
+    const name = yield* authorNameOf({ kind: "bot", projectId });
+    yield* systemNote(roomId, `${name} couldn't answer.`, originKey);
+  });
+
+  /** Takes a deleted bot out of the room and says so; the caller holds its lock. */
+  const leaveDeleted = Effect.fn("Rooms.leaveDeleted")(function* (
+    roomId: RoomId,
+    projectId: ProjectId,
+    originKey: string,
+  ) {
+    const project = yield* db(projects.getById(projectId, { includeDeleted: true }));
+    const name = Option.isSome(project) ? project.value.title : "A bot";
+    yield* setMembership(roomId, roomParticipantKey({ kind: "bot", projectId }), false);
+    yield* systemNote(roomId, `${name} was deleted, so it left.`, originKey);
+  });
+
   /** Starts the bot's turn now; the caller holds its lock and knows it is idle. */
-  const startTurn = Effect.fn("Rooms.startTurn")(function* (
+  const beginTurn = Effect.fn("Rooms.beginTurn")(function* (
     roomId: RoomId,
     projectId: ProjectId,
     hop: number,
-    originKey: string,
+    requestedOrigin: string,
   ) {
     const botKey = roomParticipantKey({ kind: "bot", projectId });
     const room = yield* requireRoom(roomId);
@@ -582,8 +683,27 @@ const make = Effect.gen(function* () {
     const self = participants.find((participant) => participant.key === botKey);
     if (self === undefined || room.archivedAt !== null) return;
     const project = yield* db(projects.getById(projectId));
-    if (Option.isNone(project) || project.value.deletedAt !== null) return;
+    if (Option.isNone(project) || project.value.deletedAt !== null) {
+      yield* leaveDeleted(roomId, projectId, requestedOrigin);
+      yield* roomChanged(roomId, { owner: true });
+      return;
+    }
     const bot = project.value;
+    if (bot.archivedAt != null) {
+      yield* systemNote(roomId, `${bot.title} is archived, so it can't answer.`, requestedOrigin);
+      return;
+    }
+    // Background work of an earlier turn runs on in the same session, and its tool calls count as
+    // whatever turn is current. While it lasts, a new turn gets the lesser of the two humans' trust.
+    const existing = yield* threads
+      .getThreadShell(botRoomThreadId(roomId, projectId))
+      .pipe(Effect.orElseSucceed(() => null));
+    const originKey =
+      self.turnOrigin !== null &&
+      self.turnOrigin !== requestedOrigin &&
+      (existing?.pendingBackgroundTasks?.length ?? 0) > 0
+        ? yield* leastTrusted(bot, self.turnOrigin, requestedOrigin)
+        : requestedOrigin;
     // A member's room keeps a bot only while it is shared with them, unless the owner is there.
     const creator = RoomStore.parseParticipantKey(room.createdBy);
     if (
@@ -591,13 +711,13 @@ const make = Effect.gen(function* () {
       !participants.some((participant) => participant.key === "owner") &&
       !isSharedWithMember(bot, creator.memberId)
     ) {
-      yield* db(store.removeParticipant(roomId, botKey));
+      yield* setMembership(roomId, botKey, false);
       yield* systemNote(roomId, `${bot.title} is no longer shared here, so it left.`, originKey);
-      yield* listChanged;
+      yield* roomChanged(roomId, { owner: true });
       return;
     }
     const runtime = yield* runtimeModeFor(bot, originKey);
-    if (runtime === undefined) return;
+    if (runtime === undefined) return yield* cannotAnswer(roomId, projectId, originKey);
     const threadId = yield* ensureRoomThread(roomId, room.title, bot, runtime);
     if (threadId === undefined) {
       yield* systemNote(roomId, `${bot.title} has no model to answer with.`, originKey);
@@ -661,6 +781,16 @@ const make = Effect.gen(function* () {
     yield* emitWorking(roomId);
   });
 
+  /** Starts the bot's turn, or says why it couldn't; the caller holds its lock. */
+  const startTurn = (roomId: RoomId, projectId: ProjectId, hop: number, originKey: string) =>
+    beginTurn(roomId, projectId, hop, originKey).pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Could not start a room turn", { roomId, cause }).pipe(
+          Effect.andThen(cannotAnswer(roomId, projectId, originKey)),
+        ),
+      ),
+    );
+
   /** Gives the bot a turn, or one right after the turn it is in. */
   const requestTurn = (roomId: RoomId, projectId: ProjectId, hop: number, originKey: string) => {
     const botKey = roomParticipantKey({ kind: "bot", projectId });
@@ -714,12 +844,15 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const roomOfThread = (threadId: ThreadId) => {
+  const parseRoomThread = (threadId: ThreadId) => {
     // `room:<roomId>:<projectId>`; room ids are UUIDs, so the first colon after the prefix splits.
     const rest = threadId.slice("room:".length);
     const split = rest.indexOf(":");
-    return split <= 0 ? undefined : RoomId.make(rest.slice(0, split));
+    return split <= 0
+      ? undefined
+      : { roomId: RoomId.make(rest.slice(0, split)), projectId: rest.slice(split + 1) };
   };
+  const roomOfThread = (threadId: ThreadId) => parseRoomThread(threadId)?.roomId;
 
   const finishTurn: Rooms["Service"]["finishTurn"] = Effect.fn("Rooms.finishTurn")(
     function* (threadId, run) {
@@ -835,18 +968,49 @@ const make = Effect.gen(function* () {
         [...people, ...botParticipants],
       ),
     );
-    yield* listChanged;
+    yield* changedFor(
+      [...people, ...botParticipants, { kind: "owner" } as const].map(roomParticipantKey),
+    );
     const snapshot = yield* listFor(viewer);
     const summary = snapshot.rooms.find((room) => room.id === roomId);
     if (summary === undefined) return yield* notFound();
     return summary;
   });
 
+  /** A room's hidden bot threads, including those of bots that have since left it. */
+  const roomThreads = Effect.fn("Rooms.roomThreads")(function* (roomId: RoomId) {
+    const prefix = `room:${roomId}:`;
+    const all = yield* db(threads.listProjectThreads({ includeSubagents: false }));
+    return all.filter((thread) => thread.id.startsWith(prefix));
+  });
+
   const rename: Rooms["Service"]["rename"] = Effect.fn("Rooms.rename")(
     function* (viewer, roomId, title) {
-      yield* requireManager(viewer, roomId);
+      const room = yield* requireManager(viewer, roomId);
+      if (room.title === title) return;
       yield* db(store.setTitle(roomId, title));
-      yield* listChanged;
+      // Background work lists the hidden threads by the room's name.
+      for (const thread of yield* roomThreads(roomId)) {
+        yield* threads
+          .dispatch({
+            type: "thread.metadata.update",
+            commandId: CommandId.make(`room-rename:${yield* uuid}`),
+            threadId: thread.id,
+            title,
+          })
+          .pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("Could not retitle a room thread", { threadId: thread.id, cause }),
+            ),
+          );
+      }
+      const who = yield* authorNameOf(viewer);
+      yield* systemNote(
+        roomId,
+        `${who} renamed the chat to "${title}".`,
+        roomParticipantKey(viewer),
+      );
+      yield* roomChanged(roomId, { owner: true });
     },
   );
 
@@ -854,44 +1018,127 @@ const make = Effect.gen(function* () {
     function* (viewer, roomId, participant) {
       yield* requireManager(viewer, roomId);
       yield* requireParticipantAllowed(viewer, participant);
+      const key = roomParticipantKey(participant);
+      if ((yield* participantsOf(roomId)).some((existing) => existing.key === key)) return;
       yield* db(store.addParticipant(roomId, participant, yield* now));
-      yield* listChanged;
+      yield* setMembership(roomId, key, true);
+      const [who, whom] = yield* Effect.all([authorNameOf(viewer), authorNameOf(participant)]);
+      const self = roomParticipantKey(viewer) === key;
+      yield* systemNote(
+        roomId,
+        self ? `${who} joined.` : `${who} added ${whom}.`,
+        roomParticipantKey(viewer),
+      );
+      yield* roomChanged(roomId, { owner: true });
     },
   );
 
-  /** Stops a bot's turn in the room and forgets it; its thread stays as background work. */
-  const dropBot = Effect.fn("Rooms.dropBot")(function* (roomId: RoomId, projectId: ProjectId) {
-    const threadId = botRoomThreadId(roomId, projectId);
+  /**
+   * Ends a bot's turn and drops the one it was asked for next, and tells its run to stop. With
+   * `origin`, only what that human started. True when a turn was running.
+   */
+  const stopBot = Effect.fn("Rooms.stopBot")(function* (
+    roomId: RoomId,
+    projectId: ProjectId,
+    origin: string | undefined,
+    reason: string,
+  ) {
+    const botKey = roomParticipantKey({ kind: "bot", projectId });
+    const runId = yield* botLocks.withLock(
+      `${roomId}|${botKey}`,
+      Effect.gen(function* () {
+        const self = (yield* participantsOf(roomId)).find(
+          (participant) => participant.key === botKey,
+        );
+        if (self === undefined) return null;
+        if (self.wantedOrigin !== null && (origin === undefined || self.wantedOrigin === origin)) {
+          yield* db(store.setWanted(roomId, botKey, null));
+        }
+        if (self.turnRunId === null || (origin !== undefined && self.turnOrigin !== origin)) {
+          return null;
+        }
+        // Ended here, so the run's late reply is not posted and its late tool calls are refused.
+        yield* db(store.endTurn(roomId, botKey));
+        return self.turnRunId;
+      }),
+    );
+    if (runId === null) return false;
     yield* threads
       .interruptThread({
         projectId,
-        threadId,
-        commandId: CommandId.make(`room-left:${yield* uuid}`),
-        reason: "The bot was taken out of the room.",
+        threadId: botRoomThreadId(roomId, projectId),
+        runId,
+        commandId: CommandId.make(`room-stop:${yield* uuid}`),
+        reason,
       })
       .pipe(Effect.ignore);
+    return true;
+  });
+
+  /**
+   * A human who is gone from the room takes their turns with them: nobody would be left to answer
+   * the bot, and its work would go on at their access.
+   */
+  const stopTurnsOf = Effect.fn("Rooms.stopTurnsOf")(function* (
+    roomId: RoomId,
+    humanKey: string,
+    humanName: string,
+  ) {
+    for (const participant of yield* participantsOf(roomId)) {
+      if (participant.participant.kind !== "bot") continue;
+      const projectId = participant.participant.projectId;
+      const stopped = yield* stopBot(roomId, projectId, humanKey, "Whoever asked left the room.");
+      if (!stopped) continue;
+      const bot = yield* authorNameOf(participant.participant);
+      yield* systemNote(roomId, `${bot} stopped, since ${humanName} left.`, humanKey);
+    }
+  });
+
+  /** After someone left: the lists, who is working, and what is still waiting on whom. */
+  const afterDeparture = Effect.fn("Rooms.afterDeparture")(function* (roomId: RoomId, key: string) {
+    yield* roomChanged(roomId, { owner: true, also: [key] });
+    yield* emitWorking(roomId);
+    yield* refreshRequests(roomId);
   });
 
   const removeParticipant: Rooms["Service"]["removeParticipant"] = Effect.fn(
     "Rooms.removeParticipant",
   )(function* (viewer, roomId, participant) {
     yield* requireManager(viewer, roomId);
-    yield* db(store.removeParticipant(roomId, roomParticipantKey(participant)));
-    if (participant.kind === "bot") yield* dropBot(roomId, participant.projectId);
-    yield* emitWorking(roomId);
+    // The owner leaves on their own; nobody else takes them out.
+    if (participant.kind === "owner" && !isOwner(viewer)) return yield* notAllowed();
+    const key = roomParticipantKey(participant);
+    if (!(yield* participantsOf(roomId)).some((existing) => existing.key === key)) return;
+    const [who, whom] = yield* Effect.all([authorNameOf(viewer), authorNameOf(participant)]);
+    if (participant.kind === "bot") {
+      yield* stopBot(
+        roomId,
+        participant.projectId,
+        undefined,
+        "The bot was taken out of the room.",
+      );
+    }
+    yield* setMembership(roomId, key, false);
+    yield* systemNote(roomId, `${who} removed ${whom}.`, roomParticipantKey(viewer));
+    if (participant.kind !== "bot") yield* stopTurnsOf(roomId, key, whom);
+    yield* afterDeparture(roomId, key);
   });
 
   const leave: Rooms["Service"]["leave"] = Effect.fn("Rooms.leave")(function* (viewer, roomId) {
     yield* requireJoined(viewer, roomId);
-    yield* db(store.removeParticipant(roomId, roomParticipantKey(viewer)));
-    yield* emitWorking(roomId);
+    const key = roomParticipantKey(viewer);
+    const name = yield* authorNameOf(viewer);
+    yield* setMembership(roomId, key, false);
+    yield* systemNote(roomId, `${name} left.`, key);
+    yield* stopTurnsOf(roomId, key, name);
+    yield* afterDeparture(roomId, key);
   });
 
   const setArchived: Rooms["Service"]["setArchived"] = Effect.fn("Rooms.setArchived")(
     function* (viewer, roomId, archived) {
       yield* requireManager(viewer, roomId);
       yield* db(store.setArchivedAt(roomId, archived ? yield* now : null));
-      yield* listChanged;
+      yield* roomChanged(roomId, { owner: true });
     },
   );
 
@@ -899,28 +1146,48 @@ const make = Effect.gen(function* () {
     function* (viewer, roomId, muted) {
       yield* requireJoined(viewer, roomId);
       yield* db(store.setMuted(roomId, roomParticipantKey(viewer), muted));
-      yield* listChanged;
+      yield* changedFor([roomParticipantKey(viewer)]);
     },
   );
 
+  /**
+   * Deletes the room, its hidden bot threads with their files, and the files people sent in it.
+   * Bots' replies keep their files in the bot threads, so the room shows them until now.
+   */
   const remove: Rooms["Service"]["remove"] = Effect.fn("Rooms.remove")(function* (viewer, roomId) {
     yield* requireManager(viewer, roomId);
     const participants = yield* participantsOf(roomId);
+    const latest = yield* db(store.history({ roomId, limit: 1 }));
+    const messages = yield* db(store.messagesBetween(roomId, 0, latest[0]?.seq ?? 0));
+    const hidden = yield* roomThreads(roomId);
     yield* db(store.deleteRoom(roomId));
-    for (const participant of participants) {
-      if (participant.participant.kind === "bot") {
-        yield* dropBot(roomId, participant.participant.projectId);
-      }
+    for (const thread of hidden) {
+      yield* threads
+        .dispatch({
+          type: "thread.delete",
+          commandId: CommandId.make(`room-delete:${yield* uuid}`),
+          threadId: thread.id,
+        })
+        .pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("Could not delete a room thread", { threadId: thread.id, cause }),
+          ),
+        );
     }
+    yield* attachmentClaims.release(
+      roomId,
+      messages.flatMap((message) => message.attachments),
+    );
+    pendingByRoom.delete(roomId);
     yield* emit(roomId, { kind: "working", working: [] });
-    yield* listChanged;
+    yield* changedFor([...participants.map((participant) => participant.key), "owner"]);
   });
 
   const markRead: Rooms["Service"]["markRead"] = Effect.fn("Rooms.markRead")(
     function* (viewer, roomId, throughSeq) {
       yield* requireJoined(viewer, roomId);
       const moved = yield* db(store.markRead(roomId, roomParticipantKey(viewer), throughSeq));
-      if (moved) yield* listChanged;
+      if (moved) yield* changedFor([roomParticipantKey(viewer)]);
     },
   );
 
@@ -985,28 +1252,35 @@ const make = Effect.gen(function* () {
           history: yield* historyFor(roomId, undefined),
         };
         const viewerKey = roomParticipantKey(viewer);
-        // Leaving or being removed ends the feed; any change in the room is a moment to check.
-        const stillJoined = participantsOf(roomId).pipe(
-          Effect.map((participants) =>
-            participants.some((participant) => participant.key === viewerKey),
-          ),
-          Effect.orElseSucceed(() => false),
-        );
-        const toFeedItem = (item: RoomEventItem): RoomFeedItem =>
-          item.kind === "requests"
-            ? { kind: "requests", requests: forViewer(item.requests, viewer) }
-            : item;
+        // Out of the room, the feed goes quiet; back in, it starts over with a snapshot. Clients
+        // keep one feed per room, so ending it here would leave a stale view after a rejoin.
         const live = Stream.fromSubscription(events).pipe(
           Stream.filter((event) => event.roomId === roomId),
-          Stream.mapEffect((event) =>
-            stillJoined.pipe(
-              Effect.map((joined) =>
-                joined ? Option.some(toFeedItem(event.item)) : Option.none(),
-              ),
-            ),
+          Stream.mapAccumEffect(
+            () => true,
+            Effect.fnUntraced(function* (joined: boolean, { item }: RoomEvent) {
+              const none: ReadonlyArray<RoomFeedItem> = [];
+              if (item.kind === "membership") {
+                if (item.key !== viewerKey) return [joined, none] as const;
+                if (!item.joined || joined) return [item.joined, none] as const;
+                const back: ReadonlyArray<RoomFeedItem> = [
+                  { kind: "snapshot", history: yield* historyFor(roomId, undefined) },
+                  {
+                    kind: "requests",
+                    requests: forViewer(pendingByRoom.get(roomId) ?? [], viewer),
+                  },
+                ];
+                return [true, back] as const;
+              }
+              if (!joined) return [false, none] as const;
+              const out: ReadonlyArray<RoomFeedItem> = [
+                item.kind === "requests"
+                  ? { kind: "requests", requests: forViewer(item.requests, viewer) }
+                  : item,
+              ];
+              return [true, out] as const;
+            }),
           ),
-          Stream.takeWhile(Option.isSome),
-          Stream.map((item) => item.value),
         );
         const opening: ReadonlyArray<RoomFeedItem> = [
           snapshot,
@@ -1018,24 +1292,29 @@ const make = Effect.gen(function* () {
 
   /**
    * Rereads the bots' waiting approvals and questions in a room. The person whose message started
-   * the turn is the one asked; the owner may always answer.
+   * the turn is the one asked; the owner may always answer. A run that is not the room's turn is
+   * not the room's to answer: whoever started a turn is in the room while it runs.
    */
   const refreshRequests = Effect.fn("Rooms.refreshRequests")(function* (roomId: RoomId) {
     const participants = yield* participantsOf(roomId).pipe(Effect.orElseSucceed(() => []));
     const names = yield* directory;
     const requests: Array<PendingRequest> = [];
     for (const participant of participants) {
-      if (participant.participant.kind !== "bot") continue;
+      if (
+        participant.participant.kind !== "bot" ||
+        participant.turnRunId === null ||
+        participant.turnOrigin === null
+      ) {
+        continue;
+      }
       const projectId = participant.participant.projectId;
       const threadId = botRoomThreadId(roomId, projectId);
       const records = yield* threads
         .getThreadRecords(threadId, ["runtimeRequests", "turnItems"])
         .pipe(Effect.orElseSucceed(() => undefined));
       if (records === undefined) continue;
-      const askedFor =
-        RoomStore.parseParticipantKey(participant.turnOrigin ?? "owner") ??
-        ({ kind: "owner" } as const);
-      const asked: RoomHuman = askedFor.kind === "member" ? askedFor : { kind: "owner" };
+      const askedFor = RoomStore.parseParticipantKey(participant.turnOrigin);
+      const asked: RoomHuman = askedFor?.kind === "member" ? askedFor : { kind: "owner" };
       for (const request of records.runtimeRequests) {
         if (request.status !== "pending") continue;
         const item = records.turnItems.find(
@@ -1045,6 +1324,9 @@ const make = Effect.gen(function* () {
         );
         const question = item?.type === "user_input_request" ? item : undefined;
         const approval = item?.type === "approval_request" ? item : undefined;
+        const options = approval?.options?.filter((option) =>
+          ROOM_APPROVAL_DECISIONS.has(option.decision),
+        );
         requests.push({
           projectId,
           botName: names.botNames.get(projectId) ?? "A bot",
@@ -1052,6 +1334,7 @@ const make = Effect.gen(function* () {
           kind: question !== undefined || request.kind === "user_input" ? "question" : "approval",
           prompt: approval?.prompt ?? approval?.reason ?? null,
           requestKind: approval?.requestKind ?? request.kind,
+          ...(options === undefined || options.length === 0 ? {} : { options }),
           questions: question?.questions ?? [],
           askedFor: asked,
           askedForName: nameOf(asked, names) ?? "Someone",
@@ -1067,7 +1350,7 @@ const make = Effect.gen(function* () {
       previous.some((request, index) => request.requestId !== requests[index]?.requestId);
     if (!changed) return;
     yield* emit(roomId, { kind: "requests", requests });
-    yield* listChanged;
+    yield* roomChanged(roomId);
   });
 
   const respond: Rooms["Service"]["respond"] = Effect.fn("Rooms.respond")(
@@ -1081,6 +1364,10 @@ const make = Effect.gen(function* () {
       if (!forViewer([request], viewer)[0]!.canAnswer) {
         return yield* new RoomsError({ reason: "not-yours-to-answer" });
       }
+      // The bot's session outlives this turn; a standing grant would carry into others' turns.
+      if (input.decision !== undefined && !ROOM_APPROVAL_DECISIONS.has(input.decision)) {
+        return yield* notAllowed();
+      }
       yield* db(
         threads.dispatch({
           type: "runtime-request.respond",
@@ -1092,6 +1379,40 @@ const make = Effect.gen(function* () {
         }),
       );
       yield* refreshRequests(input.roomId);
+    },
+  );
+
+  const interrupt: Rooms["Service"]["interrupt"] = Effect.fn("Rooms.interrupt")(
+    function* (viewer, roomId, projectId) {
+      const { participants } = yield* requireJoined(viewer, roomId);
+      const botKey = roomParticipantKey({ kind: "bot", projectId });
+      if (!participants.some((participant) => participant.key === botKey)) {
+        return yield* notFound();
+      }
+      const reason = "Someone in the group chat stopped it.";
+      // A run the room did not start, such as background work waking the bot, still holds its
+      // thread; stopping that too is the way out.
+      const stopped =
+        (yield* stopBot(roomId, projectId, undefined, reason)) ||
+        (yield* threads
+          .interruptThread({
+            projectId,
+            threadId: botRoomThreadId(roomId, projectId),
+            commandId: CommandId.make(`room-stop:${yield* uuid}`),
+            reason,
+          })
+          .pipe(
+            Effect.map((result) => result.type === "interrupt_requested"),
+            Effect.orElseSucceed(() => false),
+          ));
+      if (!stopped) return;
+      const [who, bot] = yield* Effect.all([
+        authorNameOf(viewer),
+        authorNameOf({ kind: "bot", projectId }),
+      ]);
+      yield* systemNote(roomId, `${who} stopped ${bot}.`, roomParticipantKey(viewer));
+      yield* emitWorking(roomId);
+      yield* refreshRequests(roomId);
     },
   );
 
@@ -1124,8 +1445,50 @@ const make = Effect.gen(function* () {
     },
   );
 
+  const turnOf: Rooms["Service"]["turnOf"] = Effect.fn("Rooms.turnOf")(function* (thread) {
+    const roomThreadId = isRoomThreadId(thread.id)
+      ? thread.id
+      : isRoomThreadId(thread.lineage.rootThreadId)
+        ? thread.lineage.rootThreadId
+        : undefined;
+    if (roomThreadId === undefined) return undefined;
+    const parsed = parseRoomThread(roomThreadId);
+    if (parsed === undefined) return yield* notAllowed();
+    const botKey = `bot:${parsed.projectId}`;
+    const self = (yield* participantsOf(parsed.roomId)).find(
+      (participant) => participant.key === botKey,
+    );
+    const roomThread = yield* db(threads.getThreadShell(roomThreadId));
+    if (
+      self === undefined ||
+      self.turnRunId === null ||
+      self.turnOrigin === null ||
+      roomThread?.activeRunId !== self.turnRunId
+    ) {
+      return yield* notAllowed();
+    }
+    const originKey = self.turnOrigin;
+    const hop = self.turnHop ?? 1;
+    const origin = RoomStore.parseParticipantKey(originKey);
+    if (origin?.kind === "owner") return { originKey, hop, linkOrigin: undefined };
+    if (origin?.kind !== "member") return yield* notAllowed();
+    const member = (yield* memberList).find((candidate) => candidate.id === origin.memberId);
+    if (member === undefined) return yield* notAllowed();
+    return {
+      originKey,
+      hop,
+      linkOrigin: {
+        sessionId: memberSessionSubject(member.id),
+        label: member.label,
+        access: member.access,
+        memberId: member.id,
+      },
+    };
+  });
+
   const postAsBot: Rooms["Service"]["postAsBot"] = Effect.fn("Rooms.postAsBot")(function* (input) {
-    const botKey = roomParticipantKey({ kind: "bot", projectId: input.projectId });
+    const projectId = input.from.projectId;
+    const botKey = roomParticipantKey({ kind: "bot", projectId });
     const room = yield* requireRoom(input.roomId);
     const participants = yield* participantsOf(input.roomId);
     if (room.archivedAt !== null || !participants.some((p) => p.key === botKey)) {
@@ -1133,11 +1496,14 @@ const make = Effect.gen(function* () {
     }
     const text = input.text.trim();
     if (text === "") return yield* new RoomsError({ reason: "empty-message" });
+    const memberId = input.from.linkOrigin?.memberId;
+    const turn = memberId === undefined ? yield* turnOf(input.from) : undefined;
+    const hop = turn?.hop ?? 1;
     const names = yield* directory;
     const stored = yield* appendAndEmit({
       id: RoomMessageId.make(`bot-post:${yield* uuid}`),
       roomId: input.roomId,
-      author: { kind: "bot", projectId: input.projectId },
+      author: { kind: "bot", projectId },
       text,
       attachments: [],
       mentions: mentionedBots(
@@ -1153,11 +1519,14 @@ const make = Effect.gen(function* () {
             : [],
         ),
       ),
-      hop: 1,
-      // A bot speaking on its own acts for the owner whose bot it is.
-      originKey: "owner",
+      hop,
+      // Outside rooms and members' conversations, a bot acts for the owner whose bot it is.
+      originKey:
+        memberId === undefined
+          ? (turn?.originKey ?? "owner")
+          : roomParticipantKey({ kind: "member", memberId }),
     });
-    if (stored !== undefined) yield* deliverMentions(stored, 2);
+    if (stored !== undefined) yield* deliverMentions(stored, hop + 1);
   });
 
   /** Runs that ended while the server was down still post their replies. */
@@ -1172,6 +1541,7 @@ const make = Effect.gen(function* () {
       const run = records?.runs.find((candidate) => candidate.id === participant.turnRunId);
       if (run === undefined) {
         yield* db(store.endTurn(participant.roomId, participant.key));
+        yield* emitWorking(participant.roomId);
         continue;
       }
       yield* finishTurn(threadId, run);
@@ -1193,8 +1563,55 @@ const make = Effect.gen(function* () {
           : [],
       ),
     );
-    for (const key of gone) yield* db(store.removeParticipantEverywhere(key));
-    if (gone.size > 0) yield* listChanged;
+    for (const key of gone) {
+      const name = knownMemberNames.get(key.slice("member:".length)) ?? "Someone";
+      for (const participant of participants) {
+        if (participant.key !== key) continue;
+        const roomId = participant.roomId;
+        yield* setMembership(roomId, key, false);
+        yield* systemNote(roomId, `${name} left.`, key);
+        yield* stopTurnsOf(roomId, key, name);
+        yield* emitWorking(roomId);
+        yield* refreshRequests(roomId);
+      }
+    }
+    if (gone.size > 0) yield* changedForEveryone;
+  });
+
+  /** A deleted bot leaves every room it is in, its turns and waiting requests with it. */
+  const botDeleted = Effect.fn("Rooms.botDeleted")(function* (projectId: ProjectId) {
+    const botKey = roomParticipantKey({ kind: "bot", projectId });
+    const participants = yield* db(store.listParticipants());
+    for (const { roomId } of participants.filter((participant) => participant.key === botKey)) {
+      yield* stopBot(roomId, projectId, undefined, "The bot was deleted.");
+      // A mention racing this may have taken it out already, saying the same.
+      const left = yield* botLocks.withLock(
+        `${roomId}|${botKey}`,
+        Effect.gen(function* () {
+          const self = (yield* participantsOf(roomId)).find((entry) => entry.key === botKey);
+          if (self === undefined) return false;
+          yield* leaveDeleted(roomId, projectId, "owner");
+          return true;
+        }),
+      );
+      if (left) yield* afterDeparture(roomId, botKey);
+    }
+  });
+
+  /** Bots deleted while the server was down, as from the CLI. */
+  const pruneDeletedBots = Effect.gen(function* () {
+    const participants = yield* db(store.listParticipants());
+    const botIds = new Set(
+      participants.flatMap((participant) =>
+        participant.participant.kind === "bot" ? [participant.participant.projectId] : [],
+      ),
+    );
+    for (const projectId of botIds) {
+      const project = yield* db(projects.getById(projectId));
+      if (Option.isNone(project) || project.value.deletedAt !== null) {
+        yield* botDeleted(projectId);
+      }
+    }
   });
 
   const start = Effect.gen(function* () {
@@ -1203,7 +1620,7 @@ const make = Effect.gen(function* () {
         Stream.map((current) => current.ownerName),
         Stream.changes,
         Stream.drop(1),
-        Stream.runForEach(() => listChanged),
+        Stream.runForEach(() => changedForEveryone),
       ),
     );
     yield* forkParked(
@@ -1234,6 +1651,29 @@ const make = Effect.gen(function* () {
             : Effect.void,
       ),
     );
+    // Every way a project is deleted commits `project.deleted`; reacting here covers them all.
+    yield* forkParked(
+      Stream.unwrap(
+        Effect.gen(function* () {
+          const after = yield* applicationEvents.latestApplicationSequence;
+          yield* pruneDeletedBots.pipe(
+            Effect.catch((cause) => Effect.logWarning("Could not prune deleted bots", { cause })),
+          );
+          return applicationEvents.streamApplicationEvents({ afterSequence: after });
+        }),
+      ).pipe(
+        Stream.runForEach((event) =>
+          "type" in event && event.type === "project.deleted"
+            ? botDeleted(event.aggregateId).pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("Could not take a deleted bot out of its rooms", { cause }),
+                ),
+              )
+            : Effect.void,
+        ),
+        Effect.catch((cause) => Effect.logWarning("Stopped watching for deleted bots", { cause })),
+      ),
+    );
     yield* forkParked(
       Stream.runForEach(members.subscribe, (snapshot) =>
         pruneMembers(snapshot).pipe(
@@ -1257,8 +1697,10 @@ const make = Effect.gen(function* () {
       markRead,
       post,
       roomsOfBot,
+      turnOf,
       postAsBot,
       respond,
+      interrupt,
       history,
       feed,
       finishTurn,

@@ -52,6 +52,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
         isStreaming={Boolean(row.message.streaming)}
         lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
         skills={ctx.skills}
+        mentionNames={ctx.mentionNames}
         headingLevelOffset={MESSAGE_HEADING_LEVEL}
         onUseArtifactTemplate={ctx.onUseArtifactTemplate}
         onRunShellCommand={ctx.onRunShellCommand}
@@ -76,20 +77,39 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
     const sender = row.message.sender;
     const colors =
       sender?.bot === undefined ? null : botBubbleColors(sender.bot.avatar ?? specFor(sender.name));
+    const senderThreadId = sender?.bot?.threadId ?? null;
     return (
       <div className="flex min-w-0 max-w-5/6 flex-col items-start gap-1">
         {/* The bubble's heading names the sender for screen readers. */}
         {sender !== undefined && !row.groupedWithPrevious ? (
-          <div
-            aria-hidden
-            className="ms-1 flex items-center gap-1.5 text-2xs text-muted-foreground"
-            data-assistant-message-sender={sender.key}
-          >
-            {sender.bot === undefined ? null : (
-              <BotAvatar avatar={sender.bot.avatar} name={sender.name} status="idle" size={16} />
-            )}
-            {sender.name}
-          </div>
+          senderThreadId ? (
+            <button
+              type="button"
+              aria-label={`Open your conversation with ${sender.name}`}
+              className="ms-1 flex cursor-pointer items-center gap-1.5 rounded-sm text-2xs text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+              data-assistant-message-sender={sender.key}
+              onClick={() => ctx.onOpenThread(senderThreadId)}
+            >
+              <BotAvatar
+                avatar={sender.bot?.avatar ?? null}
+                name={sender.name}
+                status="idle"
+                size={16}
+              />
+              {sender.name}
+            </button>
+          ) : (
+            <div
+              aria-hidden
+              className="ms-1 flex items-center gap-1.5 text-2xs text-muted-foreground"
+              data-assistant-message-sender={sender.key}
+            >
+              {sender.bot === undefined ? null : (
+                <BotAvatar avatar={sender.bot.avatar} name={sender.name} status="idle" size={16} />
+              )}
+              {sender.name}
+            </div>
+          )
         ) : null}
         <div className="flex min-w-0 max-w-full items-end gap-1">
           <div
@@ -115,14 +135,25 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
                 <SenderMessageAttachments
                   environmentId={ctx.activeThreadEnvironmentId}
                   attachments={row.message.attachments ?? []}
+                  onImageExpand={ctx.onImageExpand}
                 />
               </div>
             ) : null}
             {text || (row.message.attachments ?? []).length === 0 ? markdown : null}
           </div>
-          {row.message.streaming || !text ? null : (
-            <div className="shrink-0 opacity-0 transition-opacity duration-200 pointer-coarse:hidden focus-within:opacity-100 group-hover/assistant:opacity-100">
-              <MessageCopyButton text={text} variant="ghost" />
+          {row.message.streaming ? null : (
+            <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100">
+              {text ? <MessageCopyButton text={text} variant="ghost" /> : null}
+              <Tooltip>
+                <TooltipTrigger
+                  render={<p className="text-muted-foreground text-xs tabular-nums" />}
+                >
+                  {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
+                </TooltipTrigger>
+                <TooltipPopup>
+                  {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
+                </TooltipPopup>
+              </Tooltip>
             </div>
           )}
         </div>

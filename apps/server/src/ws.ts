@@ -2868,6 +2868,8 @@ export const layerWsRpc = (
         [WS_METHODS.roomsDelete]: ({ roomId }) => rooms.remove(roomViewer, roomId),
         [WS_METHODS.roomsPost]: (input) => rooms.post(roomViewer, input),
         [WS_METHODS.roomsRespond]: (input) => rooms.respond(roomViewer, input),
+        [WS_METHODS.roomsInterrupt]: ({ roomId, projectId }) =>
+          rooms.interrupt(roomViewer, roomId, projectId),
         [WS_METHODS.roomsMarkRead]: ({ roomId, throughSeq }) =>
           rooms.markRead(roomViewer, roomId, throughSeq),
         [WS_METHODS.roomsHistory]: (input) => rooms.history(roomViewer, input),

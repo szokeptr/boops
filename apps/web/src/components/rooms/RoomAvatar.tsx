@@ -1,11 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   type EnvironmentId,
+  type ProjectId,
   roomParticipantKey,
   type RoomParticipantView,
 } from "@t3tools/contracts";
 
-import { useProjects } from "../../state/entities";
+import { useProject } from "../../state/entities";
 import { memberEnvironment } from "../../state/members";
 import { BotAvatar } from "../bots/BotAvatar";
 
@@ -24,6 +26,18 @@ export function PersonFace({ size }: { readonly size: number }) {
   );
 }
 
+function BotFace(props: {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+  readonly name: string;
+  readonly size: number;
+}) {
+  const project = useProject(scopeProjectRef(props.environmentId, props.projectId));
+  return (
+    <BotAvatar avatar={project?.avatar ?? null} name={props.name} status="idle" size={props.size} />
+  );
+}
+
 /**
  * A group chat's picture, as phones draw one: a larger face up top and a smaller one tucked in
  * below. It shows a bot and a person when the room has both; the person is someone else in the
@@ -34,7 +48,6 @@ export function RoomAvatar(props: {
   readonly participants: ReadonlyArray<RoomParticipantView>;
   readonly size: number;
 }) {
-  const projects = useProjects();
   const sessionMember = useAtomValue(memberEnvironment.sessionMemberAtom(props.environmentId));
   const myKey = sessionMember === null ? "owner" : `member:${sessionMember.id}`;
   const bots = props.participants.filter((entry) => entry.participant.kind === "bot");
@@ -50,12 +63,14 @@ export function RoomAvatar(props: {
     if (entry === undefined) return null;
     const participant = entry.participant;
     if (participant.kind !== "bot") return <PersonFace size={size} />;
-    const avatar =
-      projects.find(
-        (project) =>
-          project.environmentId === props.environmentId && project.id === participant.projectId,
-      )?.avatar ?? null;
-    return <BotAvatar avatar={avatar} name={entry.name} status="idle" size={size} />;
+    return (
+      <BotFace
+        environmentId={props.environmentId}
+        projectId={participant.projectId}
+        name={entry.name}
+        size={size}
+      />
+    );
   };
   const { size } = props;
   const [first, second] = shown;

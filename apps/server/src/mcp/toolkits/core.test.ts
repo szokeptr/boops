@@ -297,6 +297,11 @@ it.effect("returns an HTML render reference that Codex and Claude tool rows both
             getThreadShell: () =>
               Effect.succeed({
                 id: threadId,
+                lineage: {
+                  rootThreadId: threadId,
+                  parentThreadId: null,
+                  relationshipToParent: null,
+                },
                 deletedAt: null,
                 archivedAt: null,
                 activeRunId: RunId.make("mcp-core-run"),

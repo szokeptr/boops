@@ -48,6 +48,11 @@ interface ComposerPrimaryActionsProps {
   onResume?: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
+  /** Names what stop stops, such as one bot in a group chat. */
+  interruptLabel?: string;
+  /** Several things to stop: the stop control opens a menu of them instead of calling `onInterrupt`. */
+  interruptChoices?: ReadonlyArray<{ readonly key: string; readonly label: string }>;
+  onInterruptChoice?: (key: string) => void;
   onImplementPlanInNewThread: () => void;
   compactBeforeSendTokens?: number | null;
   keepFullHistory?: boolean;
@@ -102,6 +107,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onResume,
   onPreviousPendingQuestion,
   onInterrupt,
+  interruptLabel,
+  interruptChoices,
+  onInterruptChoice,
   onImplementPlanInNewThread,
   compactBeforeSendTokens = null,
   keepFullHistory = false,
@@ -124,32 +132,61 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const isSendDisabled = !canOperateThread || sendDisabledReason !== null;
   const stageBackdropVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
 
-  const renderStopGenerationButton = (insidePendingAction: boolean) => (
-    <Tooltip key="interrupt">
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            className={cn(
-              "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-colors duration-150 hover:bg-destructive active:inset-shadow-control-pressed active:shadow-none [&_svg]:pointer-events-none",
-              insidePendingAction ? "size-8 sm:size-7" : "size-8 sm:h-8 sm:w-8",
-            )}
-            {...pointerFocusProps}
-            disabled={!canOperateThread}
-            onClick={() => {
-              if (canOperateThread) onInterrupt();
-            }}
-            aria-label="Stop generation"
-          />
-        }
-      >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-          <rect x="2" y="2" width="8" height="8" rx="1.5" />
-        </svg>
-      </TooltipTrigger>
-      <TooltipPopup>Interrupt</TooltipPopup>
-    </Tooltip>
+  const stopIcon = (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+      <rect x="2" y="2" width="8" height="8" rx="1.5" />
+    </svg>
   );
+  const stopButtonClassName = (insidePendingAction: boolean) =>
+    cn(
+      "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-colors duration-150 hover:bg-destructive active:inset-shadow-control-pressed active:shadow-none disabled:cursor-default disabled:opacity-64 [&_svg]:pointer-events-none",
+      insidePendingAction ? "size-8 sm:size-7" : "size-8 sm:h-8 sm:w-8",
+    );
+  const renderStopGenerationButton = (insidePendingAction: boolean) =>
+    interruptChoices !== undefined && interruptChoices.length > 1 ? (
+      <Menu key="interrupt">
+        <MenuTrigger
+          disabled={!canOperateThread}
+          render={
+            <button
+              type="button"
+              className={stopButtonClassName(insidePendingAction)}
+              {...pointerFocusProps}
+              aria-label={interruptLabel ?? "Stop"}
+            />
+          }
+        >
+          {stopIcon}
+        </MenuTrigger>
+        <MenuPopup align="end" side="top" {...composerFloatingLayerProps}>
+          {interruptChoices.map((choice) => (
+            <MenuItem key={choice.key} onClick={() => onInterruptChoice?.(choice.key)}>
+              {choice.label}
+            </MenuItem>
+          ))}
+        </MenuPopup>
+      </Menu>
+    ) : (
+      <Tooltip key="interrupt">
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              className={stopButtonClassName(insidePendingAction)}
+              {...pointerFocusProps}
+              disabled={!canOperateThread}
+              onClick={() => {
+                if (canOperateThread) onInterrupt();
+              }}
+              aria-label={interruptLabel ?? "Stop generation"}
+            />
+          }
+        >
+          {stopIcon}
+        </TooltipTrigger>
+        <TooltipPopup>{interruptLabel ?? "Interrupt"}</TooltipPopup>
+      </Tooltip>
+    );
 
   if (pendingAction) {
     return (

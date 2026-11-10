@@ -1412,6 +1412,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       cwd={props.markdownCwd}
       threadRef={ctx.threadRef ?? undefined}
       skills={props.skills}
+      mentionNames={ctx.mentionNames}
       className="text-foreground"
       lineBreaks
       parseRawHtml={false}

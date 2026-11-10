@@ -3,12 +3,14 @@ import {
   type RoomFeedItem,
   type RoomMessage,
   type RoomPendingRequest,
+  type RoomsSnapshot,
   WS_METHODS,
 } from "@t3tools/contracts";
 import type { Atom } from "effect/reactivity";
 import * as Stream from "effect/Stream";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { reuseUnchanged } from "./serverConfigProjection.ts";
 import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcSubscriptionAtomFamily,
@@ -25,11 +27,33 @@ export interface RoomFeedState {
 
 const EMPTY_FEED: RoomFeedState = { messages: [], hasOlder: false, working: [], requests: [] };
 
+/**
+ * A snapshot after a reconnect keeps what was already shown when it joins up with it, so pages
+ * loaded earlier still meet the feed; one that leaves a gap starts the view over.
+ */
+function applySnapshot(
+  state: RoomFeedState,
+  history: { readonly messages: ReadonlyArray<RoomMessage>; readonly hasOlder: boolean },
+): RoomFeedState {
+  const first = history.messages[0];
+  const last = state.messages.at(-1);
+  if (first === undefined || last === undefined || first.seq > last.seq + 1) {
+    return { ...state, messages: history.messages, hasOlder: history.hasOlder };
+  }
+  const ids = new Set(history.messages.map((message) => message.id));
+  const kept = state.messages.filter((message) => message.seq < first.seq && !ids.has(message.id));
+  return {
+    ...state,
+    messages: kept.length === 0 ? history.messages : [...kept, ...history.messages],
+    hasOlder: kept.length === 0 ? history.hasOlder : state.hasOlder,
+  };
+}
+
 /** Folds one feed item into the view. A message already shown (a reconnect's snapshot) is kept once. */
-function applyRoomFeedItem(state: RoomFeedState, item: RoomFeedItem): RoomFeedState {
+export function applyRoomFeedItem(state: RoomFeedState, item: RoomFeedItem): RoomFeedState {
   switch (item.kind) {
     case "snapshot":
-      return { ...state, messages: item.history.messages, hasOlder: item.history.hasOlder };
+      return applySnapshot(state, item.history);
     case "message":
       return state.messages.some((message) => message.id === item.message.id)
         ? state
@@ -39,6 +63,46 @@ function applyRoomFeedItem(state: RoomFeedState, item: RoomFeedItem): RoomFeedSt
     case "requests":
       return { ...state, requests: item.requests };
   }
+}
+
+/** Keeps unchanged rooms the same objects, so a view of one room skips others' changes. */
+function reuseUnchangedRooms(previous: RoomsSnapshot | null, next: RoomsSnapshot): RoomsSnapshot {
+  if (previous === null) return next;
+  const before = new Map(previous.rooms.map((room) => [room.id, room]));
+  const rooms = next.rooms.map((room) => reuseUnchanged(before.get(room.id), room));
+  return reuseUnchanged(previous, { ...next, rooms });
+}
+
+/**
+ * Pages loaded with `history` in front of the live feed. Pages that no longer reach the feed (a
+ * reconnect started it over past them) are left out, so no hole shows; load earlier refills.
+ */
+export function joinRoomMessages(
+  older: {
+    readonly messages: ReadonlyArray<RoomMessage>;
+    readonly hasOlder: boolean;
+  } | null,
+  feed: { readonly messages: ReadonlyArray<RoomMessage>; readonly hasOlder: boolean },
+): {
+  readonly messages: ReadonlyArray<RoomMessage>;
+  readonly hasOlder: boolean;
+  readonly olderUsed: boolean;
+} {
+  const first = feed.messages[0];
+  const olderLast = older?.messages.at(-1);
+  if (
+    older === null ||
+    olderLast === undefined ||
+    (first !== undefined && olderLast.seq + 1 < first.seq)
+  ) {
+    return { messages: feed.messages, hasOlder: feed.hasOlder, olderUsed: false };
+  }
+  const ids = new Set(feed.messages.map((message) => message.id));
+  return {
+    messages: [...older.messages.filter((message) => !ids.has(message.id)), ...feed.messages],
+    hasOlder: older.hasOlder,
+    olderUsed: true,
+  };
 }
 
 /**
@@ -52,6 +116,16 @@ export function createRoomEnvironmentAtoms<R, E>(
     rooms: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:rooms",
       tag: WS_METHODS.roomsSubscribe,
+      transform: (stream) =>
+        stream.pipe(
+          Stream.mapAccum(
+            () => null as RoomsSnapshot | null,
+            (previous, snapshot) => {
+              const next = reuseUnchangedRooms(previous, snapshot);
+              return [next, [next]] as const;
+            },
+          ),
+        ),
     }),
     feed: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:rooms:feed",
@@ -106,6 +180,10 @@ export function createRoomEnvironmentAtoms<R, E>(
     respond: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:rooms:respond",
       tag: WS_METHODS.roomsRespond,
+    }),
+    interrupt: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:rooms:interrupt",
+      tag: WS_METHODS.roomsInterrupt,
     }),
     history: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:rooms:history",

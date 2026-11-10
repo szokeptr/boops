@@ -192,6 +192,7 @@ function TimelineListFooter({
 }
 
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<ServerProviderSkill> = [];
+const EMPTY_TIMELINE_MENTION_NAMES: ReadonlyArray<string> = [];
 const TIMELINE_MAINTAIN_SCROLL_AT_END = {
   animated: false,
   on: {
@@ -302,6 +303,8 @@ interface MessagesTimelineProps {
   timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
   skills?: ReadonlyArray<ServerProviderSkill>;
+  /** Keep the same array while the names are unchanged; every row reads it. */
+  mentionNames?: ReadonlyArray<string>;
   runs: ReadonlyArray<HandoffTimelineRun>;
   anchorMessageId: MessageId | null;
   onAnchorReady: (messageId: MessageId, anchorIndex: number) => void;
@@ -404,6 +407,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   timestampFormat,
   workspaceRoot,
   skills = EMPTY_TIMELINE_SKILLS,
+  mentionNames = EMPTY_TIMELINE_MENTION_NAMES,
   runs: runsProp,
   anchorMessageId,
   onAnchorReady,
@@ -1048,6 +1052,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     resolvedTheme,
     workspaceRoot,
     skills,
+    mentionNames,
     runs,
     activeThreadEnvironmentId,
     onRevertToTurnCount,
