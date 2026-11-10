@@ -458,6 +458,7 @@ import {
   RoomsSnapshot,
   RoomSummary,
 } from "./rooms.ts";
+import { SidebarLayout, SidebarLayoutError, SidebarLayoutSetInput } from "./sidebarLayout.ts";
 import {
   NotificationKeysError,
   NotificationsRegisterDeviceKeyInput,
@@ -631,6 +632,8 @@ export const WS_METHODS = {
   roomsSubscribeFeed: "rooms.subscribeFeed",
   roomsRespond: "rooms.respond",
   roomsMarkRead: "rooms.markRead",
+  sidebarLayoutSubscribe: "sidebarLayout.subscribe",
+  sidebarLayoutSet: "sidebarLayout.set",
   notificationsRegisterDeviceKey: "notifications.registerDeviceKey",
   notificationsRemoveDeviceKey: "notifications.removeDeviceKey",
   serverUpdateSettings: "server.updateSettings",
@@ -1050,6 +1053,19 @@ const WsRoomsSubscribeFeedRpc = Rpc.make(WS_METHODS.roomsSubscribeFeed, {
   success: RoomFeedItem,
   stream: true,
   error: RoomsRpcError,
+});
+const SidebarLayoutRpcError = Schema.Union([SidebarLayoutError, EnvironmentAuthorizationError]);
+/** The caller's own sidebar sections, then again whenever any of their clients changes them. */
+const WsSidebarLayoutSubscribeRpc = Rpc.make(WS_METHODS.sidebarLayoutSubscribe, {
+  payload: Schema.Struct({}),
+  success: SidebarLayout,
+  stream: true,
+  error: SidebarLayoutRpcError,
+});
+/** Replaces the caller's sidebar sections; the last write wins. */
+const WsSidebarLayoutSetRpc = Rpc.make(WS_METHODS.sidebarLayoutSet, {
+  payload: SidebarLayoutSetInput,
+  error: SidebarLayoutRpcError,
 });
 /** Lets this environment seal bot reply previews to the calling phone; members register their own. */
 const WsNotificationsRegisterDeviceKeyRpc = Rpc.make(WS_METHODS.notificationsRegisterDeviceKey, {
@@ -2521,6 +2537,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsRoomsSubscribeFeedRpc,
   WsRoomsRespondRpc,
   WsRoomsMarkReadRpc,
+  WsSidebarLayoutSubscribeRpc,
+  WsSidebarLayoutSetRpc,
   WsNotificationsRegisterDeviceKeyRpc,
   WsNotificationsRemoveDeviceKeyRpc,
   WsProjectsCreateFromThreadRpc,

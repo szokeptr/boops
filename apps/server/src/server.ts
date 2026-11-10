@@ -148,6 +148,7 @@ import * as McpOAuthHttp from "./auth/mcpOAuthHttp.ts";
 import * as Connectors from "./connectors/Connectors.ts";
 import * as Members from "./members/Members.ts";
 import * as Rooms from "./rooms/Rooms.ts";
+import * as SidebarLayouts from "./sidebarLayout/SidebarLayouts.ts";
 import * as ConnectorHttp from "./connectors/ConnectorHttp.ts";
 import {
   relayHookBaseUrl,
@@ -1209,6 +1210,7 @@ const layerMakeServer = Layer.unwrap(
     return layerServerApplication.pipe(
       Layer.provide(CloudLink.layer.pipe(Layer.provideMerge(ConnectReachability.layer))),
       Layer.provide(Rooms.layerLive),
+      Layer.provide(SidebarLayouts.layer),
       // Members: from WebSocket (the owner, a member leaving) and Connect mints.
       Layer.provide(Members.layer),
       Layer.provideMerge(layerRuntimeServices),

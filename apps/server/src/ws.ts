@@ -6,6 +6,7 @@ import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as Connectors from "./connectors/Connectors.ts";
 import * as Members from "./members/Members.ts";
 import * as Rooms from "./rooms/Rooms.ts";
+import * as SidebarLayouts from "./sidebarLayout/SidebarLayouts.ts";
 import * as NotificationDeviceKeys from "./notifications/NotificationDeviceKeys.ts";
 import {
   authorizeMemberCommand,
@@ -1526,6 +1527,7 @@ export const layerWsRpc = (
       const connectors = yield* Connectors.Connectors;
       const members = yield* Members.Members;
       const rooms = yield* Rooms.Rooms;
+      const sidebarLayouts = yield* SidebarLayouts.SidebarLayouts;
       const notificationDeviceKeys = yield* NotificationDeviceKeys.NotificationDeviceKeys;
       const currentMemberId = memberIdFromSessionSubject(currentSession.subject);
       const roomViewer: Rooms.RoomViewer =
@@ -2870,6 +2872,8 @@ export const layerWsRpc = (
           rooms.markRead(roomViewer, roomId, throughSeq),
         [WS_METHODS.roomsHistory]: (input) => rooms.history(roomViewer, input),
         [WS_METHODS.roomsSubscribeFeed]: ({ roomId }) => rooms.feed(roomViewer, roomId),
+        [WS_METHODS.sidebarLayoutSubscribe]: () => sidebarLayouts.subscribe(currentMemberId),
+        [WS_METHODS.sidebarLayoutSet]: ({ layout }) => sidebarLayouts.set(currentMemberId, layout),
         [WS_METHODS.notificationsRegisterDeviceKey]: (input) =>
           notificationDeviceKeys.register(currentSession.subject, input),
         [WS_METHODS.notificationsRemoveDeviceKey]: ({ deviceId }) =>

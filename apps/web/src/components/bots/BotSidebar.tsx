@@ -1,10 +1,20 @@
 import { useAtomValue } from "@effect/atom-react";
 import { splitPinnedBots, type BotRow } from "@t3tools/client-runtime/state/bot-list";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import type { ContextMenuItem } from "@t3tools/contracts";
+import {
+  organizeSidebar,
+  sidebarBotKey,
+  sidebarRoomKey,
+} from "@t3tools/client-runtime/state/sidebar-sections";
+import type {
+  ContextMenuItem,
+  EnvironmentId,
+  EnvironmentMachineKind,
+  SidebarSectionId,
+} from "@t3tools/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { PlusIcon, SearchIcon } from "lucide-react";
-import { useEffect, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, type ComponentProps, type MouseEvent, type ReactNode } from "react";
 
 import { isCommandPaletteOpen, openCommandPalette } from "../../commandPaletteBus";
 import { openCreateBotDialog } from "../CreateBotDialog";
@@ -26,7 +36,13 @@ import { isTerminalFocused } from "../../lib/terminalFocus";
 import { isModelPickerOpen } from "../../modelPickerVisibility";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { useProjects, useQuietThreadShell } from "../../state/entities";
-import { useEnvironmentMachines, usePrimaryEnvironmentId } from "../../state/environments";
+import {
+  useEnvironmentMachines,
+  useEnvironments,
+  usePrimaryEnvironmentId,
+} from "../../state/environments";
+import { useOpenRooms } from "../../state/rooms";
+import { useSidebarLayout } from "../../state/sidebarLayout";
 import {
   botSharedWithLabel,
   memberEnvironment,
@@ -44,8 +60,21 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChro
 import { SidebarContent, SidebarGroup, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ArchivedBotList } from "./ArchivedBotList";
-import { BotList } from "./BotList";
-import { RoomSidebarSection } from "../rooms/RoomSidebarSection";
+import { BotList, BotListRow } from "./BotList";
+import { DraggableRoomRow, lastActivity, RoomSidebarSection } from "../rooms/RoomSidebarSection";
+import { useSidebarEntryDnd } from "./sidebarDnd";
+import {
+  moveToSectionMenu,
+  type SidebarSectionsApi,
+  SidebarSectionsContext,
+} from "./sidebarSectionsContext";
+import {
+  NewSectionButton,
+  type SidebarEntry,
+  SidebarDnd,
+  SidebarSectionBlock,
+  UnsortedHeader,
+} from "./SidebarSections";
 
 /** The bot whose main thread, background thread, or activity page the route shows. */
 function useActiveBotKey(): string | null {
@@ -82,7 +111,10 @@ function useOpenBot() {
 }
 
 /** Right-click on a bot: pin or unpin it, share it, or open its activity. */
-function useBotContextMenu(onNavigate: (() => void) | undefined) {
+function useBotContextMenu(
+  onNavigate: (() => void) | undefined,
+  sections: SidebarSectionsApi | null,
+) {
   const router = useRouter();
   const { canPinProjectGroup, setProjectGroupPinned } = useProjectPin();
   const projects = useProjects();
@@ -113,7 +145,8 @@ function useBotContextMenu(onNavigate: (() => void) | undefined) {
             : null,
         )
       : null;
-    const items: Array<ContextMenuItem<"shared-with" | "pin" | "share" | "activity">> = [];
+    const moveMenu = moveToSectionMenu(sections, sidebarBotKey(row.environmentId, row.projectId));
+    const items: Array<ContextMenuItem> = [];
     // Disabled rather than a header: native menus drop headers, and this reads as a caption.
     if (sharedWith !== null) items.push({ id: "shared-with", label: sharedWith, disabled: true });
     items.push({
@@ -126,7 +159,9 @@ function useBotContextMenu(onNavigate: (() => void) | undefined) {
     if (row.activityThreadCount > 0) {
       items.push({ id: "activity", label: `Activity (${row.activityThreadCount})` });
     }
+    items.push(...moveMenu.items);
     const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
+    if (moveMenu.handle(action)) return;
     if (action === "pin") setProjectGroupPinned(group, !group.pinned);
     if (action === "share") {
       openShareBotDialog({
@@ -145,13 +180,50 @@ function useBotContextMenu(onNavigate: (() => void) | undefined) {
   };
 }
 
+const botKey = (row: BotRow) => sidebarBotKey(row.environmentId, row.projectId);
+
+/** Bots and group chats, in the viewer's own sections first, then the rest by activity. */
 export function BotListPanel({ onNavigate }: { readonly onNavigate?: () => void }) {
-  const { pinned, unpinned } = splitPinnedBots(useBotRows());
-  // Jump shortcuts and next/previous follow the order shown: pins first.
-  const rows = [...pinned, ...unpinned];
-  const showBotContextMenu = useBotContextMenu(onNavigate);
+  const botRows = useBotRows();
+  const { pinned, unpinned } = splitPinnedBots(botRows);
+  const { environments } = useEnvironments();
+  const rooms = useOpenRooms(environments.map((environment) => environment.environmentId));
+  const { layout, loaded: layoutLoaded, update } = useSidebarLayout();
+  const [editingSectionId, setEditingSectionId] = useState<SidebarSectionId | null>(null);
+  const sectionsApi: SidebarSectionsApi = { layout, update, editingSectionId, setEditingSectionId };
+  const organized = organizeSidebar<SidebarEntry>(layout, [
+    ...botRows.map((row) => ({ kind: "bot" as const, sidebarKey: botKey(row), row })),
+    ...rooms
+      .toSorted((a, b) => lastActivity(b.room).localeCompare(lastActivity(a.room)))
+      .map(({ environmentId, room }) => ({
+        kind: "room" as const,
+        sidebarKey: sidebarRoomKey(environmentId, room.id),
+        environmentId,
+        room,
+      })),
+  ]);
+  const placedKeys = new Set(
+    organized.sections.flatMap((entry) => entry.items.map((item) => item.sidebarKey)),
+  );
+  const unsortedBots = unpinned.filter((row) => !placedKeys.has(botKey(row)));
+  // Jump shortcuts and next/previous follow the bots in the order shown: pins, sections, the rest.
+  const rows = [
+    ...new Map(
+      [
+        ...pinned,
+        ...organized.sections.flatMap((entry) =>
+          entry.section.collapsed
+            ? []
+            : entry.items.flatMap((item) => (item.kind === "bot" ? [item.row] : [])),
+        ),
+        ...unsortedBots,
+      ].map((row) => [row.key, row]),
+    ).values(),
+  ];
+  const showBotContextMenu = useBotContextMenu(onNavigate, sectionsApi);
   const memberOnly = useIsMemberOnly();
   const activeKey = useActiveBotKey();
+  const activeRoomId = useParams({ strict: false, select: (params) => params.roomId });
   const machineKindById = useEnvironmentMachines();
   const openBot = useOpenBot();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -216,34 +288,116 @@ export function BotListPanel({ onNavigate }: { readonly onNavigate?: () => void 
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [activeKey, keybindings, onNavigate, openBot, rows]);
 
-  if (rows.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
-        {memberOnly ? (
-          <span>No bots are shared with you yet</span>
-        ) : (
-          <>
-            <span>No bots yet</span>
-            <AddBotButton />
-          </>
-        )}
-      </div>
+  const showMachineBadges = new Set(botRows.map((row) => row.environmentId)).size > 1;
+  const rowProps = {
+    showMachineBadges,
+    machineKindById,
+    jumpLabelByKey,
+    activeKey,
+    ...(onNavigate ? { onNavigate } : {}),
+    onStartConversation: (row: BotRow) => {
+      onNavigate?.();
+      void openBot(row);
+    },
+    onContextMenu: (row: BotRow, event: MouseEvent) => void showBotContextMenu(row, event),
+  };
+  const renderEntry = (item: SidebarEntry, sectionId: SidebarSectionId | null) =>
+    item.kind === "bot" ? (
+      <DraggableBotRow key={item.sidebarKey} row={item.row} sectionId={sectionId} {...rowProps} />
+    ) : (
+      <DraggableRoomRow
+        key={item.sidebarKey}
+        environmentId={item.environmentId}
+        room={item.room}
+        active={item.room.id === activeRoomId}
+        sectionId={sectionId}
+        {...(onNavigate ? { onNavigate } : {})}
+      />
     );
-  }
+
   return (
-    <BotList
-      pinnedRows={pinned}
-      rows={unpinned}
-      activeKey={activeKey}
-      showMachineBadges={new Set(rows.map((row) => row.environmentId)).size > 1}
-      machineKindById={machineKindById}
-      jumpLabelByKey={jumpLabelByKey}
-      {...(onNavigate ? { onNavigate } : {})}
-      onStartConversation={(row) => {
-        onNavigate?.();
-        void openBot(row);
-      }}
-      onContextMenu={(row, event) => void showBotContextMenu(row, event)}
+    <SidebarSectionsContext value={sectionsApi}>
+      <SidebarDnd sections={organized.sections}>
+        <div className="flex flex-col">
+          {botRows.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
+              {memberOnly ? (
+                <span>No bots are shared with you yet</span>
+              ) : (
+                <>
+                  <span>No bots yet</span>
+                  <AddBotButton />
+                </>
+              )}
+            </div>
+          ) : pinned.length > 0 ? (
+            <BotList
+              pinnedRows={pinned}
+              rows={[]}
+              activeKey={activeKey}
+              showMachineBadges={showMachineBadges}
+              machineKindById={machineKindById}
+              jumpLabelByKey={jumpLabelByKey}
+              {...(onNavigate ? { onNavigate } : {})}
+              onStartConversation={rowProps.onStartConversation}
+              onContextMenu={rowProps.onContextMenu}
+            />
+          ) : null}
+          {organized.sections.map((entry, index) => (
+            <SidebarSectionBlock
+              key={entry.section.id}
+              entry={entry}
+              index={index}
+              renderItem={renderEntry}
+            />
+          ))}
+          {unsortedBots.length > 0 ? (
+            <>
+              {organized.sections.length > 0 ? <UnsortedHeader label="Bots" /> : null}
+              <ul aria-label="Bots" className="flex flex-col gap-px">
+                {unsortedBots.map((row) =>
+                  renderEntry({ kind: "bot", sidebarKey: botKey(row), row }, null),
+                )}
+              </ul>
+            </>
+          ) : null}
+          <RoomSidebarSection placedKeys={placedKeys} {...(onNavigate ? { onNavigate } : {})} />
+          {layoutLoaded ? <NewSectionButton /> : null}
+        </div>
+      </SidebarDnd>
+    </SidebarSectionsContext>
+  );
+}
+
+function DraggableBotRow(
+  props: Omit<
+    ComponentProps<typeof BotListRow>,
+    "dnd" | "isActive" | "jumpLabel" | "showMachineBadge" | "machineKind" | "onNavigate"
+  > & {
+    readonly sectionId: SidebarSectionId | null;
+    readonly activeKey: string | null;
+    readonly showMachineBadges: boolean;
+    readonly machineKindById: ReadonlyMap<EnvironmentId, EnvironmentMachineKind>;
+    readonly jumpLabelByKey: ReadonlyMap<string, string>;
+    readonly onNavigate?: () => void;
+  },
+) {
+  const { row } = props;
+  const dnd = useSidebarEntryDnd(
+    { kind: "item", key: botKey(row), label: row.name },
+    props.sectionId,
+  );
+  return (
+    <BotListRow
+      row={row}
+      isActive={props.activeKey === row.key}
+      showMachineBadge={props.showMachineBadges}
+      machineKind={props.machineKindById.get(row.environmentId) ?? "server"}
+      jumpLabel={props.jumpLabelByKey.get(row.key) ?? null}
+      onNavigate={props.onNavigate}
+      onStartConversation={props.onStartConversation}
+      onContextMenu={props.onContextMenu}
+      dnd={dnd}
     />
   );
 }
@@ -280,7 +434,6 @@ export default function BotSidebar() {
       <SidebarContent className="min-h-full">
         <SidebarGroup className="flex-1" role="presentation">
           <BotListPanel {...(isMobile ? { onNavigate: () => setOpenMobile(false) } : {})} />
-          <RoomSidebarSection {...(isMobile ? { onNavigate: () => setOpenMobile(false) } : {})} />
           <div className="mt-auto pt-2">
             <ArchivedBotList />
           </div>

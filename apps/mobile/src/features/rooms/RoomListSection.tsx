@@ -1,3 +1,4 @@
+import { sidebarRoomKey } from "@t3tools/client-runtime/state/sidebar-sections";
 import type { EnvironmentId, RoomSummary } from "@t3tools/contracts";
 import { useNavigation, useNavigationState, type NavigationState } from "@react-navigation/native";
 import { useState } from "react";
@@ -11,6 +12,7 @@ import { cn } from "../../lib/cn";
 import { useEnvironments } from "../../state/environments";
 import { useRooms } from "../../state/rooms";
 import { BotStatusLabel } from "../bots/BotListRow";
+import { useMoveToSectionAction } from "../bots/sidebarSections";
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 import { RoomAvatar } from "./RoomAvatar";
 import { canManageRoom, roomRowSubtitle } from "./roomPresentation";
@@ -30,8 +32,11 @@ function openRoomKey(state: NavigationState): string | null {
   return environmentId && roomId ? `${environmentId}\n${roomId}` : null;
 }
 
-/** Group chats on every connected machine, below the bots. */
-export function RoomListSection(props: { readonly searchQuery: string }) {
+/** Group chats on every connected machine, below the bots, except those placed in a section. */
+export function RoomListSection(props: {
+  readonly searchQuery: string;
+  readonly placedKeys?: ReadonlySet<string>;
+}) {
   const { environments } = useEnvironments();
   return (
     <>
@@ -41,6 +46,7 @@ export function RoomListSection(props: { readonly searchQuery: string }) {
           environmentId={environment.environmentId}
           label={environments.length > 1 ? environment.label : null}
           searchQuery={props.searchQuery}
+          placedKeys={props.placedKeys}
         />
       ))}
     </>
@@ -51,6 +57,7 @@ function EnvironmentRooms(props: {
   readonly environmentId: EnvironmentId;
   readonly label: string | null;
   readonly searchQuery: string;
+  readonly placedKeys: ReadonlySet<string> | undefined;
 }) {
   const { environmentId } = props;
   const navigation = useNavigation();
@@ -61,7 +68,10 @@ function EnvironmentRooms(props: {
   const matches = (room: RoomSummary) =>
     needle.length === 0 || room.title.toLocaleLowerCase().includes(needle);
   const joined = rooms.filter((room) => room.joined && matches(room));
-  const active = joined.filter((room) => room.archivedAt === null);
+  const active = joined.filter(
+    (room) =>
+      room.archivedAt === null && !props.placedKeys?.has(sidebarRoomKey(environmentId, room.id)),
+  );
   const archived = joined.filter((room) => room.archivedAt !== null);
   if (active.length === 0 && archived.length === 0 && (!canCreate || needle.length > 0)) {
     return null;
@@ -85,7 +95,7 @@ function EnvironmentRooms(props: {
           </Pressable>
         ) : null}
       </View>
-      {active.length === 0 && archived.length === 0 ? (
+      {joined.length === 0 ? (
         <Pressable
           accessibilityRole="button"
           className="rounded-xl px-2 py-2 active:opacity-70"
@@ -135,6 +145,21 @@ function EnvironmentRooms(props: {
   );
 }
 
+/** A room shown in one of the viewer's sections. */
+export function SidebarRoomRow(props: {
+  readonly environmentId: EnvironmentId;
+  readonly room: RoomSummary;
+}) {
+  const openKey = useNavigationState(openRoomKey);
+  return (
+    <RoomListRow
+      environmentId={props.environmentId}
+      room={props.room}
+      selected={openKey === `${props.environmentId}\n${props.room.id}`}
+    />
+  );
+}
+
 function RoomListRow(props: {
   readonly environmentId: EnvironmentId;
   readonly room: RoomSummary;
@@ -152,6 +177,7 @@ function RoomListRow(props: {
     : "accent-foreground-muted";
   const subtitle = roomRowSubtitle(room);
   const archived = room.archivedAt !== null;
+  const move = useMoveToSectionAction(sidebarRoomKey(environmentId, room.id));
   const actions = [
     {
       id: "mute",
@@ -174,6 +200,7 @@ function RoomListRow(props: {
           },
         ]
       : []),
+    ...(archived ? [] : move.actions),
   ];
   return (
     <View className={cn("rounded-xl", selected && "bg-thread-selected")}>
@@ -181,6 +208,7 @@ function RoomListRow(props: {
         actions={actions}
         shouldOpenOnLongPress
         onPressAction={({ nativeEvent }) => {
+          if (move.handle(nativeEvent.event)) return;
           if (nativeEvent.event === "mute") void commands.setMuted(room.id, !room.muted);
           if (nativeEvent.event === "archive") void commands.setArchived(room.id, !archived);
         }}

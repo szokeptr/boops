@@ -33,6 +33,8 @@ import { useBotNavigation, useSelectedBotKey } from "./useBotNavigation";
 import { useBotShareSheet } from "../members/BotShareSheet";
 import { useBotRows } from "./useBotRows";
 import { RoomListSection } from "../rooms/RoomListSection";
+import { renderBotSidebarItem } from "./BotSidebarItem";
+import { NewSectionRow, SidebarSectionsContext, useBotSidebarItems } from "./sidebarSections";
 
 const SIDEBAR_STICKY_HEADER_HEIGHT = 106;
 
@@ -113,6 +115,7 @@ function BotNavigationSidebarPane(
   const botActions = { ...useBotNavigation(), onShare: share.onShare };
   const selectedKey = useSelectedBotKey(rows, threads);
   const { visible: visibleRows, pinned, listed } = splitVisibleBotRows(rows, props.searchQuery);
+  const sidebar = useBotSidebarItems({ rows, listed, searchQuery: props.searchQuery });
   const pinnedHeader =
     pinned.length > 0 ? (
       <PinnedBotTiles rows={pinned} selectedKey={selectedKey} {...botActions} />
@@ -156,14 +159,21 @@ function BotNavigationSidebarPane(
             : "No bots yet"}
     </Text>
   );
-  const renderItem = ({ item }: { readonly item: (typeof rows)[number] }) => (
-    <BotListRow
-      row={item}
-      selected={item.key === selectedKey}
-      machineKind={machineByEnvironmentId.get(item.environmentId)}
-      showMachineBadge={showMachineBadges}
-      {...botActions}
-    />
+  const renderItem = ({ item }: { readonly item: (typeof sidebar.items)[number] }) =>
+    renderBotSidebarItem(item, (row) => (
+      <BotListRow
+        row={row}
+        selected={row.key === selectedKey}
+        machineKind={machineByEnvironmentId.get(row.environmentId)}
+        showMachineBadge={showMachineBadges}
+        {...botActions}
+      />
+    ));
+  const listFooter = (
+    <>
+      <RoomListSection searchQuery={props.searchQuery} placedKeys={sidebar.placedKeys} />
+      <NewSectionRow searchQuery={props.searchQuery} />
+    </>
   );
 
   if (props.nativeChrome) {
@@ -174,7 +184,7 @@ function BotNavigationSidebarPane(
       headerButton({ label: "Settings", icon: "gearshape", onPress: props.onOpenSettings }),
     ];
     return (
-      <>
+      <SidebarSectionsContext value={sidebar.api}>
         <NativeStackScreenOptions
           optionsVersion={[props.width, props.onAddBot, props.onOpenSettings]}
           options={{
@@ -200,8 +210,9 @@ function BotNavigationSidebarPane(
         />
         <LegendList
           renderScrollComponent={NativeScrollView}
-          data={listed}
-          keyExtractor={(row) => row.key}
+          data={sidebar.items}
+          keyExtractor={(item) => item.key}
+          getItemType={(item) => item.type}
           extraData={selectedKey}
           renderItem={renderItem}
           estimatedItemSize={64}
@@ -218,137 +229,140 @@ function BotNavigationSidebarPane(
           showsVerticalScrollIndicator={false}
           style={{ flex: 1 }}
           ListHeaderComponent={pinnedHeader}
-          ListFooterComponent={<RoomListSection searchQuery={props.searchQuery} />}
+          ListFooterComponent={listFooter}
           ListEmptyComponent={pinned.length > 0 ? undefined : listEmpty}
         />
         {share.sheet}
-      </>
+      </SidebarSectionsContext>
     );
   }
 
   return (
-    <View
-      className={
-        Platform.OS === "android" ? "flex-1 bg-header" : "flex-1 border-r border-border bg-drawer"
-      }
-      // Android fills its pane, which animates its width while a hinge resizes the split.
-      style={Platform.OS === "android" ? undefined : { width: props.width }}
-    >
+    <SidebarSectionsContext value={sidebar.api}>
       <View
-        className="flex-1"
-        style={
-          Platform.OS === "android"
-            ? {
-                marginHorizontal: 4,
-                paddingBottom: insets.bottom,
-                backgroundColor: materialTheme["--color-drawer"],
-                borderTopLeftRadius: 28,
-                borderTopRightRadius: 28,
-                overflow: "hidden",
-              }
-            : { paddingBottom: insets.bottom }
+        className={
+          Platform.OS === "android" ? "flex-1 bg-header" : "flex-1 border-r border-border bg-drawer"
         }
+        // Android fills its pane, which animates its width while a hinge resizes the split.
+        style={Platform.OS === "android" ? undefined : { width: props.width }}
       >
-        {Platform.OS === "android" && visibleRows.length === 0 ? (
-          <View className="flex-1 items-center justify-center">{listEmpty}</View>
-        ) : (
-          // oxlint-disable-next-line t3code/require-registered-list-scroll -- Only the non-native workspace layout (Android and the fallback) renders this pane, which has no native header to register with.
-          <LegendList
-            data={listed}
-            keyExtractor={(row) => row.key}
-            extraData={selectedKey}
-            renderItem={renderItem}
-            estimatedItemSize={64}
-            recycleItems
-            contentContainerStyle={{
-              paddingHorizontal: Platform.OS === "android" ? 0 : 8,
-              paddingBottom:
-                Platform.OS === "android"
-                  ? floatingTabsEnabled
-                    ? FLOATING_TABS.bottom + FLOATING_TABS.edge + fabSize
-                    : Math.max(insets.bottom, 16) + fabClearance - insets.bottom
-                  : 16 + insets.bottom,
-              paddingTop: Platform.OS === "android" ? 6 : topListInset,
-            }}
-            keyboardDismissMode="on-drag"
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            style={{ flex: 1 }}
-            ListHeaderComponent={pinnedHeader}
-            ListFooterComponent={<RoomListSection searchQuery={props.searchQuery} />}
-            ListEmptyComponent={pinned.length > 0 ? undefined : listEmpty}
-          />
-        )}
-      </View>
-
-      {Platform.OS === "android" ? (
-        <BotListToolbar
-          searchQuery={props.searchQuery}
-          onSearchQueryChange={props.onSearchQueryChange}
-          onOpenEnvironments={props.onOpenEnvironmentSettings}
-          onRequestVisibility={props.onRequestVisibility}
-        />
-      ) : (
         <View
-          className="absolute inset-x-0 top-0 z-[4] bg-drawer"
-          collapsable={false}
-          onLayout={handleStickyHeaderLayout}
-          pointerEvents="auto"
-          style={{ paddingTop: insets.top }}
+          className="flex-1"
+          style={
+            Platform.OS === "android"
+              ? {
+                  marginHorizontal: 4,
+                  paddingBottom: insets.bottom,
+                  backgroundColor: materialTheme["--color-drawer"],
+                  borderTopLeftRadius: 28,
+                  borderTopRightRadius: 28,
+                  overflow: "hidden",
+                }
+              : { paddingBottom: insets.bottom }
+          }
         >
-          <View className="h-[50px] flex-row items-end gap-0.5 pr-2 pl-5">
-            <WorkspaceConnectionTitle
-              grow
-              onPress={props.onOpenEnvironmentSettings}
-              size="pageTitle"
-              brand={
-                <View className="h-11 flex-1 justify-center">
-                  <CompactBrandTitle allowFontScaling={false} />
-                </View>
-              }
+          {Platform.OS === "android" && visibleRows.length === 0 ? (
+            <View className="flex-1 items-center justify-center">{listEmpty}</View>
+          ) : (
+            // oxlint-disable-next-line t3code/require-registered-list-scroll -- Only the non-native workspace layout (Android and the fallback) renders this pane, which has no native header to register with.
+            <LegendList
+              data={sidebar.items}
+              keyExtractor={(item) => item.key}
+              getItemType={(item) => item.type}
+              extraData={selectedKey}
+              renderItem={renderItem}
+              estimatedItemSize={64}
+              recycleItems
+              contentContainerStyle={{
+                paddingHorizontal: Platform.OS === "android" ? 0 : 8,
+                paddingBottom:
+                  Platform.OS === "android"
+                    ? floatingTabsEnabled
+                      ? FLOATING_TABS.bottom + FLOATING_TABS.edge + fabSize
+                      : Math.max(insets.bottom, 16) + fabClearance - insets.bottom
+                    : 16 + insets.bottom,
+                paddingTop: Platform.OS === "android" ? 6 : topListInset,
+              }}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              style={{ flex: 1 }}
+              ListHeaderComponent={pinnedHeader}
+              ListFooterComponent={listFooter}
+              ListEmptyComponent={pinned.length > 0 ? undefined : listEmpty}
             />
-            <View className="flex-row items-center gap-2.5">
-              {props.onAddBot ? (
+          )}
+        </View>
+
+        {Platform.OS === "android" ? (
+          <BotListToolbar
+            searchQuery={props.searchQuery}
+            onSearchQueryChange={props.onSearchQueryChange}
+            onOpenEnvironments={props.onOpenEnvironmentSettings}
+            onRequestVisibility={props.onRequestVisibility}
+          />
+        ) : (
+          <View
+            className="absolute inset-x-0 top-0 z-[4] bg-drawer"
+            collapsable={false}
+            onLayout={handleStickyHeaderLayout}
+            pointerEvents="auto"
+            style={{ paddingTop: insets.top }}
+          >
+            <View className="h-[50px] flex-row items-end gap-0.5 pr-2 pl-5">
+              <WorkspaceConnectionTitle
+                grow
+                onPress={props.onOpenEnvironmentSettings}
+                size="pageTitle"
+                brand={
+                  <View className="h-11 flex-1 justify-center">
+                    <CompactBrandTitle allowFontScaling={false} />
+                  </View>
+                }
+              />
+              <View className="flex-row items-center gap-2.5">
+                {props.onAddBot ? (
+                  <FallbackHeaderButton
+                    accessibilityLabel="Add bot"
+                    icon="plus"
+                    onPress={props.onAddBot}
+                  />
+                ) : null}
                 <FallbackHeaderButton
-                  accessibilityLabel="Add bot"
-                  icon="plus"
-                  onPress={props.onAddBot}
+                  accessibilityLabel="Open settings"
+                  icon="gearshape"
+                  onPress={props.onOpenSettings}
                 />
-              ) : null}
-              <FallbackHeaderButton
-                accessibilityLabel="Open settings"
-                icon="gearshape"
-                onPress={props.onOpenSettings}
+              </View>
+            </View>
+            <View className="mx-4 mt-[9px] h-[38px] flex-row items-center gap-1.5 rounded-xl bg-sidebar-search pr-2.5 pl-[11px]">
+              <SymbolView
+                name="magnifyingglass"
+                size={15}
+                tintColorClassName="accent-drawer-foreground-muted"
+                type="monochrome"
+              />
+              <TextInput
+                ref={searchInputRef}
+                accessibilityLabel="Search bots"
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+                onChangeText={props.onSearchQueryChange}
+                placeholder="Search"
+                placeholderTextColorClassName="accent-placeholder"
+                selectionColorClassName={undefined}
+                cursorColorClassName={undefined}
+                selectionHandleColorClassName={undefined}
+                returnKeyType="search"
+                className="h-[34px] flex-1 px-0 py-0 font-sans text-base text-drawer-foreground"
+                value={props.searchQuery}
               />
             </View>
           </View>
-          <View className="mx-4 mt-[9px] h-[38px] flex-row items-center gap-1.5 rounded-xl bg-sidebar-search pr-2.5 pl-[11px]">
-            <SymbolView
-              name="magnifyingglass"
-              size={15}
-              tintColorClassName="accent-drawer-foreground-muted"
-              type="monochrome"
-            />
-            <TextInput
-              ref={searchInputRef}
-              accessibilityLabel="Search bots"
-              autoCapitalize="none"
-              autoCorrect={false}
-              clearButtonMode="while-editing"
-              onChangeText={props.onSearchQueryChange}
-              placeholder="Search"
-              placeholderTextColorClassName="accent-placeholder"
-              selectionColorClassName={undefined}
-              cursorColorClassName={undefined}
-              selectionHandleColorClassName={undefined}
-              returnKeyType="search"
-              className="h-[34px] flex-1 px-0 py-0 font-sans text-base text-drawer-foreground"
-              value={props.searchQuery}
-            />
-          </View>
-        </View>
-      )}
-      {share.sheet}
-    </View>
+        )}
+        {share.sheet}
+      </View>
+    </SidebarSectionsContext>
   );
 }

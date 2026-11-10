@@ -229,6 +229,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.roomsLeave]: AuthOrchestrationReadScope,
   [WS_METHODS.roomsSetMuted]: AuthOrchestrationReadScope,
   [WS_METHODS.roomsMarkRead]: AuthOrchestrationReadScope,
+  // Each viewer's own sidebar layout.
+  [WS_METHODS.sidebarLayoutSubscribe]: AuthOrchestrationReadScope,
+  [WS_METHODS.sidebarLayoutSet]: AuthOrchestrationReadScope,
 } as const satisfies Readonly<Record<WsRpcMethod, AuthEnvironmentScope>>;
 
 /**
@@ -284,6 +287,9 @@ const MEMBER_RPC_POLICY = {
   [WS_METHODS.roomsSubscribeFeed]: "allow",
   [WS_METHODS.roomsRespond]: "allow",
   [WS_METHODS.roomsMarkRead]: "allow",
+  // Her own sidebar layout, stored under her member id.
+  [WS_METHODS.sidebarLayoutSubscribe]: "allow",
+  [WS_METHODS.sidebarLayoutSet]: "allow",
   [WS_METHODS.previewClose]: "deny",
   [WS_METHODS.previewStopLocalServer]: "deny",
   [WS_METHODS.serverRunStorageCleanup]: "deny",

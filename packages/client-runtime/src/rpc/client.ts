@@ -75,6 +75,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.membersSubscribe
   | typeof WS_METHODS.roomsSubscribe
   | typeof WS_METHODS.roomsSubscribeFeed
+  | typeof WS_METHODS.sidebarLayoutSubscribe
   | typeof WS_METHODS.terminalAttach
   | typeof WS_METHODS.terminalObserve;
 

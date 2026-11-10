@@ -104,6 +104,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.roomsSubscribeFeed]: "rooms",
   [WS_METHODS.roomsRespond]: "rooms",
   [WS_METHODS.roomsMarkRead]: "rooms",
+  [WS_METHODS.sidebarLayoutSubscribe]: "sidebarLayout",
+  [WS_METHODS.sidebarLayoutSet]: "sidebarLayout",
   [WS_METHODS.notificationsRegisterDeviceKey]: "notifications",
   [WS_METHODS.notificationsRemoveDeviceKey]: "notifications",
   [WS_METHODS.serverUpdateSettings]: "server",

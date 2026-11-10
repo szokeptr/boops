@@ -55,6 +55,7 @@ export * from "./project.ts";
 export * from "./bot.ts";
 export * from "./members.ts";
 export * from "./rooms.ts";
+export * from "./sidebarLayout.ts";
 export * from "./notificationKeys.ts";
 export * from "./filesystem.ts";
 export * from "./agentSessions.ts";

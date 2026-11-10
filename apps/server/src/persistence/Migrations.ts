@@ -95,6 +95,7 @@ import Migration0088 from "./Migrations/088_NotificationDeviceKeys.ts";
 import Migration0089 from "./Migrations/089_ProjectionProjectsTalksWithAnyBot.ts";
 import Migration0090 from "./Migrations/090_SecretVaults.ts";
 import Migration0091 from "./Migrations/091_Rooms.ts";
+import Migration0092 from "./Migrations/092_SidebarLayouts.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -189,6 +190,7 @@ const migrationEntries = [
   [89, "ProjectionProjectsTalksWithAnyBot", Migration0089],
   [90, "SecretVaults", Migration0090],
   [91, "Rooms", Migration0091],
+  [92, "SidebarLayouts", Migration0092],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

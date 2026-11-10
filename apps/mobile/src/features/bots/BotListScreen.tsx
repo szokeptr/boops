@@ -45,6 +45,8 @@ import { useBotShareSheet } from "../members/BotShareSheet";
 import { BotListRow, PinnedBotTiles } from "./BotListRow";
 import { useBotNavigation, useSelectedBotKey } from "./useBotNavigation";
 import { useBotRows } from "./useBotRows";
+import { renderBotSidebarItem } from "./BotSidebarItem";
+import { NewSectionRow, SidebarSectionsContext, useBotSidebarItems } from "./sidebarSections";
 
 const ESTIMATED_BOT_ROW_HEIGHT = 64;
 
@@ -223,6 +225,9 @@ export function BotListScreen(props: {
     );
   };
 
+  const { pinned, listed } = splitVisibleBotRows(rows, props.searchQuery);
+  const sidebar = useBotSidebarItems({ rows, listed, searchQuery: props.searchQuery });
+
   if (rows.length === 0) {
     const empty = deriveEmptyState(
       props.catalogState,
@@ -287,7 +292,6 @@ export function BotListScreen(props: {
     );
   }
 
-  const { pinned, listed } = splitVisibleBotRows(rows, props.searchQuery);
   const pinnedHeader =
     pinned.length > 0 ? (
       <PinnedBotTiles rows={pinned} selectedKey={selectedKey} {...botActions} />
@@ -296,65 +300,78 @@ export function BotListScreen(props: {
     <View className={containerClassName}>
       <ScreenContent surface="screen">
         <View className={cn("flex-1", Platform.OS !== "android" && contentBackground)}>
-          <LegendList
-            ref={listRef}
-            renderScrollComponent={Platform.OS === "ios" ? renderBotListScrollView : undefined}
-            data={listed}
-            keyExtractor={(row) => row.key}
-            extraData={selectedKey}
-            renderItem={({ item }) => (
-              <BotListRow
-                row={item}
-                selected={item.key === selectedKey}
-                machineKind={machineByEnvironmentId.get(item.environmentId)}
-                showMachineBadge={showMachineBadges}
-                {...botActions}
-              />
-            )}
-            estimatedItemSize={ESTIMATED_BOT_ROW_HEIGHT}
-            recycleItems
-            ListHeaderComponent={
-              <>
-                {Platform.OS === "ios" ? null : <View className="h-4" />}
-                {pinnedHeader}
-              </>
-            }
-            ListFooterComponent={<RoomListSection searchQuery={props.searchQuery} />}
-            ListEmptyComponent={
-              pinned.length > 0 ? undefined : (
-                <EmptyState
-                  title="No results"
-                  detail={`No bots matching "${props.searchQuery}".`}
-                  variant="plain"
-                />
-              )
-            }
-            style={{ flex: 1 }}
-            automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
-            // UIKit owns the bar's inset, so a minimizing bar and a resized column move
-            // the list in the same frame as the bar.
-            contentInsetAdjustmentBehavior="automatic"
-            contentInsetStartAdjustment={Platform.OS === "ios" ? insets.top : 0}
-            scrollToOverflowEnabled
-            initialScrollOffset={
-              initialScrollOffset > 0
-                ? initialScrollOffset - (Platform.OS === "ios" ? insets.top : 0)
-                : undefined
-            }
-            showsVerticalScrollIndicator={false}
-            keyboardDismissMode="on-drag"
-            keyboardShouldPersistTaps="handled"
-            onScroll={handleListScroll}
-            scrollEventThrottle={16}
-            contentContainerStyle={{
-              paddingLeft: (contentSideInsets?.left ?? 0) + 8 + androidListGutter,
-              paddingRight: (contentSideInsets?.right ?? 0) + 8 + androidListGutter,
-              paddingBottom:
-                Platform.OS === "ios"
-                  ? iosBottomClearance - (columnMetrics?.safeArea.bottom ?? insets.bottom)
-                  : (workspace?.bottomClearance ?? Math.max(insets.bottom, 16) + fabClearance),
-            }}
-          />
+          <SidebarSectionsContext value={sidebar.api}>
+            <LegendList
+              ref={listRef}
+              renderScrollComponent={Platform.OS === "ios" ? renderBotListScrollView : undefined}
+              data={sidebar.items}
+              keyExtractor={(item) => item.key}
+              getItemType={(item) => item.type}
+              extraData={selectedKey}
+              renderItem={({ item }) =>
+                renderBotSidebarItem(item, (row) => (
+                  <BotListRow
+                    row={row}
+                    selected={row.key === selectedKey}
+                    machineKind={machineByEnvironmentId.get(row.environmentId)}
+                    showMachineBadge={showMachineBadges}
+                    {...botActions}
+                  />
+                ))
+              }
+              estimatedItemSize={ESTIMATED_BOT_ROW_HEIGHT}
+              recycleItems
+              ListHeaderComponent={
+                <>
+                  {Platform.OS === "ios" ? null : <View className="h-4" />}
+                  {pinnedHeader}
+                </>
+              }
+              ListFooterComponent={
+                <>
+                  <RoomListSection
+                    searchQuery={props.searchQuery}
+                    placedKeys={sidebar.placedKeys}
+                  />
+                  <NewSectionRow searchQuery={props.searchQuery} />
+                </>
+              }
+              ListEmptyComponent={
+                pinned.length > 0 ? undefined : (
+                  <EmptyState
+                    title="No results"
+                    detail={`No bots matching "${props.searchQuery}".`}
+                    variant="plain"
+                  />
+                )
+              }
+              style={{ flex: 1 }}
+              automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
+              // UIKit owns the bar's inset, so a minimizing bar and a resized column move
+              // the list in the same frame as the bar.
+              contentInsetAdjustmentBehavior="automatic"
+              contentInsetStartAdjustment={Platform.OS === "ios" ? insets.top : 0}
+              scrollToOverflowEnabled
+              initialScrollOffset={
+                initialScrollOffset > 0
+                  ? initialScrollOffset - (Platform.OS === "ios" ? insets.top : 0)
+                  : undefined
+              }
+              showsVerticalScrollIndicator={false}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+              onScroll={handleListScroll}
+              scrollEventThrottle={16}
+              contentContainerStyle={{
+                paddingLeft: (contentSideInsets?.left ?? 0) + 8 + androidListGutter,
+                paddingRight: (contentSideInsets?.right ?? 0) + 8 + androidListGutter,
+                paddingBottom:
+                  Platform.OS === "ios"
+                    ? iosBottomClearance - (columnMetrics?.safeArea.bottom ?? insets.bottom)
+                    : (workspace?.bottomClearance ?? Math.max(insets.bottom, 16) + fabClearance),
+              }}
+            />
+          </SidebarSectionsContext>
         </View>
       </ScreenContent>
       {share.sheet}

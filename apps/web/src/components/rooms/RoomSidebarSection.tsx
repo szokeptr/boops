@@ -1,10 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
 import { botMessagePreview } from "@t3tools/client-runtime/state/bot-list";
+import { sidebarRoomKey } from "@t3tools/client-runtime/state/sidebar-sections";
 import {
   type ContextMenuItem,
   type EnvironmentId,
   roomParticipantKey,
   type RoomSummary,
+  type SidebarSectionId,
 } from "@t3tools/contracts";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { BellOffIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
@@ -16,6 +18,13 @@ import { useEnvironments } from "../../state/environments";
 import { memberEnvironment } from "../../state/members";
 import { useRooms } from "../../state/rooms";
 import { RelativeTime } from "../RelativeTime";
+import {
+  type SidebarEntryDnd,
+  sidebarEntryDndClassName,
+  useSidebarEntryDnd,
+  useSidebarUnsortedDrop,
+} from "../bots/sidebarDnd";
+import { useMoveToSectionMenu } from "../bots/sidebarSectionsContext";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { openCreateRoomDialog } from "./CreateRoomDialog";
@@ -26,15 +35,21 @@ const ROW_CLASS =
   "flex w-full cursor-pointer items-center gap-3 rounded-xl px-2 py-2 text-left outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[active=true]:bg-sidebar-row-selected";
 
 /** Newest conversation first, as a messages app sorts. */
-const lastActivity = (room: RoomSummary) => room.lastMessage?.createdAt ?? room.createdAt;
+export const lastActivity = (room: RoomSummary) => room.lastMessage?.createdAt ?? room.createdAt;
 
 function useMyKey(environmentId: EnvironmentId) {
   const sessionMember = useAtomValue(memberEnvironment.sessionMemberAtom(environmentId));
   return sessionMember === null ? "owner" : `member:${sessionMember.id}`;
 }
 
-/** Group chats on every connected machine, below the bots. */
-export function RoomSidebarSection({ onNavigate }: { readonly onNavigate?: () => void }) {
+/** Group chats on every connected machine, below the bots, except those placed in a section. */
+export function RoomSidebarSection({
+  onNavigate,
+  placedKeys,
+}: {
+  readonly onNavigate?: () => void;
+  readonly placedKeys?: ReadonlySet<string>;
+}) {
   const { environments } = useEnvironments();
   return (
     <>
@@ -42,6 +57,7 @@ export function RoomSidebarSection({ onNavigate }: { readonly onNavigate?: () =>
         <EnvironmentRooms
           key={environment.environmentId}
           environmentId={environment.environmentId}
+          placedKeys={placedKeys}
           {...(onNavigate ? { onNavigate } : {})}
         />
       ))}
@@ -52,21 +68,35 @@ export function RoomSidebarSection({ onNavigate }: { readonly onNavigate?: () =>
 function EnvironmentRooms({
   environmentId,
   onNavigate,
+  placedKeys,
 }: {
   readonly environmentId: EnvironmentId;
   readonly onNavigate?: () => void;
+  readonly placedKeys: ReadonlySet<string> | undefined;
 }) {
   const { rooms, canCreate } = useRooms(environmentId);
   const activeRoomId = useParams({ strict: false, select: (params) => params.roomId });
+  const { setNodeRef: setUnsortedDropRef, isOver: unsortedDropIsOver } = useSidebarUnsortedDrop(
+    `unsorted:rooms:${environmentId}`,
+  );
   const mine = rooms.filter((room) => room.joined);
   const open = mine
-    .filter((room) => room.archivedAt === null)
+    .filter(
+      (room) =>
+        room.archivedAt === null && !placedKeys?.has(sidebarRoomKey(environmentId, room.id)),
+    )
     .toSorted((a, b) => lastActivity(b).localeCompare(lastActivity(a)));
   const archived = mine.filter((room) => room.archivedAt !== null);
   if (mine.length === 0 && !canCreate) return null;
   return (
     <section aria-label="Group chats" className="mt-3 flex flex-col gap-px">
-      <div className="flex items-center justify-between px-2 pb-1">
+      <div
+        ref={setUnsortedDropRef}
+        className={cn(
+          "flex items-center justify-between rounded-md px-2 pb-1",
+          unsortedDropIsOver && "bg-sidebar-row-hover",
+        )}
+      >
         <h2 className="font-medium text-sidebar-muted-foreground text-xs">Group chats</h2>
         {canCreate ? (
           <Button
@@ -79,7 +109,7 @@ function EnvironmentRooms({
           </Button>
         ) : null}
       </div>
-      {open.length === 0 && canCreate ? (
+      {canCreate && !mine.some((room) => room.archivedAt === null) ? (
         <button
           type="button"
           onClick={() => openCreateRoomDialog(environmentId)}
@@ -90,8 +120,9 @@ function EnvironmentRooms({
       ) : null}
       <ul className="flex flex-col gap-px">
         {open.map((room) => (
-          <RoomRow
+          <DraggableRoomRow
             key={room.id}
+            sectionId={null}
             environmentId={environmentId}
             room={room}
             active={room.id === activeRoomId}
@@ -106,15 +137,37 @@ function EnvironmentRooms({
   );
 }
 
+/** A room row that drags into sections; `sectionId` is the section it shows in, if any. */
+export function DraggableRoomRow(props: {
+  readonly environmentId: EnvironmentId;
+  readonly room: RoomSummary;
+  readonly active: boolean;
+  readonly sectionId: SidebarSectionId | null;
+  readonly onNavigate?: () => void;
+}) {
+  const { sectionId, ...rowProps } = props;
+  const dnd = useSidebarEntryDnd(
+    {
+      kind: "item",
+      key: sidebarRoomKey(props.environmentId, props.room.id),
+      label: props.room.title,
+    },
+    sectionId,
+  );
+  return <RoomRow {...rowProps} dnd={dnd} />;
+}
+
 function RoomRow(props: {
   readonly environmentId: EnvironmentId;
   readonly room: RoomSummary;
   readonly active: boolean;
   readonly onNavigate?: () => void;
+  readonly dnd?: SidebarEntryDnd;
 }) {
   const { room } = props;
   const last = room.lastMessage;
   const showMenu = useRoomContextMenu(props.environmentId);
+  const moveMenu = useMoveToSectionMenu(sidebarRoomKey(props.environmentId, room.id));
   const myKey = useMyKey(props.environmentId);
   const preview =
     last === null
@@ -123,14 +176,18 @@ function RoomRow(props: {
           botMessagePreview(last.text) ?? (last.attachments.length > 0 ? "Sent an attachment" : "")
         }`;
   return (
-    <li>
+    <li
+      ref={props.dnd?.setNodeRef}
+      {...props.dnd?.listeners}
+      className={sidebarEntryDndClassName(props.dnd)}
+    >
       <Link
         to="/rooms/$environmentId/$roomId"
         params={{ environmentId: props.environmentId, roomId: room.id }}
         data-active={props.active}
         className={ROW_CLASS}
         onClick={props.onNavigate}
-        onContextMenu={(event) => void showMenu(room, event)}
+        onContextMenu={(event) => void showMenu(room, event, moveMenu)}
       >
         <RoomAvatar
           environmentId={props.environmentId}
@@ -234,18 +291,24 @@ function useRoomContextMenu(environmentId: EnvironmentId) {
   const navigate = useNavigate();
   const activeRoomId = useParams({ strict: false, select: (params) => params.roomId });
   const myKey = useMyKey(environmentId);
-  return async (room: RoomSummary, event: MouseEvent) => {
+  return async (
+    room: RoomSummary,
+    event: MouseEvent,
+    moveMenu: ReturnType<typeof useMoveToSectionMenu>,
+  ) => {
     const api = readLocalApi();
     if (!api) return;
     event.preventDefault();
     const canManage = myKey === "owner" || roomParticipantKey(room.createdBy) === myKey;
-    const items: Array<ContextMenuItem<"mute" | "archive" | "leave" | "delete">> = [
+    const items: Array<ContextMenuItem> = [
       { id: "mute", label: room.muted ? "Unmute" : "Mute" },
+      ...moveMenu.items,
     ];
     if (canManage) items.push({ id: "archive", label: "Archive" });
     items.push({ id: "leave", label: "Leave", separatorBefore: true });
     if (canManage) items.push({ id: "delete", label: "Delete…", destructive: true });
     const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
+    if (moveMenu.handle(action)) return;
     const away = async () => {
       if (activeRoomId === room.id) await navigate({ to: "/" });
     };

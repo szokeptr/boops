@@ -1,4 +1,5 @@
 import type { BotRow, BotStatus } from "@t3tools/client-runtime/state/bot-list";
+import { sidebarBotKey } from "@t3tools/client-runtime/state/sidebar-sections";
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import type { ReactNode } from "react";
@@ -12,6 +13,7 @@ import { Menu } from "../../components/ui/Menu";
 import { cn } from "../../lib/cn";
 import { memberEnvironment, useIsMemberEnvironment } from "../../state/members";
 import { BotAvatarSlot } from "./BotAvatarSlot";
+import { useMoveToSectionAction } from "./sidebarSections";
 
 const STATUS_PRESENTATION = {
   "needs-you": {
@@ -90,6 +92,7 @@ function BotEntryMenu(
   // A member's device chats with someone else's bot: pinning and sharing stay with the owner.
   const member = useIsMemberEnvironment(row.environmentId);
   const canShare = useAtomValue(memberEnvironment.setBotAccess.permissionAtom(row.environmentId));
+  const move = useMoveToSectionAction(sidebarBotKey(row.environmentId, row.projectId));
   const actions = [
     ...(member
       ? []
@@ -114,6 +117,7 @@ function BotEntryMenu(
           },
         ]
       : []),
+    ...move.actions,
   ];
   return (
     <Menu
@@ -121,6 +125,7 @@ function BotEntryMenu(
       shouldOpenOnLongPress
       {...(props.style ? { style: props.style } : {})}
       onPressAction={({ nativeEvent }) => {
+        if (move.handle(nativeEvent.event)) return;
         if (nativeEvent.event === "pin" || nativeEvent.event === "unpin") {
           props.onSetPinned(row, !pinned);
         }

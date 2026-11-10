@@ -9,6 +9,7 @@ import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { RelativeTime } from "../RelativeTime";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { BotAvatar } from "./BotAvatar";
+import { type SidebarEntryDnd, sidebarEntryDndClassName } from "./sidebarDnd";
 
 export interface BotListProps {
   /** Shown as avatars above the list, in this order. */
@@ -80,7 +81,7 @@ function botRowLabel(row: BotRow): string {
     .join(", ");
 }
 
-interface BotEntryProps {
+export interface BotEntryProps {
   readonly row: BotRow;
   readonly isActive: boolean;
   readonly jumpLabel: string | null;
@@ -155,15 +156,20 @@ function PinnedBotTile(props: BotEntryProps) {
   );
 }
 
-function BotListRow(
+export function BotListRow(
   props: BotEntryProps & {
     readonly showMachineBadge: boolean;
     readonly machineKind: EnvironmentMachineKind;
+    readonly dnd?: SidebarEntryDnd;
   },
 ) {
   const { row } = props;
   return (
-    <li className="group/bot relative list-none">
+    <li
+      ref={props.dnd?.setNodeRef}
+      {...props.dnd?.listeners}
+      className={cn("group/bot relative list-none", sidebarEntryDndClassName(props.dnd))}
+    >
       <BotEntryTarget {...props} className={ROW_CLASS}>
         <BotAvatar avatar={row.avatar} name={row.name} size={44} {...rowAvatarProps(row)} />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
