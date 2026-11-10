@@ -249,13 +249,19 @@ export function ComposerActionButton(props: {
   readonly icon: ComponentProps<typeof SymbolView>["name"];
   /** Omitted when a Menu wrapping the button opens on tap. */
   readonly onPress?: () => void;
-  readonly variant?: "primary" | "danger";
+  readonly variant?: "primary" | "danger" | "neutral";
+  /** Replaces the primary fill, such as a bot's colour in its DM. */
+  readonly accent?: { readonly background: string; readonly foreground: string } | null;
   // Menu injects onLongPress on Android and onTouchStart/onPress on iOS.
   readonly onLongPress?: PressableProps["onLongPress"];
   readonly onTouchStart?: PressableProps["onTouchStart"];
 }) {
   const { scale, smallIconSize } = useAndroidControlSizing();
   const circleSize = Math.round((props.size === "large" ? 44 : 30) * scale);
+  const accent =
+    props.accent != null && !props.disabled && (props.variant ?? "primary") === "primary"
+      ? props.accent
+      : null;
   return (
     <Pressable
       accessibilityLabel={props.accessibilityLabel}
@@ -269,27 +275,39 @@ export function ComposerActionButton(props: {
       onTouchStart={props.onTouchStart}
     >
       <View
-        style={{ width: circleSize, height: circleSize }}
+        style={[
+          { width: circleSize, height: circleSize },
+          accent ? { backgroundColor: accent.background } : null,
+        ]}
         className={cn(
           "items-center justify-center rounded-full",
           props.variant === "danger"
             ? "bg-danger"
             : props.disabled
               ? "bg-foreground/12"
-              : "bg-primary",
+              : props.variant === "neutral"
+                ? "bg-foreground/16"
+                : accent
+                  ? null
+                  : "bg-primary",
         )}
       >
         <SymbolView
           name={props.icon}
           size={props.size === "large" ? Math.round(20 * scale) : smallIconSize}
           weight="semibold"
-          tintColorClassName={
-            props.variant === "danger"
-              ? "accent-danger-foreground"
-              : props.disabled
-                ? "accent-foreground/38"
-                : "accent-primary-foreground"
-          }
+          {...(accent
+            ? { tintColor: accent.foreground }
+            : {
+                tintColorClassName:
+                  props.variant === "danger"
+                    ? "accent-danger-foreground"
+                    : props.disabled
+                      ? "accent-foreground/38"
+                      : props.variant === "neutral"
+                        ? "accent-foreground"
+                        : "accent-primary-foreground",
+              })}
           type="monochrome"
         />
       </View>

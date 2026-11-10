@@ -1633,6 +1633,7 @@ function ThreadDetailBody(
                       onAdvance={advanceBotQuestion}
                       onSubmit={props.onSubmitUserInput}
                       onDismiss={props.onDismissUserInput}
+                      accent={botBubbleColors(props.botAvatar ?? specFor(props.botName ?? ""))}
                     />
                   ) : null
                 }
@@ -2009,6 +2010,11 @@ function ThreadDetailBody(
                   ) : (
                     <>
                       <ThreadComposer
+                        accent={
+                          directMessage
+                            ? botBubbleColors(props.botAvatar ?? specFor(props.botName ?? ""))
+                            : null
+                        }
                         isDraft={Boolean(props.draftMode)}
                         canOperateThread={props.canOperateThread}
                         reportedModelSelection={reportedModelSelection}

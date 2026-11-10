@@ -305,11 +305,14 @@ export function BotsHeaderRow() {
 /** At the end of the list: start a section. */
 export function NewSectionRow(props: { readonly searchQuery: string }) {
   const api = use(SidebarSectionsContext);
-  if (api === null || props.searchQuery.trim().length > 0) return null;
+  // Until the first section exists, a bot's long-press "Move to section" makes one.
+  if (api === null || api.layout.sections.length === 0 || props.searchQuery.trim().length > 0) {
+    return null;
+  }
   return (
     <Pressable
       accessibilityRole="button"
-      className="mt-3 min-h-11 flex-row items-center gap-2 self-start rounded-xl px-2 active:opacity-70"
+      className="mt-3 min-h-[44px] flex-row items-center gap-2 self-start rounded-xl px-2 active:opacity-70"
       onPress={() => createSidebarSection(api)}
     >
       <SymbolView name="plus" size={14} tintColorClassName="accent-foreground-muted" />

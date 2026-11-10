@@ -56,3 +56,23 @@ export function getQuestionAnswerExchange(answer: UserInputAttachmentAnswerPaylo
     reply: hasQuestionAnswer(answer) ? getQuestionAnswerPreview(answer) : "",
   };
 }
+
+/** Each answered question beside what the user picked or wrote, in the order they were asked. */
+export function getQuestionAnswerPairs(
+  answer: UserInputAttachmentAnswerPayload,
+): ReadonlyArray<{ readonly id: string; readonly question: string; readonly answer: string }> {
+  const ids = [
+    ...new Set([
+      ...Object.keys(answer.questionTextById ?? {}),
+      ...Object.keys(answer.answers),
+      ...Object.keys(answer.attachmentsByQuestionId),
+    ]),
+  ];
+  return ids.flatMap((id) => {
+    const question = answer.questionTextById?.[id]?.trim() ?? "";
+    const text = getQuestionAnswerText(answer.answers[id]).trim();
+    const files = (answer.attachmentsByQuestionId[id] ?? []).map((file) => file.name).join(", ");
+    const reply = [text, files].filter(Boolean).join(" · ");
+    return question || reply ? [{ id, question, answer: reply }] : [];
+  });
+}

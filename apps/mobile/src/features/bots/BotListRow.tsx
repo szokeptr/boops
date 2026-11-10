@@ -3,7 +3,7 @@ import { sidebarBotKey } from "@t3tools/client-runtime/state/sidebar-sections";
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import type { ReactNode } from "react";
-import { Pressable, View, type ViewStyle } from "react-native";
+import { Pressable, View } from "react-native";
 
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { RelativeTime } from "../../components/RelativeTime";
@@ -84,7 +84,6 @@ function BotEntryMenu(
   props: BotEntryActions & {
     readonly row: BotRow;
     readonly children: ReactNode;
-    readonly style?: ViewStyle;
   },
 ) {
   const { row } = props;
@@ -123,7 +122,6 @@ function BotEntryMenu(
     <Menu
       actions={actions}
       shouldOpenOnLongPress
-      {...(props.style ? { style: props.style } : {})}
       onPressAction={({ nativeEvent }) => {
         if (move.handle(nativeEvent.event)) return;
         if (nativeEvent.event === "pin" || nativeEvent.event === "unpin") {
@@ -138,6 +136,8 @@ function BotEntryMenu(
   );
 }
 
+const ROW_AVATAR_SIZE = 50;
+
 export function BotListRow(
   props: BotEntryActions & {
     readonly row: BotRow;
@@ -148,27 +148,36 @@ export function BotListRow(
 ) {
   const { row, selected } = props;
   const foreground = selected ? "text-thread-selected-foreground" : "text-foreground";
-  const muted = selected ? "text-thread-selected-foreground-muted" : "text-foreground-muted";
+  const muted = selected ? "text-thread-selected-foreground-muted" : "text-foreground/65";
+  // Time and activity sit a step below the preview, so the name and message lead.
+  const faint = selected
+    ? "text-thread-selected-foreground-muted"
+    : "text-foreground-muted opacity-75";
   const mutedTint = selected
     ? "accent-thread-selected-foreground-muted"
     : "accent-foreground-muted";
   return (
-    <View className={cn("flex-row items-center rounded-xl", selected && "bg-thread-selected")}>
-      <BotEntryMenu {...props} style={{ flex: 1 }}>
+    <View className={cn("rounded-2xl", selected && "bg-thread-selected")}>
+      <BotEntryMenu {...props}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={botRowLabel(row)}
           accessibilityState={{ selected }}
-          className="min-w-0 flex-1 flex-row items-center gap-3 rounded-xl py-2 pl-2 active:opacity-70"
+          className="min-w-0 flex-row items-center gap-3.5 rounded-2xl py-3 pr-3 pl-2 active:opacity-70"
           onPress={() => props.onOpen(row)}
         >
-          <BotAvatarSlot avatar={row.avatar} name={row.name} status={row.status} size={44} />
-          <View className="min-w-0 flex-1 gap-0.5">
+          <BotAvatarSlot
+            avatar={row.avatar}
+            name={row.name}
+            status={row.status}
+            size={ROW_AVATAR_SIZE}
+          />
+          <View className="min-w-0 flex-1 gap-1">
             <View className="flex-row items-center gap-2">
               <Text
                 numberOfLines={1}
                 className={cn(
-                  "min-w-0 flex-1 text-base",
+                  "min-w-0 flex-1 text-[17px]",
                   row.unread ? "font-t3-bold" : "font-t3-medium",
                   foreground,
                 )}
@@ -182,33 +191,48 @@ export function BotListRow(
                   tintColorClassName={mutedTint}
                 />
               ) : null}
-              <Text className={cn("text-xs tabular-nums", muted)}>
+              <Text className={cn("text-[13px] tabular-nums", faint)}>
                 <RelativeTime timestamp={row.lastActivityAt} />
               </Text>
             </View>
             <Text
               numberOfLines={1}
-              className={cn("min-w-0 text-sm", row.unread ? foreground : muted)}
+              className={cn(
+                // The bold name carries unread; the preview stays quiet either way.
+                "min-w-0 text-[15px]",
+                muted,
+                // Room for the activity button laid over the row's trailing edge.
+                row.activityThreadCount > 0 && "pr-10",
+              )}
             >
               {botPreview(row)}
             </Text>
           </View>
         </Pressable>
       </BotEntryMenu>
+      {/* A sibling, not nested in the row, so VoiceOver reaches it. Centred on the preview line
+          and kept below the time, so a tap on the time still opens the chat. */}
       {row.activityThreadCount > 0 ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${row.name} activity (${row.activityThreadCount})`}
-          hitSlop={4}
-          className="h-11 min-w-11 flex-row items-center justify-center gap-0.5 rounded-lg px-2 active:opacity-70"
+          className={cn(
+            "absolute right-0 bottom-[5px] h-[38px] min-w-[52px] flex-row items-center justify-end gap-0.5 pr-3 active:opacity-60",
+            !selected && "opacity-75",
+          )}
           onPress={() => props.onOpenActivity(row)}
         >
-          <SymbolView name="clock" size={13} tintColorClassName={mutedTint} type="monochrome" />
-          <Text className={cn("text-xs tabular-nums", muted)}>{row.activityThreadCount}</Text>
+          <SymbolView name="clock" size={12} tintColorClassName={mutedTint} type="monochrome" />
+          <Text
+            className={cn(
+              "text-[13px] tabular-nums",
+              selected ? "text-thread-selected-foreground-muted" : "text-foreground-muted",
+            )}
+          >
+            {row.activityThreadCount}
+          </Text>
         </Pressable>
-      ) : (
-        <View className="w-3" />
-      )}
+      ) : null}
     </View>
   );
 }
@@ -221,7 +245,7 @@ export function PinnedBotTiles(
   },
 ) {
   return (
-    <View accessibilityLabel="Pinned bots" className="flex-row flex-wrap justify-center pb-2">
+    <View accessibilityLabel="Pinned bots" className="flex-row flex-wrap justify-center pt-1 pb-4">
       {props.rows.map((row) => {
         const selected = row.key === props.selectedKey;
         return (
@@ -245,13 +269,17 @@ export function PinnedBotTiles(
                     size={96}
                   />
                   {row.unread ? (
-                    <View className="absolute top-1 right-1 size-3 rounded-full bg-primary" />
+                    // Inset onto the body's upper-right shoulder rather than the square canvas corner.
+                    <View
+                      className="absolute size-3.5 rounded-full border-2 border-screen bg-primary"
+                      style={{ top: 14, right: 14 }}
+                    />
                   ) : null}
                 </View>
                 <Text
                   numberOfLines={1}
                   className={cn(
-                    "-mt-1 text-base",
+                    "mt-1 text-[15px]",
                     row.unread ? "font-t3-bold" : "font-t3-medium",
                     selected ? "text-thread-selected-foreground" : "text-foreground",
                   )}

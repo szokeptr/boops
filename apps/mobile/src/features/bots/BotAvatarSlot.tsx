@@ -16,6 +16,7 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 
+import { useReduceMotionEnabled } from "../../lib/appState";
 import { cn } from "../../lib/cn";
 
 const STATUS_DOT_CLASS: Partial<Record<BotStatus, string>> = {
@@ -63,8 +64,12 @@ export function BotAvatarSlot(props: {
   readonly status: BotStatus;
   /** Points square. Below 24 the accessory drops and a dot carries the status. */
   readonly size: number;
+  /** False holds the working dots still; defaults to following Reduce Motion. */
+  readonly animate?: boolean;
 }) {
   const { avatar, name, status, size } = props;
+  const reduceMotion = useReduceMotionEnabled();
+  const animate = props.animate ?? !reduceMotion;
   const look = useMemo(() => lookFor(avatar, name), [avatar, name]);
   const shapes = useMemo(
     () =>
@@ -85,7 +90,10 @@ export function BotAvatarSlot(props: {
       </Svg>
       {status === "working" ? (
         <Image
+          // expo-image reads autoplay only when the image is set, so a change remounts it.
+          key={animate ? "play" : "still"}
           source={{ uri: workingDotsDataUrl() }}
+          autoplay={animate}
           style={{ position: "absolute", ...workingDotsBox(look, size) }}
         />
       ) : null}

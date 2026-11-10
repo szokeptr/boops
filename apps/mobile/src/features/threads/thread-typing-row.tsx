@@ -2,9 +2,12 @@ import { useIsFocused } from "@react-navigation/native";
 import { type ReactNode, useEffect, useState } from "react";
 import { Animated as NativeAnimated, Easing, View, useAnimatedValue } from "react-native";
 
+import type { ProjectAvatar } from "@t3tools/contracts";
+
 import { AppText as Text } from "../../components/ui/AppText";
 import { usePaneRole } from "../../components/ui/Pane";
 import { useAppActive, useReduceMotionEnabled } from "../../lib/appState";
+import { BotAvatarSlot } from "../bots/BotAvatarSlot";
 import { ShimmeringWorkContent } from "./thread-work-log";
 
 const TYPING_LABELS = [
@@ -20,6 +23,7 @@ const TYPING_CYCLE_MS = 1500;
 const TYPING_STAGGER_MS = 160;
 // Share of the cycle each dot spends rising and settling; the rest is a pause.
 const TYPING_RISE_SHARE = 0.44;
+const BOT_FACE_SIZE = 26;
 
 function TypingDot(props: { readonly index: number; readonly progress: NativeAnimated.Value }) {
   const start = (props.index * TYPING_STAGGER_MS) / TYPING_CYCLE_MS;
@@ -71,6 +75,8 @@ export function ThreadTypingRow(props: {
   readonly startedAt: string;
   readonly minHeight: number;
   readonly name?: string | null;
+  /** In a bot's DM, its own working face stands in for the dots. */
+  readonly bot?: { readonly name: string; readonly avatar: ProjectAvatar | null } | null;
 }) {
   const seed = [...props.startedAt].reduce((sum, char) => sum + char.charCodeAt(0), 0);
   const focused = useIsFocused();
@@ -80,7 +86,9 @@ export function ThreadTypingRow(props: {
   // Not gated on list viewability: a freshly appended row often never gets a
   // viewability pass, and an off-screen native-driver loop costs no commits.
   const visible = (focused || inSidebar) && appActive;
-  const waving = visible && !reduceMotion;
+  const bot = props.bot ?? null;
+  const animating = visible && !reduceMotion;
+  const waving = animating && bot === null;
   const [step, setStep] = useState(0);
   const label = TYPING_LABELS[(seed + step) % TYPING_LABELS.length]!;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rotates the label on a timer, only while the screen is showing
@@ -116,11 +124,21 @@ export function ThreadTypingRow(props: {
       className="flex-row items-center gap-2.5 px-1"
       style={{ minHeight: props.minHeight }}
     >
-      <View className="flex-row items-center gap-1.25">
-        {TYPING_DOTS.map((dot) => (
-          <TypingDot key={dot} index={dot} progress={progress} />
-        ))}
-      </View>
+      {bot ? (
+        <BotAvatarSlot
+          avatar={bot.avatar}
+          name={bot.name}
+          status="working"
+          size={BOT_FACE_SIZE}
+          animate={animating}
+        />
+      ) : (
+        <View className="flex-row items-center gap-1.25">
+          {TYPING_DOTS.map((dot) => (
+            <TypingDot key={dot} index={dot} progress={progress} />
+          ))}
+        </View>
+      )}
       <FadeIn key={label} animate={step > 0 && !reduceMotion}>
         <ShimmeringWorkContent
           className="flex-none"

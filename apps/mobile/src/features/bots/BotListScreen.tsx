@@ -49,7 +49,7 @@ import { renderBotSidebarItem } from "./BotSidebarItem";
 import { NewSectionRow, SidebarSectionsContext, useBotSidebarItems } from "./sidebarSections";
 import { useWarmBotThreads } from "./useWarmBotThreads";
 
-const ESTIMATED_BOT_ROW_HEIGHT = 64;
+const ESTIMATED_BOT_ROW_HEIGHT = 72;
 
 function deriveEmptyState(
   catalogState: WorkspaceState,

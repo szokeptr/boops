@@ -228,6 +228,8 @@ export interface ThreadComposerProps {
   readonly isDraft?: boolean;
   readonly canOperateThread: boolean;
   readonly placeholder: string;
+  /** A bot's DM wears its colour on send, and stopping it reads as a pause, not an alarm. */
+  readonly accent?: { readonly background: string; readonly foreground: string } | null;
   readonly contentMaxWidth?: number;
   readonly draftControls?: ReactNode;
   readonly bottomInset?: number;
@@ -325,6 +327,7 @@ const FOLLOW_UP_ACTION_SUBTITLE = {
 
 function SendActionButton(props: {
   readonly size?: "regular" | "large";
+  readonly accent: { readonly background: string; readonly foreground: string } | null;
   readonly accessibilityLabel: string;
   readonly presentation: ComposerSendPresentation;
   readonly disabled: boolean;
@@ -337,6 +340,7 @@ function SendActionButton(props: {
       size={props.size}
       icon={presentation.icon}
       variant="primary"
+      accent={props.accent}
       disabled={props.disabled}
       onPress={() => props.onSend()}
     />
@@ -1115,7 +1119,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                     size={usesLargeControls ? "large" : "regular"}
                     accessibilityLabel="Stop agent"
                     icon="stop.fill"
-                    variant="danger"
+                    variant={props.accent ? "neutral" : "danger"}
                     disabled={!props.canOperateThread}
                     onPress={props.onStopThread}
                   />
@@ -1132,6 +1136,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                     size={usesLargeControls ? "large" : "regular"}
                     accessibilityLabel={sendBlockedReason ?? sendLabel}
                     presentation={sendPresentation}
+                    accent={props.accent ?? null}
                     disabled={!canSend}
                     onSend={handleSend}
                   />
@@ -1183,7 +1188,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                       size={usesLargeControls ? "large" : "regular"}
                       accessibilityLabel="Stop agent"
                       icon="stop.fill"
-                      variant="danger"
+                      variant={props.accent ? "neutral" : "danger"}
                       disabled={!props.canOperateThread}
                       onPress={props.onStopThread}
                     />
@@ -1200,6 +1205,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                       size={usesLargeControls ? "large" : "regular"}
                       accessibilityLabel={sendBlockedReason ?? sendLabel}
                       presentation={sendPresentation}
+                      accent={props.accent ?? null}
                       disabled={!canSend}
                       onSend={handleSend}
                     />

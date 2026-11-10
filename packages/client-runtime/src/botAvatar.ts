@@ -436,7 +436,9 @@ function faceParts(face: BotAvatarFace, body: Body, c: AvatarColors, detail: boo
           : [],
       };
     case "needs-you": {
-      const badgeY = Math.max(9, y - 18);
+      // A sticker on the bottom-right shoulder, like a notification badge, clear of hats and bows.
+      const badgeX = Math.min(51, 29 + body.halfWidth);
+      const badgeY = 51;
       return {
         cheeks: 0.5,
         gaze: [
@@ -453,15 +455,21 @@ function faceParts(face: BotAvatarFace, body: Body, c: AvatarColors, detail: boo
         still: [],
         overlay: detail
           ? [
-              { kind: "circle", cx: 13, cy: badgeY, r: 6.2, fill: AMBER },
               {
                 kind: "path",
-                d: `M13 ${badgeY - 3.2}v3.6`,
+                d: `M${badgeX - 8.4} ${badgeY}a8.4 8.4 0 1 0 16.8 0a8.4 8.4 0 1 0 -16.8 0`,
+                fill: AMBER,
                 stroke: INK,
-                strokeWidth: 2.2,
+                strokeWidth: 1.6,
+              },
+              {
+                kind: "path",
+                d: `M${badgeX} ${badgeY - 4.2}v4.6`,
+                stroke: INK,
+                strokeWidth: 2.6,
                 linecap: "round",
               },
-              { kind: "circle", cx: 13, cy: badgeY + 3.4, r: 1.2, fill: INK },
+              { kind: "circle", cx: badgeX, cy: badgeY + 4.2, r: 1.4, fill: INK },
             ]
           : [],
       };

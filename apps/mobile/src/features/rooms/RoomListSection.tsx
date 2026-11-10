@@ -101,6 +101,24 @@ function EnvironmentRooms(props: {
     return null;
   }
   const createRoom = () => navigation.navigate("CreateRoom", { environmentId });
+  if (joined.length === 0) {
+    // With no group chats yet, one quiet row stands in for the whole section.
+    return (
+      <Pressable
+        accessibilityRole="button"
+        className="mt-2 min-h-[44px] flex-row items-center gap-3.5 self-start rounded-xl pr-3 pl-2 active:opacity-70"
+        onPress={createRoom}
+      >
+        {/* Centred in the avatar column, so the label starts where bot names do. */}
+        <View className="w-[50px] items-center">
+          <SymbolView name="person.2" size={17} tintColorClassName="accent-foreground-muted" />
+        </View>
+        <Text className="text-[15px] text-foreground-muted">
+          {props.label === null ? "Start a group chat" : `Start a group chat on ${props.label}`}
+        </Text>
+      </Pressable>
+    );
+  }
   return (
     <View accessibilityLabel="Group chats" className="mt-4">
       <View className="min-h-9 flex-row items-center justify-between pr-1 pl-2">
@@ -119,17 +137,6 @@ function EnvironmentRooms(props: {
           </Pressable>
         ) : null}
       </View>
-      {joined.length === 0 ? (
-        <Pressable
-          accessibilityRole="button"
-          className="rounded-xl px-2 py-2 active:opacity-70"
-          onPress={createRoom}
-        >
-          <Text className="text-sm text-foreground-muted">
-            Talk with your bots and people together. Start a group chat.
-          </Text>
-        </Pressable>
-      ) : null}
       {active.map((room) => (
         <RoomListRow
           key={room.id}

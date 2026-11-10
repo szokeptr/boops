@@ -27,6 +27,7 @@ import { botBubbleColors } from "@t3tools/client-runtime/bot-avatar";
 import { specFor } from "@t3tools/shared/botAvatar";
 import { BotAvatarSlot } from "../bots/BotAvatarSlot";
 import { ThreadBotExchangeRow } from "./ThreadBotExchangeRow";
+import { BotAnsweredQuestionCard } from "./BotQuestionCard";
 import { ThreadRoutineRunsRow } from "./ThreadRoutineRunsRow";
 import { GuestBubbleTint, GuestMessageName } from "./guestMessageStyle";
 import { ThreadGuestPendingMessage, useThreadGuestShare } from "./ThreadGuestShareBar";
@@ -1899,6 +1900,7 @@ function renderFeedEntry(
     return (
       <ThreadTypingRow
         name={props.typingName}
+        bot={props.typingName ? null : props.conversationBot}
         startedAt={entry.createdAt}
         minHeight={props.workRowSizing.estimatedRowHeight}
       />
@@ -1957,6 +1959,17 @@ function renderFeedEntry(
               skills={props.skills}
             />
           </MarkdownImageAvailableWidthContext>
+        )}
+      />
+    );
+  }
+
+  if (entry.type === "answered-question") {
+    return (
+      <BotAnsweredQuestionCard
+        answers={entry.answers}
+        accent={botBubbleColors(
+          props.conversationBot.avatar ?? specFor(props.conversationBot.name),
         )}
       />
     );

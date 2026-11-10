@@ -86,7 +86,7 @@ import {
   type RoutineRunFold,
   withoutSilentRoutineWakes,
 } from "@t3tools/client-runtime/user-message";
-import { getQuestionAnswerExchange } from "@t3tools/client-runtime/work-log/user-input";
+import { getQuestionAnswerPairs } from "@t3tools/client-runtime/work-log/user-input";
 
 export type PendingApproval = ThreadPendingApproval;
 export type PendingUserInput = ThreadPendingUserInput;
@@ -259,7 +259,20 @@ type ThreadFeedEntryContent =
       readonly runId: RunId | null;
     }
   | ThreadFeedBotExchange
-  | ThreadFeedRoutineRuns;
+  | ThreadFeedRoutineRuns
+  | ThreadFeedAnsweredQuestion;
+
+/** A bot's answered question in its DM, kept as a quiet card where it was asked. */
+export interface ThreadFeedAnsweredQuestion {
+  readonly type: "answered-question";
+  readonly id: string;
+  readonly createdAt: string;
+  readonly answers: ReadonlyArray<{
+    readonly id: string;
+    readonly question: string;
+    readonly answer: string;
+  }>;
+}
 
 /** Earlier back-to-back runs of one routine in a bot's DM, folded behind its newest run. */
 export interface ThreadFeedRoutineRuns {
@@ -1382,7 +1395,11 @@ function latestRunsEqual(left: ThreadFeedLatestRun | null, right: ThreadFeedLate
 
 function feedEntryRunId(entry: ThreadFeedEntry): RunId | null {
   if (entry.type === "message") return entry.message.runId ?? null;
-  return entry.type === "bot-exchange" || entry.type === "routine-runs" ? null : entry.runId;
+  return entry.type === "bot-exchange" ||
+    entry.type === "routine-runs" ||
+    entry.type === "answered-question"
+    ? null
+    : entry.runId;
 }
 
 function isUserMessageEntry(entry: ThreadFeedEntry | undefined): boolean {
@@ -1792,35 +1809,14 @@ function routineRunsRow({ routine, runs }: RoutineRunFold<ThreadFeedEntry>): Thr
   return row;
 }
 
-/**
- * A DM drops the work an answered question lives in, so it reads as the bot asking and you
- * replying. Neither bubble is a real message, so neither is editable.
- */
+/** A DM drops the work an answered question lives in and keeps the question and answer as a card. */
 function answeredQuestionMessages(activity: ThreadFeedActivity): ThreadFeedEntry[] {
   const answer = activity.workEntry.questionAnswer;
   if (answer === undefined) return [];
-  const { question, reply } = getQuestionAnswerExchange(answer);
-  const bubble = (side: "question" | "reply", role: "assistant" | "user", text: string) => ({
-    type: "message" as const,
-    id: `${activity.id}:${side}`,
-    createdAt: activity.createdAt,
-    message: {
-      id: `${side}:${answer.requestId}` as MessageId,
-      role,
-      text,
-      attachments: [],
-      runId: null,
-      streaming: false,
-      visibility: activity.projectedItem.visibility,
-      sourceThreadId: activity.projectedItem.sourceThreadId,
-      createdAt: activity.createdAt,
-      updatedAt: activity.createdAt,
-    },
-  });
-  return [
-    ...(question ? [bubble("question", "assistant", question)] : []),
-    ...(reply ? [bubble("reply", "user", reply)] : []),
-  ];
+  const answers = getQuestionAnswerPairs(answer);
+  return answers.length === 0
+    ? []
+    : [{ type: "answered-question", id: activity.id, createdAt: activity.createdAt, answers }];
 }
 
 const sentBotMessageCache = new WeakMap<ThreadFeedActivity, ThreadFeedSentBotMessage>();

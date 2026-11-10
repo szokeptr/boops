@@ -976,7 +976,7 @@ describe("buildThreadFeed", () => {
       deriveDirectMessageFeed(dmFeed, "2026-06-20T00:00:01.000Z").map((entry) => entry.type),
     ).toEqual(["message", "message", "message", "message", "thinking"]);
 
-    // An answered question reads as the bot asking and you replying, where it was asked.
+    // An answered question stays a card where it was asked: what the bot asked and what you picked.
     const hatchRequestId = RuntimeRequestId.make("hatch-question");
     const answeredFeed = buildThreadFeed([
       projected(userMessage(), 0),
@@ -998,13 +998,25 @@ describe("buildThreadFeed", () => {
       projected(assistantMessage(), 2),
     ]);
     expect(
-      deriveDirectMessageFeed(answeredFeed, null).flatMap((entry) =>
-        entry.type === "message" ? [[entry.message.role, entry.message.text]] : [],
+      deriveDirectMessageFeed(answeredFeed, null).map((entry) =>
+        entry.type === "message"
+          ? [entry.message.role, entry.message.text]
+          : entry.type === "answered-question"
+            ? ["answered", entry.answers]
+            : [entry.type],
       ),
     ).toEqual([
       ["user", "Run checks"],
-      ["assistant", "What should I take off your plate first?"],
-      ["user", "Email and calendar"],
+      [
+        "answered",
+        [
+          {
+            id: "purpose",
+            question: "What should I take off your plate first?",
+            answer: "Email and calendar",
+          },
+        ],
+      ],
       ["assistant", "Done"],
     ]);
 
