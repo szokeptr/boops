@@ -92,6 +92,18 @@ describe.each(["react-native.js", "react-native.mjs"])(
       expect(list.onLoad).toHaveBeenCalledTimes(1);
     });
 
+    it("pins a list resting a point short of its end before revealing", () => {
+      const list = createList(bundle);
+      list.state.lastNativeScroll = 399;
+      list.start();
+      list.advance(8);
+      expect(list.scrollTo).toHaveBeenCalledWith({ animated: false, x: 0, y: 400 });
+      expect(list.ready()).toBe(false);
+      list.state.lastNativeScroll = 400;
+      list.advance(7);
+      expect(list.ready()).toBe(true);
+    });
+
     it("does not count an in-flight scroll as stability", () => {
       const list = createList(bundle);
       list.state.lastNativeScroll = 400;

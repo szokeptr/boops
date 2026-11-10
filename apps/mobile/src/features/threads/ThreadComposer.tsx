@@ -137,13 +137,28 @@ function collapsedEditorInset(text: ScaledTextRole): number {
   return Math.max(0, Math.round(COLLAPSED_EDITOR_DEFAULT_INSET - shift));
 }
 
+interface CompactEditorSlot {
+  readonly rowWidth: number;
+  readonly editorX: number;
+  readonly editorWidth: number;
+}
+
+// The next composer opens over the slot the last one measured, so its first frame does not
+// draw the editor across the attachment button before layout reports the slot.
+let lastCompactEditorSlot: CompactEditorSlot = { rowWidth: 0, editorX: 0, editorWidth: 0 };
+
+function rememberCompactEditorSlot(slot: Partial<CompactEditorSlot>) {
+  lastCompactEditorSlot = { ...lastCompactEditorSlot, ...slot };
+}
+
 function useCompactComposerEditor(text: ScaledTextRole, value: string) {
+  const [seed] = useState(() => lastCompactEditorSlot);
   const [contentSize, setContentSize] = useState({ width: 0, height: 0 });
-  const [compactWidth, setCompactWidth] = useState(0);
+  const [compactWidth, setCompactWidth] = useState(() => Math.max(0, seed.editorWidth - 8));
   const contentHeight = contentSize.height;
-  const rowWidth = useSharedValue(0);
-  const editorX = useSharedValue(0);
-  const editorWidth = useSharedValue(0);
+  const rowWidth = useSharedValue(seed.rowWidth);
+  const editorX = useSharedValue(seed.editorX);
+  const editorWidth = useSharedValue(seed.editorWidth);
   const inset =
     Platform.OS === "android" ? COLLAPSED_EDITOR_DEFAULT_INSET : collapsedEditorInset(text);
   const minimum = Math.max(INLINE_EDITOR_HEIGHT, Math.ceil(text.lineHeight) + 2 * inset);
@@ -162,6 +177,8 @@ function useCompactComposerEditor(text: ScaledTextRole, value: string) {
   const editorStyle = useAnimatedStyle(() => ({
     position: "absolute",
     overflow: "hidden",
+    // Until a slot is known the editor would span the whole row.
+    opacity: isExpanded || editorWidth.value > 0 ? 1 : 0,
     height,
     ...(isExpanded
       ? { left: 14, right: 14 }
@@ -180,6 +197,7 @@ function useCompactComposerEditor(text: ScaledTextRole, value: string) {
     editorStyle,
     onRowLayout: (event: { nativeEvent: { layout: { width: number } } }) => {
       rowWidth.set(event.nativeEvent.layout.width);
+      rememberCompactEditorSlot({ rowWidth: event.nativeEvent.layout.width });
     },
     onEditorLayout: (event: { nativeEvent: { layout: { x: number; width: number } } }) => {
       // The expanded toolbar gives this slot to the model control. Keep the
@@ -187,6 +205,10 @@ function useCompactComposerEditor(text: ScaledTextRole, value: string) {
       if (!isExpanded) {
         editorX.set(event.nativeEvent.layout.x);
         editorWidth.set(event.nativeEvent.layout.width);
+        rememberCompactEditorSlot({
+          editorX: event.nativeEvent.layout.x,
+          editorWidth: event.nativeEvent.layout.width,
+        });
         setCompactWidth(Math.max(0, event.nativeEvent.layout.width - 8));
       }
     },

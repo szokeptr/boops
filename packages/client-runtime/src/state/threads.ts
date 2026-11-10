@@ -1092,9 +1092,91 @@ export function createEnvironmentThreadStateAtoms<R, E>(
       .pipe(Atom.setIdleTTL(0), Atom.withLabel(`environment-thread-state:${key}`));
   });
 
+  // Holds a closed thread's cached copy in its resume cache without subscribing, so opening the
+  // thread shows that copy on its first render instead of after a storage read.
+  const warmFamily = Atom.family((key: string) => {
+    const { environmentId, threadId } = parseThreadKey(key);
+    const resumeAtom = resumeFamily(key);
+    return runtime
+      .atom((get) =>
+        Effect.gen(function* () {
+          get.mount(resumeAtom);
+          const resume = get.once(resumeAtom);
+          if (resume.snapshot !== undefined || resume.owner !== undefined) return;
+          const cache = yield* Persistence.EnvironmentCacheStore;
+          const cached = yield* cache
+            .loadThread(environmentId, threadId)
+            .pipe(Effect.orElseSucceed(() => Option.none<OrchestrationV2ThreadDetailSnapshot>()));
+          // An opened thread owns the cache by now and holds newer data than storage or the server.
+          const unclaimed = () => resume.snapshot === undefined && resume.owner === undefined;
+          if (Option.isSome(cached)) {
+            if (!unclaimed()) return;
+            resume.snapshot = {
+              state: {
+                data: Option.some(cached.value.projection),
+                status: "cached",
+                error: Option.none(),
+                history: historyMetaFromCachedSnapshot(cached.value),
+                sequence: cached.value.snapshotSequence,
+              },
+              sequence: cached.value.snapshotSequence,
+              persisted: true,
+            };
+            return;
+          }
+          // Nothing stored, as for a thread never opened here or last seen mid-reply: read the
+          // server's snapshot once, without the live subscription opening the thread starts.
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          const loaded = yield* registry
+            .run(
+              environmentId,
+              Effect.gen(function* () {
+                const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+                const loader = yield* ThreadSnapshotLoader.ThreadSnapshotLoader;
+                const prepared = yield* SubscriptionRef.changes(supervisor.prepared).pipe(
+                  Stream.filter(Option.isSome),
+                  Stream.map((value) => value.value),
+                  Stream.runHead,
+                  Effect.map(Option.getOrThrow),
+                );
+                return yield* loader.load(prepared, threadId);
+              }),
+            )
+            .pipe(Effect.option);
+          if (Option.isNone(loaded) || loaded.value._tag !== "present" || !unclaimed()) return;
+          const { snapshot, history } = loaded.value;
+          resume.snapshot = {
+            state: {
+              data: Option.some(snapshot.projection),
+              status: "cached",
+              error: Option.none(),
+              history:
+                history === undefined
+                  ? EMPTY_THREAD_HISTORY_META
+                  : {
+                      historyCursor: history.historyCursor,
+                      hasMoreHistory: history.hasMoreHistory,
+                      loading: false,
+                      error: null,
+                      expanded: false,
+                      latestLocalTurnOrdinal: history.latestLocalTurnOrdinal ?? null,
+                    },
+              sequence: snapshot.snapshotSequence,
+            },
+            sequence: snapshot.snapshotSequence,
+            persisted: false,
+            acceptsBoundedSnapshots: history !== undefined,
+          };
+        }),
+      )
+      .pipe(Atom.withLabel(`environment-thread-warm:${key}`));
+  });
+
   return {
     stateAtom: (environmentId: EnvironmentIdType, threadId: ThreadIdType) =>
       family(threadKey({ environmentId, threadId })),
+    warmAtom: (environmentId: EnvironmentIdType, threadId: ThreadIdType) =>
+      warmFamily(threadKey({ environmentId, threadId })),
   };
 }
 

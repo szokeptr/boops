@@ -32,6 +32,7 @@ import { BotListToolbar } from "./BotListToolbar";
 import { useBotNavigation, useSelectedBotKey } from "./useBotNavigation";
 import { useBotShareSheet } from "../members/BotShareSheet";
 import { useBotRows } from "./useBotRows";
+import { useWarmBotThreads } from "./useWarmBotThreads";
 import { RoomListSection } from "../rooms/RoomListSection";
 import { renderBotSidebarItem } from "./BotSidebarItem";
 import { NewSectionRow, SidebarSectionsContext, useBotSidebarItems } from "./sidebarSections";
@@ -111,6 +112,7 @@ function BotNavigationSidebarPane(
   const { fabClearance, fabSize } = useAndroidControlSizing();
   const { state: catalogState } = useWorkspaceState();
   const { rows, threads, machineByEnvironmentId, showMachineBadges } = useBotRows();
+  useWarmBotThreads(rows);
   const share = useBotShareSheet();
   const botActions = { ...useBotNavigation(), onShare: share.onShare };
   const selectedKey = useSelectedBotKey(rows, threads);

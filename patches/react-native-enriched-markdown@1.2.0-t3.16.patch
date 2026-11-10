@@ -1,0 +1,16 @@
+diff --git a/ios/EnrichedMarkdown.mm b/ios/EnrichedMarkdown.mm
+index f69549c..12f0a78 100644
+--- a/ios/EnrichedMarkdown.mm
++++ b/ios/EnrichedMarkdown.mm
+@@ -1655,6 +1655,11 @@ - (void)updateProps:(Props::Shared const &)props oldProps:(Props::Shared const &
+     // Rendered in finalizeUpdates, once per transaction (see
+     // applyBlockSlotPlacementsFromState).
+     _pendingRenderMarkdown = ENRMStringFromUTF8(newViewProps.markdown);
++    // A view's first content renders in its mount transaction, so it never appears without its
++    // text. The parse memo makes that cheap; later revisions and streaming keep the render queue.
++    if (_renderedMarkdown == nil && !newViewProps.streamingAnimation) {
++      _pendingRenderSynchronously = YES;
++    }
+     _dirtyFlags &= ~ENRMDirtyRender;
+   }
+ 

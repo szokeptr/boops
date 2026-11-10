@@ -54,6 +54,7 @@ const SNAPSHOT: OrchestrationV2ThreadDetailSnapshot = { snapshotSequence: 7, pro
 const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?: {
   readonly snapshot?: OrchestrationV2ThreadDetailSnapshot;
   readonly snapshotUnavailable?: boolean;
+  readonly diskSnapshot?: OrchestrationV2ThreadDetailSnapshot;
 }) {
   const subscriptions = yield* Queue.unbounded<{
     readonly afterSequence: number | undefined;
@@ -172,7 +173,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
           loadThread: () =>
             Effect.sync(() => {
               diskLoads += 1;
-              return Option.none();
+              return Option.fromUndefinedOr(options?.diskSnapshot);
             }),
           saveThread: () => Effect.void,
           removeThread: () => Effect.void,
@@ -289,6 +290,52 @@ describe("createEnvironmentThreadStateAtoms", () => {
       expect(h.counts()).toEqual({ httpLoads: 1, diskLoads: 1, opened: 2, active: 1 });
       remount();
       yield* Deferred.await(next.closed);
+    }),
+  );
+
+  it.effect("opens a warmed thread on its stored copy and resumes from its cursor", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({ diskSnapshot: SNAPSHOT });
+      const warmAtom = h.rawAtoms.warmAtom(h.ref.environmentId, h.ref.threadId);
+      const unwarm = h.registry.mount(warmAtom);
+      yield* AtomRegistry.toStream(h.registry, warmAtom).pipe(
+        Stream.filter((result) => result._tag === "Success"),
+        Stream.runHead,
+      );
+      expect(h.counts()).toEqual({ httpLoads: 0, diskLoads: 1, opened: 0, active: 0 });
+
+      const unmount = h.registry.mount(h.stateAtom);
+      expect(h.registry.get(h.stateAtom).status).toBe("cached");
+      expect(currentThread(h.registry, h.stateAtom).thread.title).toBe("Cached thread");
+      const subscription = yield* Queue.take(h.subscriptions);
+      expect(subscription.afterSequence).toBe(SNAPSHOT.snapshotSequence);
+      expect(h.counts().diskLoads).toBe(1);
+      unmount();
+      unwarm();
+      yield* Deferred.await(subscription.closed);
+    }),
+  );
+
+  it.effect("warms a thread with nothing stored from the server snapshot without subscribing", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      const warmAtom = h.rawAtoms.warmAtom(h.ref.environmentId, h.ref.threadId);
+      const unwarm = h.registry.mount(warmAtom);
+      yield* AtomRegistry.toStream(h.registry, warmAtom).pipe(
+        Stream.filter((result) => result._tag === "Success"),
+        Stream.runHead,
+      );
+      expect(h.counts()).toEqual({ httpLoads: 1, diskLoads: 1, opened: 0, active: 0 });
+
+      const unmount = h.registry.mount(h.stateAtom);
+      expect(h.registry.get(h.stateAtom).status).toBe("cached");
+      expect(currentThread(h.registry, h.stateAtom).thread.title).toBe("Cached thread");
+      const subscription = yield* Queue.take(h.subscriptions);
+      expect(subscription.afterSequence).toBe(SNAPSHOT.snapshotSequence);
+      expect(h.counts().httpLoads).toBe(1);
+      unmount();
+      unwarm();
+      yield* Deferred.await(subscription.closed);
     }),
   );
 

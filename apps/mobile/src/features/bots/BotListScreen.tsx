@@ -47,6 +47,7 @@ import { useBotNavigation, useSelectedBotKey } from "./useBotNavigation";
 import { useBotRows } from "./useBotRows";
 import { renderBotSidebarItem } from "./BotSidebarItem";
 import { NewSectionRow, SidebarSectionsContext, useBotSidebarItems } from "./sidebarSections";
+import { useWarmBotThreads } from "./useWarmBotThreads";
 
 const ESTIMATED_BOT_ROW_HEIGHT = 64;
 
@@ -168,6 +169,7 @@ export function BotListScreen(props: {
   readonly onAddBot: (() => void) | undefined;
 }) {
   const { rows, threads, machineByEnvironmentId, showMachineBadges } = useBotRows(props.visible);
+  useWarmBotThreads(rows);
   const inviteCount = useAtomValue(
     relayEnvironmentDiscovery.stateValueAtom,
     (state) => state.invites.length,

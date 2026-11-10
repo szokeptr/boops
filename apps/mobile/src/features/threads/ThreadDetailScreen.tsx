@@ -591,9 +591,7 @@ function ThreadDetailBody(
       case "empty":
       case "cached":
       case "synchronizing":
-        if (contentPresentationKind === "ready") {
-          return "Syncing messages...";
-        }
+        // A conversation already on screen catches up in place; a pill would cover or move it.
         return contentPresentationKind === "loading" ? "Loading messages..." : null;
       default:
         return null;

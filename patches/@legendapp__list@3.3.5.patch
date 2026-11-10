@@ -648,7 +648,7 @@ index b3c5a306b293f797a8b338adfca3060c0f6db22b..bf1bc75e21ce1849759684a2d62742c3
 +    const distance = hasNativeOffset ? endOffset - nativeOffset : Infinity;
 +    const isIdle = !state.scrollingTo && !state.maintainingScrollAtEnd;
 +    const hasViewport = insetStartAdjustment > 0 && scrollLength > 0 && Number.isFinite(contentSize);
-+    const isStable = hasViewport && isIdle && Math.abs(distance) <= 2 && previousEndOffset !== void 0 && Math.abs(endOffset - previousEndOffset) <= 1;
++    const isStable = hasViewport && isIdle && Math.abs(distance) <= 0.5 && previousEndOffset !== void 0 && Math.abs(endOffset - previousEndOffset) <= 1;
 +    previousEndOffset = endOffset;
 +    if (isStable) {
 +      settledFrames++;
@@ -661,7 +661,7 @@ index b3c5a306b293f797a8b338adfca3060c0f6db22b..bf1bc75e21ce1849759684a2d62742c3
 +      revealStableFrames = 0;
 +      // Keep the existing near-end correction limit. In-flight scrolls and
 +      // unknown native offsets wait; neither counts as a settled frame.
-+      if (hasViewport && isIdle && Math.abs(distance) > 2 && Math.abs(distance) <= scrollLength * 0.5) {
++      if (hasViewport && isIdle && Math.abs(distance) > 0.5 && Math.abs(distance) <= scrollLength * 0.5) {
 +        const scroller = state.refScroller.current;
 +        if (scroller) {
 +          scroller.scrollTo({ animated: false, x: 0, y: endOffset });
@@ -1333,7 +1333,7 @@ index 40e87cda8c9bc79a889e5542f29af429a24b24d4..ad03dd8e3c04cd1569a44567b87e6811
 +    const distance = hasNativeOffset ? endOffset - nativeOffset : Infinity;
 +    const isIdle = !state.scrollingTo && !state.maintainingScrollAtEnd;
 +    const hasViewport = insetStartAdjustment > 0 && scrollLength > 0 && Number.isFinite(contentSize);
-+    const isStable = hasViewport && isIdle && Math.abs(distance) <= 2 && previousEndOffset !== void 0 && Math.abs(endOffset - previousEndOffset) <= 1;
++    const isStable = hasViewport && isIdle && Math.abs(distance) <= 0.5 && previousEndOffset !== void 0 && Math.abs(endOffset - previousEndOffset) <= 1;
 +    previousEndOffset = endOffset;
 +    if (isStable) {
 +      settledFrames++;
@@ -1346,7 +1346,7 @@ index 40e87cda8c9bc79a889e5542f29af429a24b24d4..ad03dd8e3c04cd1569a44567b87e6811
 +      revealStableFrames = 0;
 +      // Keep the existing near-end correction limit. In-flight scrolls and
 +      // unknown native offsets wait; neither counts as a settled frame.
-+      if (hasViewport && isIdle && Math.abs(distance) > 2 && Math.abs(distance) <= scrollLength * 0.5) {
++      if (hasViewport && isIdle && Math.abs(distance) > 0.5 && Math.abs(distance) <= scrollLength * 0.5) {
 +        const scroller = state.refScroller.current;
 +        if (scroller) {
 +          scroller.scrollTo({ animated: false, x: 0, y: endOffset });
