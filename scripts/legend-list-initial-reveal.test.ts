@@ -28,6 +28,7 @@ function createList(bundle: string) {
     didFinishInitialScroll: true,
     didLoad: false,
     didUserDrag: false,
+    insetEndSettleReleased: false,
     scrollLength: 800,
     scroll: 400,
     lastNativeScroll: 200 as number | undefined,
@@ -144,6 +145,15 @@ describe.each(["react-native.js", "react-native.mjs"])(
       expect(list.state.didUserDrag).toBe(true);
       expect(list.scrollTo).not.toHaveBeenCalled();
       expect(list.onLoad).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops re-pinning once a keyboard transition takes over the offset", () => {
+      const list = createList(bundle);
+      list.start();
+      list.state.insetEndSettleReleased = true;
+      list.advance(8);
+      expect(list.ready()).toBe(true);
+      expect(list.scrollTo).not.toHaveBeenCalled();
     });
   },
 );
