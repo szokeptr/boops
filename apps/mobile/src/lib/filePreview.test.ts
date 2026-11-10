@@ -221,8 +221,18 @@ vi.mock("react-native-reanimated", () => {
     FadeIn: transition,
     FadeInDown: transition,
     FadeInUp: transition,
+    useAnimatedStyle: () => ({}),
   };
 });
+vi.mock("../features/threads/MessageSwipeReply", () => ({
+  MessageSwipeReply: ({ children }: { children?: ReactNode }) => children,
+}));
+vi.mock("react-native-keyboard-controller", () => ({
+  KeyboardController: { isVisible: () => false },
+}));
+vi.mock("expo-sqlite/kv-store", () => ({
+  default: { getItemSync: () => null, setItem: async () => {} },
+}));
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
 }));
