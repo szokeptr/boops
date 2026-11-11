@@ -137,7 +137,7 @@ const TellMainConversationTool = Tool.make("tell_main_conversation", {
 
 const ReactToMessageTool = Tool.make("react_to_message", {
   description:
-    "React with an emoji to the latest message in this conversation, as a tapback. Use it sparingly, for acknowledging a message that needs no reply or alongside your reply. Calling again replaces your reaction.",
+    "React with an emoji to the latest message in this conversation, as a tapback. When the message needs no words, the reaction is your whole answer: end your turn without any text. Calling again replaces your reaction.",
   parameters: BotMcpReactInput,
   success: BotMcpReactResult,
   failure: OrchestratorMcpFailure,
