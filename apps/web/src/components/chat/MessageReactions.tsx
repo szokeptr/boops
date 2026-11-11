@@ -30,6 +30,22 @@ const SURFACE_ATTRIBUTE = "data-message-reaction-surface";
 
 // The bar and its actions sit on opposite sides of the bubble; a flip would stack one on the other.
 const KEEP_SIDE = { side: "shift", align: "shift" } as const;
+// With the grid open the actions menu hides, so the picker may flip below a bubble at the top.
+const FLIP_SIDE = { side: "flip", align: "shift" } as const;
+// Room the bar, and the bar with the emoji grid, take above a bubble.
+const BAR_ROOM_PX = 64;
+const PICKER_ROOM_PX = 280;
+
+/** The bar opens above the bubble and never flips, so scroll a tall bubble down to fit it. */
+function makeRoomAbove(anchor: HTMLElement | null, room: number) {
+  let scroller = anchor?.parentElement ?? null;
+  while (scroller !== null && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) {
+    scroller = scroller.parentElement;
+  }
+  if (anchor === null || scroller === null) return;
+  const gap = anchor.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  if (gap < room) scroller.scrollBy({ top: gap - room });
+}
 
 interface PendingReaction {
   /** The server's reactions when this was chosen; any change from the server replaces it. */
@@ -82,6 +98,10 @@ export function useMessageReactions(input: {
       if (!ok) setPending((current) => (current === chosen ? null : current));
     });
   };
+  const openBar = (next: boolean) => {
+    if (next) makeRoomAbove(anchor, BAR_ROOM_PX);
+    setOpen(next);
+  };
   const onContextMenu = (event: MouseEvent<HTMLElement>) => {
     if (!interactive || event.defaultPrevented) return;
     // Selected text keeps the browser's menu, so Copy and Look Up still work on it.
@@ -94,7 +114,7 @@ export function useMessageReactions(input: {
       return;
     }
     event.preventDefault();
-    setOpen(true);
+    openBar(true);
   };
   return {
     groups: groupMessageReactions(reactions),
@@ -105,7 +125,7 @@ export function useMessageReactions(input: {
     setAnchor,
     trigger,
     setTrigger,
-    setOpen,
+    setOpen: openBar,
     choose,
     onContextMenu,
   };
@@ -282,7 +302,7 @@ export function MessageReactionMenu({
           side="top"
           align={align}
           sideOffset={10}
-          collisionAvoidance={KEEP_SIDE}
+          collisionAvoidance={moreOpen ? FLIP_SIDE : KEEP_SIDE}
           padding="none"
           aria-label="React to message"
           {...surface}
@@ -303,7 +323,10 @@ export function MessageReactionMenu({
                 variant="ghost-muted"
                 aria-label="More reactions"
                 aria-expanded={moreOpen}
-                onClick={() => setMoreOpen((value) => !value)}
+                onClick={() => {
+                  if (!moreOpen) makeRoomAbove(controller.anchor, PICKER_ROOM_PX);
+                  setMoreOpen(!moreOpen);
+                }}
               >
                 <SmilePlusIcon />
               </Button>
@@ -345,7 +368,7 @@ export function MessageReactionMenu({
         </PopoverPopup>
       </Popover>
       {copyText || onEdit ? (
-        <Popover open={controller.open} onOpenChange={onOpenChange}>
+        <Popover open={controller.open && !moreOpen} onOpenChange={onOpenChange}>
           <PopoverPopup
             anchor={controller.anchor}
             side="bottom"
