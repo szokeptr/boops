@@ -8,7 +8,7 @@ import {
 import type { MessageId, OrchestrationV2MessageReaction } from "@t3tools/contracts";
 import { type ComponentRef, useRef, useState } from "react";
 import { type ColorValue, Platform, Pressable, useWindowDimensions, View } from "react-native";
-import Animated, { LayoutAnimationConfig, ZoomIn } from "react-native-reanimated";
+import Animated, { Easing, Keyframe, LayoutAnimationConfig } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FormSheet } from "react-native-screens";
 import { useResolveClassNames } from "uniwind";
@@ -45,6 +45,11 @@ const BADGE_OVERLAP = 4;
 export const MESSAGE_REACTION_BADGE_CLEARANCE = 18;
 
 /** The tail's two dots, as size and distance past the badge's outer bottom corner. */
+const BADGE_ENTERING = new Keyframe({
+  0: { opacity: 0, transform: [{ scale: 0.8 }] },
+  100: { opacity: 1, transform: [{ scale: 1 }], easing: Easing.out(Easing.cubic) },
+}).duration(180);
+
 const TAIL_DOTS = [
   { size: 9, reach: 2 },
   { size: 4, reach: 6 },
@@ -68,7 +73,7 @@ export function MessageReactionBadges(props: {
   const groups = groupMessageReactions(props.reactions);
   const outer = props.align === "left" ? "right" : "left";
   return (
-    // Badges present when the bubble mounts stay still; only one added afterwards pops in.
+    // Badges present when the bubble mounts stay still; only one added afterwards fades in.
     <LayoutAnimationConfig skipEntering>
       {groups.length === 0 ? null : (
         <View
@@ -85,7 +90,7 @@ export function MessageReactionBadges(props: {
             return (
               <Animated.View
                 key={group.emoji}
-                entering={ZoomIn.springify().damping(13).stiffness(260)}
+                entering={BADGE_ENTERING}
                 style={[
                   { zIndex: index },
                   index === 0

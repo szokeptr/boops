@@ -183,12 +183,12 @@ import { PresentationSource } from "../../components/ui/NativePresentation";
 import { NativeScrollViewMarker } from "../../native/NativeScrollViewMarker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
+  Easing,
   FadeIn,
   FadeInDown,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
-  withSpring,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
@@ -1930,11 +1930,11 @@ function ReactableBubble(props: {
         { id: "copy", title: "Copy", icon: "doc.on.doc", onPress: props.onCopy },
       ],
     });
-  // The bubble sinks a little while held, then springs back as the drawer opens.
+  // The bubble sinks a little while held, then eases back as the drawer opens.
   const pressScale = useSharedValue(1);
   const pressStyle = useAnimatedStyle(() => ({ transform: [{ scale: pressScale.get() }] }));
   const release = () => {
-    pressScale.set(withSpring(1, { damping: 14, stiffness: 320 }));
+    pressScale.set(withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) }));
   };
   const longPress = useLongPressGesture({
     minDuration: 350,
