@@ -41,7 +41,10 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
+import {
+  CodexProviderCapabilitiesV2,
+  normalizeCodexThreadLoadModelSelection,
+} from "./Adapters/CodexAdapterV2.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -426,6 +429,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
   state: Ref.Ref<TestProviderRuntimeState>,
   options: {
     readonly failEventStream?: boolean;
+    readonly normalizeThreadLoadModelSelection?: (selection: ModelSelection) => ModelSelection;
     readonly capabilities?: OrchestrationV2ProviderCapabilities;
     readonly mcpConfigs?: Ref.Ref<
       ReadonlyArray<McpProviderSession.McpProviderSessionConfig | undefined>
@@ -506,6 +510,9 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
           instanceId: ProviderInstanceId.make("codex"),
           driver: CODEX_DRIVER,
           providerSessionId: input.providerSessionId,
+          ...(options.normalizeThreadLoadModelSelection === undefined
+            ? {}
+            : { normalizeThreadLoadModelSelection: options.normalizeThreadLoadModelSelection }),
           providerSession: session,
           events: options.failEventStream
             ? Stream.fail(
@@ -566,6 +573,7 @@ function layerTest(input: {
   readonly idleTimeoutMs: number;
   readonly maxIdlePinMs?: number;
   readonly failEventStream?: boolean;
+  readonly normalizeThreadLoadModelSelection?: (selection: ModelSelection) => ModelSelection;
   readonly capabilities?: OrchestrationV2ProviderCapabilities;
   readonly mcpConfigs?: Ref.Ref<
     ReadonlyArray<McpProviderSession.McpProviderSessionConfig | undefined>
@@ -607,6 +615,9 @@ function layerTest(input: {
   const layerRegistry = Layer.unwrap(
     makeProviderAdapter(input.state, {
       failEventStream: input.failEventStream ?? false,
+      ...(input.normalizeThreadLoadModelSelection === undefined
+        ? {}
+        : { normalizeThreadLoadModelSelection: input.normalizeThreadLoadModelSelection }),
       ...(input.capabilities === undefined ? {} : { capabilities: input.capabilities }),
       ...(input.mcpConfigs === undefined ? {} : { mcpConfigs: input.mcpConfigs }),
       ...(input.beforeOpen === undefined ? {} : { beforeOpen: input.beforeOpen }),
@@ -3538,9 +3549,15 @@ it.effect("ProviderSessionManagerV2 persists session-scoped runtime requests wit
   }),
 );
 
-it.effect(
-  "ProviderSessionManagerV2 opens one shared runtime, broadcasts events, and detaches threads independently",
-  () =>
+it.effect.each([
+  { name: "default load key", normalizeThreadLoadModelSelection: undefined },
+  {
+    name: "Codex load key",
+    normalizeThreadLoadModelSelection: normalizeCodexThreadLoadModelSelection,
+  },
+])(
+  "ProviderSessionManagerV2 opens one shared runtime, broadcasts events, and detaches threads independently ($name)",
+  ({ normalizeThreadLoadModelSelection }) =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
       const effect = Effect.gen(function* () {
@@ -3634,21 +3651,87 @@ it.effect(
         const resumeSecondThread = secondRuntime.resumeThread({
           providerThread: secondProviderThread,
           threadId: secondThreadId,
-          modelSelection,
+          modelSelection: {
+            ...modelSelection,
+            options: [{ id: "reasoningEffort", value: "medium" }],
+          },
           runtimePolicy,
         });
         yield* resumeSecondThread;
         yield* resumeSecondThread;
         assert.equal((yield* Ref.get(state)).resumeCount, 1);
+        let resumeCount = 1;
+        const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+        const appThread = (yield* projectionStore.getThreadProjection(secondThreadId)).thread;
+        const turnEvents = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId));
+        assert.isDefined(turnEvents);
+        for (const [index, effort] of ["medium", "high", "medium"].entries()) {
+          const selection = {
+            ...modelSelection,
+            options: [{ id: "reasoningEffort", value: effort }],
+          } satisfies ModelSelection;
+          yield* secondRuntime.resumeThread({
+            providerThread: secondProviderThread,
+            threadId: secondThreadId,
+            modelSelection: selection,
+            runtimePolicy,
+          });
+          const ordinal = index + 1;
+          const runId = idAllocator.derive.run({ threadId: secondThreadId, ordinal });
+          yield* secondRuntime.startTurn({
+            appThread,
+            threadId: secondThreadId,
+            runId,
+            runOrdinal: ordinal,
+            providerTurnOrdinal: ordinal,
+            attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
+            rootNodeId: idAllocator.derive.rootNode({ runId }),
+            providerThread: secondProviderThread,
+            message: {
+              createdBy: "user",
+              creationSource: "web",
+              messageId: yield* idAllocator.allocate.message({
+                threadId: secondThreadId,
+                ordinal,
+              }),
+              text: "turn",
+              attachments: [],
+            },
+            modelSelection: selection,
+            runtimePolicy,
+          });
+          const subscription = yield* secondRuntime.subscribeEvents!;
+          const terminal = yield* subscription.events.pipe(
+            Stream.filter((event) => event.type === "turn.terminal"),
+            Stream.runHead,
+            Effect.forkScoped,
+          );
+          yield* Queue.offer(turnEvents!, {
+            type: "turn.terminal",
+            driver: CODEX_DRIVER,
+            providerThreadId: secondProviderThread.id,
+            providerTurnId: idAllocator.derive.providerTurn({
+              driver: CODEX_DRIVER,
+              nativeTurnId: `native-effort-turn-${ordinal}`,
+            }),
+            runOrdinal: ordinal,
+            status: "completed",
+            failure: null,
+            threadDisposition: "reusable",
+          });
+          yield* Fiber.join(terminal);
+          if (normalizeThreadLoadModelSelection === undefined && index > 0) resumeCount++;
+          assert.equal((yield* Ref.get(state)).resumeCount, resumeCount, `${effort} effort reload`);
+        }
         yield* secondRuntime.resumeThread({
           providerThread: secondProviderThread,
           threadId: secondThreadId,
           modelSelection: { ...modelSelection, model: "gpt-5.4-mini" },
           runtimePolicy,
         });
-        assert.equal((yield* Ref.get(state)).resumeCount, 2);
+        assert.equal((yield* Ref.get(state)).resumeCount, ++resumeCount);
         yield* resumeSecondThread;
-        assert.equal((yield* Ref.get(state)).resumeCount, 3);
+        assert.equal((yield* Ref.get(state)).resumeCount, ++resumeCount);
         const subscribe = firstRuntime.subscribeEvents;
         assert.isDefined(subscribe);
         if (subscribe === undefined) return;
@@ -3680,9 +3763,42 @@ it.effect(
           runtimePolicy,
         });
         yield* resumeSecondThread;
-        assert.equal((yield* Ref.get(state)).resumeCount, 4);
+        assert.equal((yield* Ref.get(state)).resumeCount, ++resumeCount);
 
         assert.deepEqual((yield* Ref.get(state)).unloadedNativeThreadIds, []);
+
+        const reloadCases = [
+          {
+            name: "other model options",
+            providerThread: secondProviderThread,
+            selection: {
+              ...modelSelection,
+              options: [{ id: "serviceTier", value: "priority" }],
+            },
+            policy: runtimePolicy,
+          },
+          {
+            name: "runtime policy",
+            providerThread: secondProviderThread,
+            selection: modelSelection,
+            policy: { ...runtimePolicy, interactionMode: "plan" },
+          },
+        ] satisfies ReadonlyArray<{
+          name: string;
+          providerThread: OrchestrationV2ProviderThread;
+          selection: ModelSelection;
+          policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+        }>;
+        for (const { name, providerThread, selection, policy } of reloadCases) {
+          const before = (yield* Ref.get(state)).resumeCount;
+          yield* secondRuntime.resumeThread({
+            providerThread,
+            threadId: secondThreadId,
+            modelSelection: selection,
+            runtimePolicy: policy,
+          });
+          assert.equal((yield* Ref.get(state)).resumeCount, before + 1, `${name} did not reload`);
+        }
 
         yield* manager.detach({ providerSessionId, threadId: firstThreadId });
         assert.isTrue(Option.isSome(yield* manager.get(providerSessionId)));
@@ -3696,7 +3812,17 @@ it.effect(
         assert.equal((yield* Ref.get(state)).closeCount, 1);
       });
 
-      yield* effect.pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 1000 })));
+      yield* effect.pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 1000,
+            ...(normalizeThreadLoadModelSelection === undefined
+              ? {}
+              : { normalizeThreadLoadModelSelection }),
+          }),
+        ),
+      );
     }),
 );
 
