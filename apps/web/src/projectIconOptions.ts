@@ -1,3 +1,4 @@
+export { firstEmoji } from "@t3tools/client-runtime/message-reactions";
 import { lucideIconNames } from "./lib/lucideIconByName";
 export { PROJECT_ICON_COLORS, projectIconColorClassName } from "./projectIconColors";
 
@@ -65,17 +66,4 @@ export function filterProjectIconNames(query: string): ReadonlyArray<string> {
   const normalized = query.trim().toLowerCase().replaceAll(/\s+/g, "-");
   if (!normalized) return POPULAR_PROJECT_ICONS;
   return lucideIconNames.filter((name) => name.includes(normalized)).slice(0, 60);
-}
-
-export function firstEmoji(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const segments = new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(trimmed);
-  const segment = segments[Symbol.iterator]().next().value?.segment;
-  const isFlag = /^\p{Regional_Indicator}{2}$/u.test(segment ?? "");
-  const isKeycap = /^[#*0-9]\uFE0F?\u20E3$/u.test(segment ?? "");
-  if (!segment || (!/\p{Extended_Pictographic}/u.test(segment) && !isFlag && !isKeycap)) {
-    return null;
-  }
-  return segment;
 }

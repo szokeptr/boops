@@ -49,6 +49,26 @@ export function withMemberMessageHeader(
   return `${header}\n\n${text}`;
 }
 
+const REACTION_EXCERPT_CHARS = 80;
+
+/**
+ * The agent text of the user's next message after they reacted to the agent's messages, as a
+ * tapback: which emoji, on which message. A reaction alone never starts a turn.
+ */
+export function withReactionsHeader(
+  text: string,
+  reactions: ReadonlyArray<{ readonly emoji: string; readonly text: string }>,
+): string {
+  if (reactions.length === 0) return text;
+  const excerpts = reactions.map(({ emoji, text: reacted }) => {
+    const line = reacted.replaceAll(/\s+/g, " ").trim();
+    const excerpt =
+      line.length > REACTION_EXCERPT_CHARS ? `${line.slice(0, REACTION_EXCERPT_CHARS)}…` : line;
+    return `${emoji} to "${excerpt}"`;
+  });
+  return `[Since your last turn, the user reacted ${excerpts.join(", ")}.]\n\n${text}`;
+}
+
 // The bot instructions key on this prefix; a helper shares its bot's instructions and folder.
 const HELPER_TASK_HEADER =
   "[Helper task from your main conversation. Do it yourself and end with the result.]";

@@ -31,6 +31,7 @@ import {
   withBotMessageHeader,
   withHelperTaskHeader,
   withMemberMessageHeader,
+  withReactionsHeader,
 } from "../bots/botMessageHeader.ts";
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -871,6 +872,18 @@ export const layer: Layer.Layer<
           Effect.map((project) => Option.getOrUndefined(project)?.mainThreadId != null),
           Effect.orElseSucceed(() => false),
         ));
+      // The user's own message carries what they reacted to since the agent's last turn.
+      const previousRunStartedAt = projection.runs
+        .filter((candidate) => candidate.ordinal < run.ordinal && candidate.startedAt !== null)
+        .at(-1)?.startedAt;
+      const reactions =
+        message.createdBy !== "user" ||
+        message.senderThreadId !== undefined ||
+        previousRunStartedAt == null
+          ? []
+          : yield* projectionStore
+              .getUserReactionsSince(projection.thread.id, DateTime.formatIso(previousRunStartedAt))
+              .pipe(Effect.orElseSucceed(() => []));
       const userText = goalCommand
         ? composedText
         : message.routine !== undefined
@@ -878,7 +891,10 @@ export const layer: Layer.Layer<
           : helperTask
             ? withHelperTaskHeader(composedText)
             : message.senderThreadId === undefined
-              ? withMemberMessageHeader(composedText, projection.thread.linkOrigin)
+              ? withMemberMessageHeader(
+                  withReactionsHeader(composedText, reactions),
+                  projection.thread.linkOrigin,
+                )
               : composedText;
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
       const noteContinuation = isRestartNoteContinuation(

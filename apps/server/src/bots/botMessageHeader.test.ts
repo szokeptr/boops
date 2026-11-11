@@ -2,7 +2,12 @@ import { describe, expect, it } from "@effect/vitest";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { POCKS_BOT_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
 
-import { isHelperTask, withBotMessageHeader, withHelperTaskHeader } from "./botMessageHeader.ts";
+import {
+  isHelperTask,
+  withBotMessageHeader,
+  withHelperTaskHeader,
+  withReactionsHeader,
+} from "./botMessageHeader.ts";
 
 const context = (relation: "parent" | "child" | "peer" | "background", name = "Wren") => ({
   version: 1 as const,
@@ -69,5 +74,19 @@ describe("isHelperTask", () => {
       /^\[Helper task [^\n]*\]\n\nCompare flights\.$/,
     );
     expect(POCKS_BOT_INSTRUCTIONS).toContain("A task starting `[Helper task` makes you");
+  });
+});
+
+describe("withReactionsHeader", () => {
+  it("tells the bot which of its messages the user reacted to", () => {
+    expect(withReactionsHeader("Thanks!", [])).toBe("Thanks!");
+    expect(
+      withReactionsHeader("Thanks!", [
+        { emoji: "❤️", text: "Rent is\n paid." },
+        { emoji: "👍", text: "x".repeat(100) },
+      ]),
+    ).toBe(
+      `[Since your last turn, the user reacted ❤️ to "Rent is paid.", 👍 to "${"x".repeat(80)}…".]\n\nThanks!`,
+    );
   });
 });

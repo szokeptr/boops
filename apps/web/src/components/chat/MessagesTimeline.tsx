@@ -11,7 +11,7 @@ import { MarkdownFindContext } from "./markdownFindContext";
 import { useChatCanvas } from "./ChatCanvasContext";
 import { WorkLogBlock } from "./WorkLog";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
-import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
+import type { OrchestrationV2ConversationMessage, WorktreeSetupSnapshot } from "@t3tools/contracts";
 import { deriveTimelineMinimapItems } from "./timelineMinimapItems";
 import {
   type AssistantCitation,
@@ -144,7 +144,12 @@ import {
 } from "./timelineViewport";
 import { useThreadFindPositionReader } from "./useThreadFindPositionReader";
 import { ThreadActivityAnnouncer } from "./ThreadActivityAnnouncer";
-import { useStableHandoffRuns, useIncrementalTimelineRows, useStableRows } from "./useTimelineRows";
+import {
+  useStableHandoffRuns,
+  useIncrementalTimelineRows,
+  useMessageReactionsById,
+  useStableRows,
+} from "./useTimelineRows";
 
 function timelineListStateFor(identity: string): {
   readonly identity: string;
@@ -198,6 +203,9 @@ function TimelineListFooter({
 
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<ServerProviderSkill> = [];
 const EMPTY_TIMELINE_MENTION_NAMES: ReadonlyArray<string> = [];
+const EMPTY_CONVERSATION_MESSAGES: ReadonlyArray<
+  Pick<OrchestrationV2ConversationMessage, "id" | "reactions">
+> = [];
 const TIMELINE_MAINTAIN_SCROLL_AT_END = {
   animated: false,
   on: {
@@ -295,6 +303,12 @@ interface MessagesTimelineProps {
   onRevertToTurnCount?: (targetTurnCount: number, messageId: MessageId) => void;
   /** Absent hides Edit on sent messages, as in the guest view. */
   onEditMessage?: (messageId: MessageId, text: string) => Promise<boolean>;
+  /** The thread's messages, read for their reactions in a bot's conversation. */
+  conversationMessages?: ReadonlyArray<
+    Pick<OrchestrationV2ConversationMessage, "id" | "reactions">
+  >;
+  /** Absent shows reactions without letting you react, as in the guest view. */
+  onReactToMessage?: TimelineRowSharedState["onReactToMessage"];
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   onSendAppMessage?: (text: string) => Promise<void>;
   onRunShellCommand?: (command: string) => void;
@@ -399,6 +413,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   availableRevertTurnCounts,
   onRevertToTurnCount,
   onEditMessage,
+  conversationMessages = EMPTY_CONVERSATION_MESSAGES,
+  onReactToMessage,
   onUseArtifactTemplate = NOOP_USE_ARTIFACT_TEMPLATE,
   onSendAppMessage,
   onRunShellCommand,
@@ -693,6 +709,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const pendingApprovalRequestIds = new Set(
     pendingApprovals.filter(isVisiblePendingApproval).map((approval) => approval.requestId),
   );
+  const reactionsByMessageId = useMessageReactionsById(
+    directMessage ? conversationMessages : EMPTY_CONVERSATION_MESSAGES,
+  );
   const rawRows = useIncrementalTimelineRows(`${listIdentityKey}\0${workspaceRoot ?? ""}`, {
     timelineEntries,
     pendingApprovalRequestIds,
@@ -712,6 +731,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     worktreeSetup,
     directMessage,
     botParentProjectId: directMessage ? (project?.parentBotProjectId ?? null) : null,
+    reactionsByMessageId,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
   const matchedApprovalRequestIds = new Set<string>();
@@ -1066,6 +1086,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     activeThreadEnvironmentId,
     onRevertToTurnCount,
     onEditMessage,
+    onReactToMessage,
     onRunShellCommand,
     findActive,
     onImageExpand,

@@ -10,6 +10,8 @@ import {
   BotMcpMessageChildInput,
   BotMcpReadChildInput,
   BotMcpReadChildResult,
+  BotMcpReactInput,
+  BotMcpReactResult,
   BotMcpReportToParentInput,
   BotMcpTellMainConversationInput,
   OrchestratorMcpFailure,
@@ -133,6 +135,20 @@ const TellMainConversationTool = Tool.make("tell_main_conversation", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, false);
 
+const ReactToMessageTool = Tool.make("react_to_message", {
+  description:
+    "React with an emoji to the latest message in this conversation, as a tapback. Use it sparingly, for acknowledging a message that needs no reply or alongside your reply. Calling again replaces your reaction.",
+  parameters: BotMcpReactInput,
+  success: BotMcpReactResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "React to a message")
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true)
+  .annotate(Tool.OpenWorld, false);
+
 const ListGroupChatsTool = Tool.make("list_group_chats", {
   description:
     "List the group chats you are in, with the people and other bots in each. Your replies to messages in a group chat reach it on their own; use post_to_group_chat only to speak up unprompted.",
@@ -168,6 +184,7 @@ export const BotToolkit = Toolkit.make(
   ReportToParentTool,
   TellMainConversationTool,
   EndCallTool,
+  ReactToMessageTool,
   ListGroupChatsTool,
   PostToGroupChatTool,
 );

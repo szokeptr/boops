@@ -18,6 +18,16 @@ import {
 import { ThreadContextDivider } from "./thread-context-divider";
 import { MessageSwipeReply } from "./MessageSwipeReply";
 import {
+  MESSAGE_REACTION_BADGE_CLEARANCE,
+  MessageReactionBadges,
+  MessageReactionOverlay,
+  type MessageReactionAccent,
+  type MessageReactionAction,
+  type MessageReactionAlign,
+  type MessageReactionTarget,
+} from "./MessageReactions";
+import { MarkdownSelectableContext } from "../../native/MarkdownSelectableContext";
+import {
   ThreadHandoffDivider,
   ThreadHandoffRow,
   ThreadModelSwitchDivider,
@@ -66,8 +76,10 @@ import {
   type EnvironmentId,
   type AssistantCitation,
   type MessageId,
+  type OrchestrationV2MessageReaction,
   type OrchestrationV2ProjectedTurnItem,
   type RunId,
+  setMessageReaction as withMessageReaction,
   type OrchestrationV2RoutineLabel,
   type ProjectAvatar,
   type ProjectId,
@@ -143,9 +155,16 @@ import {
   Pressable,
   StyleSheet,
   type ColorValue,
+  type StyleProp,
   useWindowDimensions,
   View,
+  type ViewStyle,
 } from "react-native";
+import { GestureDetector, useLongPressGesture } from "react-native-gesture-handler";
+import {
+  myMessageReaction,
+  toggledMessageReaction,
+} from "@t3tools/client-runtime/message-reactions";
 import { Image as ExpoImage } from "expo-image";
 import { useResolveClassNames } from "uniwind";
 import { useReduceMotionEnabled } from "../../lib/appState";
@@ -173,7 +192,7 @@ import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { SYSTEM_FONT_FAMILY } from "../../lib/fontFamilies";
 import { scopedThreadKey } from "../../lib/scopedEntities";
-import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
+import { copyTextWithHaptic, tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { downloadAndShareAttachment } from "../../lib/attachmentDownload";
 import { mobileAssistantCitation, mobileReplyCitation } from "../../lib/composerCitation";
 import { splitMarkdownDetails } from "../../lib/markdownDetails";
@@ -490,6 +509,10 @@ export interface ThreadFeedProps {
   readonly onCite?: ((citation: AssistantCitation) => void) | null;
   /** Swiping a bot's bubble replies to it. Absent or null leaves bubbles still. */
   readonly onReply?: ((citation: AssistantCitation) => void) | null;
+  /** Reacting to a bubble in a bot conversation; resolves false when it failed. Null shows reactions read-only. */
+  readonly onSetMessageReaction?:
+    | ((messageId: MessageId, emoji: string | null) => Promise<boolean>)
+    | null;
 }
 
 async function waitForThreadShell(
@@ -1843,6 +1866,129 @@ function BotBubbleSwipeReply(props: {
   );
 }
 
+interface PendingMessageReaction {
+  readonly emoji: string | null;
+  /** The server's reactions when the user chose; the choice shows only until they change. */
+  readonly basis: ReadonlyArray<OrchestrationV2MessageReaction> | undefined;
+  readonly at: string;
+}
+
+interface MessageReactionController {
+  readonly pending: ReadonlyMap<MessageId, PendingMessageReaction>;
+  readonly accent: MessageReactionAccent;
+  readonly outlineColor: string;
+  /** Null when reactions are read-only. */
+  readonly open: ((target: MessageReactionTarget) => void) | null;
+  readonly choose: (
+    messageId: MessageId,
+    serverReactions: ReadonlyArray<OrchestrationV2MessageReaction> | undefined,
+    current: string | null,
+    chosen: string,
+  ) => void;
+}
+
+// Context, not row props: LegendList keeps visible rows until their item or extraData changes.
+const MessageReactionContext = createContext<MessageReactionController | null>(null);
+
+const REACT_ACCESSIBILITY_ACTIONS = [{ name: "react", label: "React" }];
+
+/** A bot conversation's finished bubble: long-press to react, with its reactions pinned on top. */
+function ReactableBubble(props: {
+  readonly messageId: MessageId;
+  readonly align: MessageReactionAlign;
+  /** False while it streams or waits to send. */
+  readonly reactable: boolean;
+  readonly reactions: ReadonlyArray<OrchestrationV2MessageReaction> | undefined;
+  readonly onCopy: () => void;
+  readonly actions: ReadonlyArray<MessageReactionAction>;
+  readonly className: string;
+  readonly style: StyleProp<ViewStyle>;
+  readonly children: ReactNode;
+}) {
+  const { messageId, align } = props;
+  const controller = useContext(MessageReactionContext);
+  const staticRow = useContext(ThreadFeedStaticRowContext);
+  const bubbleRef = useRef<ComponentRef<typeof View>>(null);
+  const pending = controller?.pending.get(messageId);
+  const reactions =
+    pending !== undefined && pending.basis === props.reactions
+      ? withMessageReaction(props.reactions ?? [], { kind: "user" }, pending.emoji, pending.at)
+      : props.reactions;
+  const current = myMessageReaction(reactions);
+  const open = staticRow || !props.reactable ? null : (controller?.open ?? null);
+  const openOverlay = () => {
+    bubbleRef.current?.measureInWindow((x, y, width, height) => {
+      open?.({
+        messageId,
+        rect: { x, y, width, height },
+        align,
+        current,
+        serverReactions: props.reactions,
+        bubble: (
+          <MarkdownSelectableContext value={false}>
+            <View
+              className={props.className}
+              style={[props.style, { width, maxWidth: width, marginTop: 0 }]}
+            >
+              {props.children}
+            </View>
+          </MarkdownSelectableContext>
+        ),
+        actions: [
+          { id: "copy", title: "Copy", icon: "doc.on.doc", onPress: props.onCopy },
+          ...props.actions,
+        ],
+      });
+    });
+  };
+  const longPress = useLongPressGesture({
+    minDuration: 350,
+    runOnJS: true,
+    enabled: open !== null,
+    onActivate: openOverlay,
+  });
+  return (
+    <GestureDetector gesture={longPress}>
+      <View
+        ref={bubbleRef}
+        collapsable={false}
+        className={props.className}
+        style={[
+          props.style,
+          reactions && reactions.length > 0
+            ? { marginTop: MESSAGE_REACTION_BADGE_CLEARANCE }
+            : null,
+        ]}
+        accessibilityActions={open ? REACT_ACCESSIBILITY_ACTIONS : undefined}
+        onAccessibilityAction={({ nativeEvent }) => {
+          if (nativeEvent.actionName === "react") openOverlay();
+        }}
+      >
+        {/* Native selection would claim the long-press that opens reactions. */}
+        <MarkdownSelectableContext value={open === null}>
+          {props.children}
+        </MarkdownSelectableContext>
+        {controller ? (
+          <MessageReactionBadges
+            reactions={reactions}
+            align={align}
+            accent={controller.accent}
+            outlineColor={controller.outlineColor}
+            onPress={
+              open
+                ? (emoji, mine) => {
+                    if (mine) controller.choose(messageId, props.reactions, current, emoji);
+                    else openOverlay();
+                  }
+                : undefined
+            }
+          />
+        ) : null}
+      </View>
+    </GestureDetector>
+  );
+}
+
 function renderFeedEntry(
   info: { item: ThreadFeedRow; index: number },
   props: Pick<
@@ -2303,11 +2449,143 @@ function renderFeedEntry(
             context: message.context,
           })
         : null;
+      const sentMessageEdit =
+        props.onEditSentMessage != null &&
+        props.unsettledTurnId === null &&
+        !entry.pendingMessage &&
+        isEditableSentMessage(message)
+          ? () => props.onEditSentMessage?.({ id: message.id, text: presentation.text })
+          : undefined;
       const hasBubble =
         fileCards === null &&
         (foldRowId !== null ||
           presentation.text.trim().length > 0 ||
           visibleAttachments.length + pendingBubbleAttachments.length > 0);
+      const userBubbleClassName = cn(
+        "min-w-0 rounded-[20px]",
+        props.directMessage && props.messageGrouping.groupedWithPrevious && "rounded-tr-md",
+        props.directMessage && props.messageGrouping.groupedWithNext && "rounded-br-md",
+      );
+      const userBubbleStyle = {
+        backgroundColor: ownBubble?.background ?? userBubbleColor,
+        maxWidth: props.duoColumns ? "85%" : props.userBubbleMaxWidth,
+        ...(!bubbleBodyVisible
+          ? null
+          : hasReviewCommentContext
+            ? { width: props.reviewCommentBubbleWidth }
+            : hasWideBlock || foldExpanded
+              ? { width: props.duoColumns ? "85%" : props.userBubbleMaxWidth }
+              : null),
+      };
+      const userBubbleBody = (
+        <>
+          {presentation.attribution === "guest" ? <GuestBubbleTint /> : null}
+          {foldRowId !== null ? (
+            <AgentMessageFoldHeader
+              environmentId={props.environmentId}
+              senderThreadId={message.senderThreadId}
+              summary={
+                replaceComposerContextReferences(presentation.text, (ref) => ref.label)
+                  .split(/\r?\n/)
+                  .find((line) => line.trim().length > 0)
+                  ?.trim() ?? ""
+              }
+              expanded={foldExpanded}
+              onToggle={() => props.onToggleWorkRow(foldRowId, entry.id)}
+              iconSubtleColor={iconSubtleColor}
+            />
+          ) : null}
+          {bubbleBodyVisible ? (
+            <View className={cn("gap-2 px-3.5 pb-2.5", foldRowId === null && "pt-2.5")}>
+              {pendingBubbleAttachments.map((attachment) =>
+                attachment.type === "image" && attachment.uploadedAttachmentId ? (
+                  <MessageAttachmentImage
+                    key={attachment.id}
+                    environmentId={props.environmentId}
+                    attachmentId={attachment.uploadedAttachmentId}
+                    name={attachment.name}
+                    mimeType={attachment.mimeType}
+                    className="h-[140px] w-[180px] rounded-[14px]"
+                    onPressPreview={props.onPressPreview}
+                  />
+                ) : attachment.type === "image" ? (
+                  <Pressable
+                    key={attachment.id}
+                    accessibilityRole="imagebutton"
+                    accessibilityLabel={`Open ${attachment.name}`}
+                    onPress={() => {
+                      const source = composerImageGallery([attachment])[0];
+                      if (source)
+                        props.onPressPreview({
+                          ...source,
+                          gallery: composerImageGallery(
+                            entry.pendingMessage?.attachments ?? [],
+                            props.environmentId,
+                          ),
+                        });
+                    }}
+                  >
+                    <Image
+                      source={{ uri: attachment.previewUri }}
+                      style={{ width: 180, height: 140, borderRadius: 14 }}
+                    />
+                  </Pressable>
+                ) : (
+                  <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
+                ),
+              )}
+              {/* An empty container still takes a gap, which pads every attachment-free bubble. */}
+              {visibleAttachments.length > 0 ? (
+                <View className={inlineAttachmentIds.size ? "flex-row flex-wrap gap-2" : "gap-2"}>
+                  {visibleAttachments.map((attachment) => {
+                    return isImageAttachment(attachment) ? (
+                      <MessageAttachmentImage
+                        key={attachment.id}
+                        environmentId={props.environmentId}
+                        attachmentId={attachment.id}
+                        name={attachment.name}
+                        mimeType={attachment.mimeType}
+                        className={
+                          inlineAttachmentIds.size
+                            ? "h-24 w-24 rounded-[14px] bg-user-bubble-foreground/15"
+                            : "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
+                        }
+                        onPressPreview={props.onPressPreview}
+                      />
+                    ) : isFileAttachment(attachment) ? (
+                      <MessageAttachmentFile
+                        key={attachment.id}
+                        environmentId={props.environmentId}
+                        attachment={attachment}
+                        onPressPreview={props.onPressPreview}
+                        onPlaybackStart={props.onPlaybackStart}
+                      />
+                    ) : (
+                      <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
+                    );
+                  })}
+                </View>
+              ) : null}
+              {presentation.text.trim().length > 0 ? (
+                <MarkdownImageAvailableWidthContext
+                  value={props.userBubbleMaxWidth - USER_BUBBLE_HORIZONTAL_PADDING * 2}
+                >
+                  <UserMessageContent
+                    text={renderedText}
+                    environmentId={props.environmentId}
+                    context={message.context}
+                    markdownStyles={styles}
+                    reviewCommentColors={props.reviewCommentColors}
+                    skills={props.skills}
+                    linkHandlers={props.markdownLinkHandlers}
+                    renderImage={props.renderMarkdownImage}
+                  />
+                </MarkdownImageAvailableWidthContext>
+              ) : null}
+            </View>
+          ) : null}
+        </>
+      );
       return (
         <Animated.View
           className={cn("items-end", props.messageGrouping.groupedWithNext ? "mb-1" : "mb-5")}
@@ -2385,132 +2663,38 @@ function renderFeedEntry(
             </View>
           ) : null}
           {hasBubble ? (
-            <View
-              className={cn(
-                "min-w-0 rounded-[20px]",
-                props.directMessage && props.messageGrouping.groupedWithPrevious && "rounded-tr-md",
-                props.directMessage && props.messageGrouping.groupedWithNext && "rounded-br-md",
-              )}
-              style={{
-                backgroundColor: ownBubble?.background ?? userBubbleColor,
-                maxWidth: props.duoColumns ? "85%" : props.userBubbleMaxWidth,
-                ...(!bubbleBodyVisible
-                  ? null
-                  : hasReviewCommentContext
-                    ? { width: props.reviewCommentBubbleWidth }
-                    : hasWideBlock || foldExpanded
-                      ? { width: props.duoColumns ? "85%" : props.userBubbleMaxWidth }
-                      : null),
-              }}
-            >
-              {presentation.attribution === "guest" ? <GuestBubbleTint /> : null}
-              {foldRowId !== null ? (
-                <AgentMessageFoldHeader
-                  environmentId={props.environmentId}
-                  senderThreadId={message.senderThreadId}
-                  summary={
-                    replaceComposerContextReferences(presentation.text, (ref) => ref.label)
-                      .split(/\r?\n/)
-                      .find((line) => line.trim().length > 0)
-                      ?.trim() ?? ""
-                  }
-                  expanded={foldExpanded}
-                  onToggle={() => props.onToggleWorkRow(foldRowId, entry.id)}
-                  iconSubtleColor={iconSubtleColor}
-                />
-              ) : null}
-              {bubbleBodyVisible ? (
-                <View className={cn("gap-2 px-3.5 pb-2.5", foldRowId === null && "pt-2.5")}>
-                  {pendingBubbleAttachments.map((attachment) =>
-                    attachment.type === "image" && attachment.uploadedAttachmentId ? (
-                      <MessageAttachmentImage
-                        key={attachment.id}
-                        environmentId={props.environmentId}
-                        attachmentId={attachment.uploadedAttachmentId}
-                        name={attachment.name}
-                        mimeType={attachment.mimeType}
-                        className="h-[140px] w-[180px] rounded-[14px]"
-                        onPressPreview={props.onPressPreview}
-                      />
-                    ) : attachment.type === "image" ? (
-                      <Pressable
-                        key={attachment.id}
-                        accessibilityRole="imagebutton"
-                        accessibilityLabel={`Open ${attachment.name}`}
-                        onPress={() => {
-                          const source = composerImageGallery([attachment])[0];
-                          if (source)
-                            props.onPressPreview({
-                              ...source,
-                              gallery: composerImageGallery(
-                                entry.pendingMessage?.attachments ?? [],
-                                props.environmentId,
-                              ),
-                            });
-                        }}
-                      >
-                        <Image
-                          source={{ uri: attachment.previewUri }}
-                          style={{ width: 180, height: 140, borderRadius: 14 }}
-                        />
-                      </Pressable>
-                    ) : (
-                      <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
-                    ),
-                  )}
-                  {/* An empty container still takes a gap, which pads every attachment-free bubble. */}
-                  {visibleAttachments.length > 0 ? (
-                    <View
-                      className={inlineAttachmentIds.size ? "flex-row flex-wrap gap-2" : "gap-2"}
-                    >
-                      {visibleAttachments.map((attachment) => {
-                        return isImageAttachment(attachment) ? (
-                          <MessageAttachmentImage
-                            key={attachment.id}
-                            environmentId={props.environmentId}
-                            attachmentId={attachment.id}
-                            name={attachment.name}
-                            mimeType={attachment.mimeType}
-                            className={
-                              inlineAttachmentIds.size
-                                ? "h-24 w-24 rounded-[14px] bg-user-bubble-foreground/15"
-                                : "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
-                            }
-                            onPressPreview={props.onPressPreview}
-                          />
-                        ) : isFileAttachment(attachment) ? (
-                          <MessageAttachmentFile
-                            key={attachment.id}
-                            environmentId={props.environmentId}
-                            attachment={attachment}
-                            onPressPreview={props.onPressPreview}
-                            onPlaybackStart={props.onPlaybackStart}
-                          />
-                        ) : (
-                          <MessageAttachmentUnknown key={attachment.id} name={attachment.name} />
-                        );
-                      })}
-                    </View>
-                  ) : null}
-                  {presentation.text.trim().length > 0 ? (
-                    <MarkdownImageAvailableWidthContext
-                      value={props.userBubbleMaxWidth - USER_BUBBLE_HORIZONTAL_PADDING * 2}
-                    >
-                      <UserMessageContent
-                        text={renderedText}
-                        environmentId={props.environmentId}
-                        context={message.context}
-                        markdownStyles={styles}
-                        reviewCommentColors={props.reviewCommentColors}
-                        skills={props.skills}
-                        linkHandlers={props.markdownLinkHandlers}
-                        renderImage={props.renderMarkdownImage}
-                      />
-                    </MarkdownImageAvailableWidthContext>
-                  ) : null}
-                </View>
-              ) : null}
-            </View>
+            props.directMessage ? (
+              <ReactableBubble
+                messageId={message.id}
+                align="right"
+                reactable={!entry.pendingMessage}
+                reactions={message.reactions}
+                onCopy={() => {
+                  if (message.context && presentation.attribution !== "guest") {
+                    void writeComposerContextClipboard(message.text, {
+                      version: 1,
+                      source: { environmentId: props.environmentId, messageId: message.id },
+                      records: message.context.records,
+                    }).then(() =>
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success),
+                    );
+                  } else void tryCopyTextWithHaptic(presentation.text);
+                }}
+                actions={
+                  sentMessageEdit
+                    ? [{ id: "edit", title: "Edit", icon: "pencil", onPress: sentMessageEdit }]
+                    : []
+                }
+                className={userBubbleClassName}
+                style={userBubbleStyle}
+              >
+                {userBubbleBody}
+              </ReactableBubble>
+            ) : (
+              <View className={userBubbleClassName} style={userBubbleStyle}>
+                {userBubbleBody}
+              </View>
+            )
           ) : null}
           {bubbleBodyVisible && !(props.directMessage && props.messageGrouping.groupedWithNext) ? (
             <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
@@ -2569,14 +2753,7 @@ function renderFeedEntry(
               {presentation.text.trim().length > 0 ? (
                 <UserMessageCopyButton
                   text={presentation.text}
-                  onEdit={
-                    props.onEditSentMessage != null &&
-                    props.unsettledTurnId === null &&
-                    !entry.pendingMessage &&
-                    isEditableSentMessage(message)
-                      ? () => props.onEditSentMessage?.({ id: message.id, text: presentation.text })
-                      : undefined
-                  }
+                  onEdit={sentMessageEdit}
                   onCopy={
                     message.context && presentation.attribution !== "guest"
                       ? () =>
@@ -2633,7 +2810,32 @@ function renderFeedEntry(
           {sender !== undefined && !props.messageGrouping.groupedWithPrevious ? (
             <DirectMessageSenderLabel environmentId={props.environmentId} sender={sender} />
           ) : null}
-          <View
+          <ReactableBubble
+            messageId={message.id}
+            align="left"
+            reactable={!message.streaming}
+            reactions={message.reactions}
+            onCopy={() => void tryCopyTextWithHaptic(renderedText)}
+            actions={
+              onReply
+                ? [
+                    {
+                      id: "reply",
+                      title: "Reply",
+                      icon: "arrow.uturn.backward",
+                      onPress: () => {
+                        const citation = mobileReplyCitation({
+                          environmentId: props.environmentId,
+                          threadId: props.threadId,
+                          messageId: message.id,
+                          markdown: renderedText,
+                        });
+                        if (citation) onReply(citation);
+                      },
+                    },
+                  ]
+                : []
+            }
             className={cn(
               "min-w-0 gap-2 rounded-[20px] px-3.5 py-2.5",
               props.messageGrouping.groupedWithPrevious && "rounded-tl-md",
@@ -2673,7 +2875,7 @@ function renderFeedEntry(
               onPressPreview={props.onPressPreview}
               onPlaybackStart={props.onPlaybackStart}
             />
-          </View>
+          </ReactableBubble>
           {sender !== undefined && !props.messageGrouping.groupedWithNext ? (
             <Text className="mt-1 pl-1 font-t3-medium text-xs tabular-nums text-foreground-secondary">
               {timestampLabel}
@@ -3641,6 +3843,57 @@ export const ThreadFeed = memo(function ThreadFeed({
         markdownStyles: inkedMarkdownStyleSet(markdownStyles.user, ownBubbleColors.foreground),
       }
     : null;
+  const [pendingReactions, setPendingReactions] = useState<
+    ReadonlyMap<MessageId, PendingMessageReaction>
+  >(() => new Map());
+  const [reactionTarget, setReactionTarget] = useState<MessageReactionTarget | null>(null);
+  const onSetMessageReaction = props.onSetMessageReaction ?? null;
+  const reactionAccent = ownBubbleColors ?? {
+    background: theme["--color-primary"],
+    foreground: theme["--color-primary-foreground"],
+  };
+  const chooseReaction = (
+    messageId: MessageId,
+    serverReactions: ReadonlyArray<OrchestrationV2MessageReaction> | undefined,
+    current: string | null,
+    chosen: string,
+  ) => {
+    if (onSetMessageReaction === null) return;
+    setReactionTarget(null);
+    void Haptics.selectionAsync();
+    const emoji = toggledMessageReaction(current, chosen);
+    // Ties keep order, so matching the newest reaction sorts the choice last, as the server will.
+    const at = (serverReactions ?? []).reduce(
+      (latest, reaction) => (reaction.at > latest ? reaction.at : latest),
+      "",
+    );
+    const pending = { emoji, basis: serverReactions, at };
+    setPendingReactions((previous) => new Map(previous).set(messageId, pending));
+    void onSetMessageReaction(messageId, emoji).then((applied) => {
+      if (applied) return;
+      setPendingReactions((previous) => {
+        if (previous.get(messageId) !== pending) return previous;
+        const next = new Map(previous);
+        next.delete(messageId);
+        return next;
+      });
+    });
+  };
+  const reactionController: MessageReactionController | null = props.directMessage
+    ? {
+        pending: pendingReactions,
+        accent: reactionAccent,
+        outlineColor: screenColor,
+        open:
+          onSetMessageReaction === null
+            ? null
+            : (target) => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setReactionTarget(target);
+              },
+        choose: chooseReaction,
+      }
+    : null;
   const renderReasoning = (text: string) => (
     <AssistantMarkdownContent
       markdown={text}
@@ -4311,190 +4564,210 @@ export const ThreadFeed = memo(function ThreadFeed({
 
   return (
     <PresentationSource identifier={fileShareSourceIdentifier} style={{ flex: 1 }}>
-      {/* While the pane tracks a sliding sidebar, rows keep its settled width and re-wrap once. */}
-      <View
-        className="flex-1"
-        style={settledPaneWidth !== null ? { width: settledPaneWidth } : undefined}
-        onLayout={handleViewportLayout}
-      >
-        <View className="flex-1">
-          {deferListMount ? null : (
-            // oxlint-disable-next-line t3code/require-registered-list-scroll -- ThreadFeedScrollView is passed through the iOS-only spread below; the prop rejects undefined.
-            <KeyboardAwareLegendList
-              ref={attachList}
-              // LegendList cannot see adjustedContentInset; remount so initial positioning waits for UIKit attachment.
-              key={listMountKey}
-              style={{ flex: 1 }}
-              // RN 0.81+ drops inset-area touches (facebook/react-native#54123), making blank post-send space unscrollable.
-              applyWorkaroundForContentInsetHitTestBug
-              {...(Platform.OS === "ios" ? { ScrollViewComponent: ThreadFeedScrollView } : {})}
-              // Horizontal Duo reservations are already included in the row padding.
-              contentInsetAdjustmentBehavior={
-                usesNativeAutomaticInsets
-                  ? duoColumns && splitLayout
-                    ? "scrollableAxes"
-                    : "automatic"
-                  : "never"
-              }
-              automaticallyAdjustsScrollIndicatorInsets={usesNativeAutomaticInsets}
-              {...(usesNativeAutomaticInsets
-                ? {
-                    // Manual contentInset zeroes UIKit's automatic header inset and scroll-edge region; derive it from the transparent header.
-                    scrollIndicatorInsets: { top: 0, left: 0, right: 0, bottom: 0 },
-                  }
-                : { scrollIndicatorInsets: { top: topContentInset, bottom: 0 } })}
-              {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
-              // Patched LegendList math must allow -headerInset so short-content end scrolls rest below the header.
-              contentInsetStartAdjustment={usesNativeAutomaticInsets ? anchorTopInset : 0}
-              contentInsetEndAdjustment={props.contentInsetEndAdjustment}
-              keyboardOffset={props.keyboardOffset}
-              // UIKit adds the safe-area bottom to raw contentInset; ThreadDetailScreen under-reports it.
-              // Include that extra inset in LegendList's scroll math so end scrolls reach the resting offset.
-              contentInsetEndStaticAdjustment={usesNativeAutomaticInsets ? insets.bottom : 0}
-              // Seed composer height until keyboard integration reports it, or Android's initial end scroll runs too early.
-              {...(initialContentInset ? { contentInset: initialContentInset } : {})}
-              adjustedInsetCompensation={usesNativeAutomaticInsets ? insets.bottom : 0}
-              freeze={props.freeze}
-              // Follow the measured end immediately; animating estimates races row measurement on acknowledgement.
-              maintainScrollAtEnd={
-                disclosureToggleSettling || props.sendingWithKeyboard || !followsEnd
-                  ? false
-                  : {
-                      animated: false,
-                      on: {
-                        dataChange: true,
-                        itemLayout: true,
-                        layout: true,
-                      },
-                    }
-              }
-              // A reflow grows every visible row at once, well past the near-end threshold
-              // that otherwise lets a status-bar tap leave the end.
-              maintainScrollAtEndThreshold={reflowFollowsEnd ? Number.POSITIVE_INFINITY : undefined}
-              sizeChangeAnchor={reflowAnchorsSizeChanges ? holdReflowAnchor : undefined}
-              maintainVisibleContentPosition={
-                (followsEnd && !disclosureToggleSettling) ||
-                (disclosureToggleSettling && disclosureTopSpace > 0)
-                  ? false
-                  : maintainVisibleContentPosition
-              }
-              data={groupedFeed}
-              extraData={listAppearanceData}
-              renderItem={renderItem}
-              viewabilityConfig={THREAD_MEDIA_VIEWABILITY_CONFIG}
-              keyExtractor={(entry) => entry.id}
-              getItemType={(entry) => {
-                if (entry.type !== "message") return entry.type;
-                if (isCompactionCommandFeedEntry(entry)) return "message:compaction";
-                if (
-                  entry.message.role === "assistant" &&
-                  !terminalAssistantMessageIds.has(entry.message.id)
-                ) {
-                  return "message:assistant-progress";
+      <MessageReactionContext value={reactionController}>
+        {/* While the pane tracks a sliding sidebar, rows keep its settled width and re-wrap once. */}
+        <View
+          className="flex-1"
+          style={settledPaneWidth !== null ? { width: settledPaneWidth } : undefined}
+          onLayout={handleViewportLayout}
+        >
+          <View className="flex-1">
+            {deferListMount ? null : (
+              // oxlint-disable-next-line t3code/require-registered-list-scroll -- ThreadFeedScrollView is passed through the iOS-only spread below; the prop rejects undefined.
+              <KeyboardAwareLegendList
+                ref={attachList}
+                // LegendList cannot see adjustedContentInset; remount so initial positioning waits for UIKit attachment.
+                key={listMountKey}
+                style={{ flex: 1 }}
+                // RN 0.81+ drops inset-area touches (facebook/react-native#54123), making blank post-send space unscrollable.
+                applyWorkaroundForContentInsetHitTestBug
+                {...(Platform.OS === "ios" ? { ScrollViewComponent: ThreadFeedScrollView } : {})}
+                // Horizontal Duo reservations are already included in the row padding.
+                contentInsetAdjustmentBehavior={
+                  usesNativeAutomaticInsets
+                    ? duoColumns && splitLayout
+                      ? "scrollableAxes"
+                      : "automatic"
+                    : "never"
                 }
-                const { attribution, bot } = resolveUserMessagePresentation(entry.message);
-                if (bot?.background) return "message:automation";
-                return attribution === "automation" || attribution === "agent"
-                  ? `message:${attribution}`
-                  : `message:${entry.message.role}`;
-              }}
-              getFixedItemSize={getFixedItemSize}
-              // Native layout transitions retain stale row positions during sync, even at duration zero.
-              onItemSizeChanged={handleItemSizeChanged}
-              drawDistance={500}
-              keyboardShouldPersistTaps="always"
-              keyboardDismissMode="none"
-              keyboardLiftBehavior={props.sendingWithKeyboard ? "persistent" : "whenAtEnd"}
-              // Seed viewport size to skip programmatic attach-time positioning, which races UIKit's adjustedContentInset.
-              {...(viewportHeight > 0 && viewportWidth > 0
-                ? { estimatedListSize: { height: viewportHeight, width: viewportWidth } }
-                : {})}
-              // Enable overflow: RN scrollTo clamps against raw insets and ignores the automatic header inset.
-              scrollToOverflowEnabled
-              estimatedItemSize={180}
-              alignItemsAtEnd
-              initialScrollAtEnd
-              onLoad={() => {
-                // One frame of overlap with identical rows is invisible; a gap would flash.
-                requestAnimationFrame(() => setOpeningTailDoneKey(listMountKey));
-                loadedListKeyRef.current = listMountKey;
-                setLoadedListKey(listMountKey);
-              }}
-              // Row positions start below the header; the reflow anchor converts between them.
-              onMetricsChange={(metrics) => {
-                listHeaderSizeRef.current = metrics.headerSize;
-              }}
-              onScroll={handleScroll}
-              onScrollBeginDrag={handleScrollBeginDrag}
-              onScrollEndDrag={handleScrollEndDrag}
-              onMomentumScrollBegin={handleMomentumScrollBegin}
-              onMomentumScrollEnd={handleMomentumScrollEnd}
-              scrollEventThrottle={16}
-              ListHeaderComponent={
-                <>
-                  {usesNativeAutomaticInsets ? null : <View style={{ height: topContentInset }} />}
-                  {setupAnchorIndex < 0 && props.worktreeSetup ? (
-                    <WorktreeSetupCard key={props.threadId} {...props.worktreeSetup} />
-                  ) : null}
-                  {props.historyControls ? (
-                    <ThreadFeedLoadEarlierControl {...props.historyControls} />
-                  ) : null}
-                  <View ref={headerEndRef} collapsable={false} />
-                </>
-              }
-              ListFooterComponent={listFooter}
-              contentContainerStyle={{
-                ...(props.fitShortFeedToViewport ? { minHeight: "100%" } : {}),
-                paddingTop: FEED_PADDING_TOP + disclosureTopSpace,
-                paddingLeft: contentHorizontalPadding + contentLeftInset,
-                paddingRight: contentHorizontalPadding + contentRightInset,
-              }}
-            />
-          )}
-        </View>
-        {showOpeningTail ? (
-          <ThreadFeedOpeningTail
-            feed={groupedFeed}
-            rowCount={Math.ceil((viewportHeight || windowHeight) / OPENING_TAIL_ROW_HEIGHT) + 1}
-            renderItem={renderItem}
-            fixedItemSize={getFixedItemSize}
-            footer={listFooter}
-            endInset={props.contentInsetEndAdjustment}
-            staticEndInset={insets.bottom}
-            backgroundColor={screenColor}
-            headerInset={anchorTopInset}
-            rowsWidth={viewportWidth}
-            rowsWidthSettled={viewportSizeKnown}
-            onWidth={(width) =>
-              setViewportWidth((current) => (Math.abs(current - width) > 1 ? width : current))
-            }
-            paddingLeft={contentHorizontalPadding + contentLeftInset}
-            paddingRight={contentHorizontalPadding + contentRightInset}
-          />
-        ) : null}
-        {presentedFeed.length === 0 &&
-        !props.worktreeSetup &&
-        props.activeWorkStartedAt === null &&
-        props.contentPresentation.kind === "ready" ? (
-          <View
-            pointerEvents="none"
-            style={[StyleSheet.absoluteFill, { left: contentLeftInset, right: contentRightInset }]}
-          >
-            <ThreadFeedPlaceholder
-              title={props.emptyPlaceholder?.title ?? "No conversation yet"}
-              detail={
-                props.emptyPlaceholder?.detail ??
-                "Ask the agent to inspect the repo, run a command, or continue the active thread."
-              }
-              topInset={topContentInset}
-              bottomInset={bottomContentInset}
-              horizontalPadding={horizontalPadding}
-            />
+                automaticallyAdjustsScrollIndicatorInsets={usesNativeAutomaticInsets}
+                {...(usesNativeAutomaticInsets
+                  ? {
+                      // Manual contentInset zeroes UIKit's automatic header inset and scroll-edge region; derive it from the transparent header.
+                      scrollIndicatorInsets: { top: 0, left: 0, right: 0, bottom: 0 },
+                    }
+                  : { scrollIndicatorInsets: { top: topContentInset, bottom: 0 } })}
+                {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
+                // Patched LegendList math must allow -headerInset so short-content end scrolls rest below the header.
+                contentInsetStartAdjustment={usesNativeAutomaticInsets ? anchorTopInset : 0}
+                contentInsetEndAdjustment={props.contentInsetEndAdjustment}
+                keyboardOffset={props.keyboardOffset}
+                // UIKit adds the safe-area bottom to raw contentInset; ThreadDetailScreen under-reports it.
+                // Include that extra inset in LegendList's scroll math so end scrolls reach the resting offset.
+                contentInsetEndStaticAdjustment={usesNativeAutomaticInsets ? insets.bottom : 0}
+                // Seed composer height until keyboard integration reports it, or Android's initial end scroll runs too early.
+                {...(initialContentInset ? { contentInset: initialContentInset } : {})}
+                adjustedInsetCompensation={usesNativeAutomaticInsets ? insets.bottom : 0}
+                freeze={props.freeze}
+                // Follow the measured end immediately; animating estimates races row measurement on acknowledgement.
+                maintainScrollAtEnd={
+                  disclosureToggleSettling || props.sendingWithKeyboard || !followsEnd
+                    ? false
+                    : {
+                        animated: false,
+                        on: {
+                          dataChange: true,
+                          itemLayout: true,
+                          layout: true,
+                        },
+                      }
+                }
+                // A reflow grows every visible row at once, well past the near-end threshold
+                // that otherwise lets a status-bar tap leave the end.
+                maintainScrollAtEndThreshold={
+                  reflowFollowsEnd ? Number.POSITIVE_INFINITY : undefined
+                }
+                sizeChangeAnchor={reflowAnchorsSizeChanges ? holdReflowAnchor : undefined}
+                maintainVisibleContentPosition={
+                  (followsEnd && !disclosureToggleSettling) ||
+                  (disclosureToggleSettling && disclosureTopSpace > 0)
+                    ? false
+                    : maintainVisibleContentPosition
+                }
+                data={groupedFeed}
+                extraData={listAppearanceData}
+                renderItem={renderItem}
+                viewabilityConfig={THREAD_MEDIA_VIEWABILITY_CONFIG}
+                keyExtractor={(entry) => entry.id}
+                getItemType={(entry) => {
+                  if (entry.type !== "message") return entry.type;
+                  if (isCompactionCommandFeedEntry(entry)) return "message:compaction";
+                  if (
+                    entry.message.role === "assistant" &&
+                    !terminalAssistantMessageIds.has(entry.message.id)
+                  ) {
+                    return "message:assistant-progress";
+                  }
+                  const { attribution, bot } = resolveUserMessagePresentation(entry.message);
+                  if (bot?.background) return "message:automation";
+                  return attribution === "automation" || attribution === "agent"
+                    ? `message:${attribution}`
+                    : `message:${entry.message.role}`;
+                }}
+                getFixedItemSize={getFixedItemSize}
+                // Native layout transitions retain stale row positions during sync, even at duration zero.
+                onItemSizeChanged={handleItemSizeChanged}
+                drawDistance={500}
+                keyboardShouldPersistTaps="always"
+                keyboardDismissMode="none"
+                keyboardLiftBehavior={props.sendingWithKeyboard ? "persistent" : "whenAtEnd"}
+                // Seed viewport size to skip programmatic attach-time positioning, which races UIKit's adjustedContentInset.
+                {...(viewportHeight > 0 && viewportWidth > 0
+                  ? { estimatedListSize: { height: viewportHeight, width: viewportWidth } }
+                  : {})}
+                // Enable overflow: RN scrollTo clamps against raw insets and ignores the automatic header inset.
+                scrollToOverflowEnabled
+                estimatedItemSize={180}
+                alignItemsAtEnd
+                initialScrollAtEnd
+                onLoad={() => {
+                  // One frame of overlap with identical rows is invisible; a gap would flash.
+                  requestAnimationFrame(() => setOpeningTailDoneKey(listMountKey));
+                  loadedListKeyRef.current = listMountKey;
+                  setLoadedListKey(listMountKey);
+                }}
+                // Row positions start below the header; the reflow anchor converts between them.
+                onMetricsChange={(metrics) => {
+                  listHeaderSizeRef.current = metrics.headerSize;
+                }}
+                onScroll={handleScroll}
+                onScrollBeginDrag={handleScrollBeginDrag}
+                onScrollEndDrag={handleScrollEndDrag}
+                onMomentumScrollBegin={handleMomentumScrollBegin}
+                onMomentumScrollEnd={handleMomentumScrollEnd}
+                scrollEventThrottle={16}
+                ListHeaderComponent={
+                  <>
+                    {usesNativeAutomaticInsets ? null : (
+                      <View style={{ height: topContentInset }} />
+                    )}
+                    {setupAnchorIndex < 0 && props.worktreeSetup ? (
+                      <WorktreeSetupCard key={props.threadId} {...props.worktreeSetup} />
+                    ) : null}
+                    {props.historyControls ? (
+                      <ThreadFeedLoadEarlierControl {...props.historyControls} />
+                    ) : null}
+                    <View ref={headerEndRef} collapsable={false} />
+                  </>
+                }
+                ListFooterComponent={listFooter}
+                contentContainerStyle={{
+                  ...(props.fitShortFeedToViewport ? { minHeight: "100%" } : {}),
+                  paddingTop: FEED_PADDING_TOP + disclosureTopSpace,
+                  paddingLeft: contentHorizontalPadding + contentLeftInset,
+                  paddingRight: contentHorizontalPadding + contentRightInset,
+                }}
+              />
+            )}
           </View>
-        ) : null}
-        <VideoPreviewModal source={expandedVideo} onRequestClose={closeVideoPreview} />
-        <FilePreviewModal source={expandedFile} onRequestClose={closeFilePreview} />
-      </View>
+          {showOpeningTail ? (
+            <ThreadFeedOpeningTail
+              feed={groupedFeed}
+              rowCount={Math.ceil((viewportHeight || windowHeight) / OPENING_TAIL_ROW_HEIGHT) + 1}
+              renderItem={renderItem}
+              fixedItemSize={getFixedItemSize}
+              footer={listFooter}
+              endInset={props.contentInsetEndAdjustment}
+              staticEndInset={insets.bottom}
+              backgroundColor={screenColor}
+              headerInset={anchorTopInset}
+              rowsWidth={viewportWidth}
+              rowsWidthSettled={viewportSizeKnown}
+              onWidth={(width) =>
+                setViewportWidth((current) => (Math.abs(current - width) > 1 ? width : current))
+              }
+              paddingLeft={contentHorizontalPadding + contentLeftInset}
+              paddingRight={contentHorizontalPadding + contentRightInset}
+            />
+          ) : null}
+          {presentedFeed.length === 0 &&
+          !props.worktreeSetup &&
+          props.activeWorkStartedAt === null &&
+          props.contentPresentation.kind === "ready" ? (
+            <View
+              pointerEvents="none"
+              style={[
+                StyleSheet.absoluteFill,
+                { left: contentLeftInset, right: contentRightInset },
+              ]}
+            >
+              <ThreadFeedPlaceholder
+                title={props.emptyPlaceholder?.title ?? "No conversation yet"}
+                detail={
+                  props.emptyPlaceholder?.detail ??
+                  "Ask the agent to inspect the repo, run a command, or continue the active thread."
+                }
+                topInset={topContentInset}
+                bottomInset={bottomContentInset}
+                horizontalPadding={horizontalPadding}
+              />
+            </View>
+          ) : null}
+          <VideoPreviewModal source={expandedVideo} onRequestClose={closeVideoPreview} />
+          <FilePreviewModal source={expandedFile} onRequestClose={closeFilePreview} />
+          {reactionTarget ? (
+            <MessageReactionOverlay
+              target={reactionTarget}
+              accent={reactionAccent}
+              iconColor={iconSubtleColor}
+              onChoose={(target, emoji) =>
+                chooseReaction(target.messageId, target.serverReactions, target.current, emoji)
+              }
+              onClose={() => setReactionTarget(null)}
+            />
+          ) : null}
+        </View>
+      </MessageReactionContext>
     </PresentationSource>
   );
 });

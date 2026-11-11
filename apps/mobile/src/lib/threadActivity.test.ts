@@ -32,6 +32,7 @@ import {
   deriveDirectMessageFeed,
   formatTimeMarker,
   withTimeMarkers,
+  withMessageReactions,
   deriveThreadFeedPresentation,
   isConnectionRequestActivityGroup,
   messageFoldRunId,
@@ -2126,6 +2127,29 @@ it("caps live thought previews while preserving reasoning detail", () => {
   expect(activity.detail).toBe(text);
   expect(JSON.parse(activity.getFullDetail()!).item).toMatchObject({ text });
   expect(activity.getCopyText()).toContain(text);
+});
+
+describe("withMessageReactions", () => {
+  it("puts a message's reactions on its entry and keeps every unchanged entry", () => {
+    const feed = buildThreadFeed([projected(userMessage(), 0), projected(assistantMessage(), 1)]);
+    const reactions = [
+      { emoji: "❤️", by: { kind: "user" as const }, at: "2026-06-20T00:00:04.000Z" },
+    ];
+    const messages = [
+      { id: MessageId.make("message-user") },
+      { id: MessageId.make("message-assistant"), reactions },
+    ];
+    const reacted = withMessageReactions(feed, messages);
+    const assistant = reacted.find((entry) => entry.id === "message-assistant");
+    expect(assistant?.type === "message" && assistant.message.reactions).toBe(reactions);
+    expect(reacted.find((entry) => entry.id === "message-user")).toBe(
+      feed.find((entry) => entry.id === "message-user"),
+    );
+    // Rebuilding with the same reactions reuses the entry, so only a changed row re-renders.
+    expect(withMessageReactions(feed, messages)).toEqual(reacted);
+    expect(withMessageReactions(feed, messages)[1]).toBe(reacted[1]);
+    expect(withMessageReactions(feed, [{ id: MessageId.make("message-assistant") }])).toBe(feed);
+  });
 });
 
 describe("withTimeMarkers", () => {

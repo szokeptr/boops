@@ -181,6 +181,7 @@ function commandThreadIds(command: OrchestrationV2Command): ReadonlyArray<Thread
     case "queued-run.cancel":
     case "queued-run.edit":
     case "message.edit":
+    case "message.reaction.set":
     case "runtime-request.respond":
     case "thread.user-input.dismiss":
     case "checkpoint.rollback":

@@ -43,7 +43,9 @@ import type {
   ChatAttachment,
   MessageId,
   OrchestrationV2Actor,
+  OrchestrationV2ConversationMessage,
   OrchestrationV2CreationSource,
+  OrchestrationV2MessageReaction,
   OrchestrationV2ExecutionNode,
   OrchestrationMessageContext,
   OrchestrationV2ProjectedTurnItem,
@@ -164,6 +166,8 @@ export interface ThreadFeedMessage {
   readonly updatedAt: string;
   readonly projectedItem?: OrchestrationV2ProjectedTurnItem;
   readonly checkpointSummary?: ThreadCheckpointSummary;
+  /** From the thread's messages, not its turn items, which never carry them. */
+  readonly reactions?: ReadonlyArray<OrchestrationV2MessageReaction>;
 }
 
 export interface LocalThreadMessage {
@@ -1779,6 +1783,41 @@ export function deriveDirectMessageFeed(
       fold: routineRunsRow,
     },
   );
+}
+
+const reactedEntries = new WeakMap<
+  ThreadFeedEntry,
+  {
+    readonly reactions: ReadonlyArray<OrchestrationV2MessageReaction>;
+    readonly entry: ThreadFeedEntry;
+  }
+>();
+
+/**
+ * Puts each message's reactions on its feed entry. Projections carry a message's reactions array
+ * over unrelated updates, so an entry is replaced only when its own reactions change.
+ */
+export function withMessageReactions(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+  messages: ReadonlyArray<Pick<OrchestrationV2ConversationMessage, "id" | "reactions">> | undefined,
+): ReadonlyArray<ThreadFeedEntry> {
+  const reactionsById = new Map<string, ReadonlyArray<OrchestrationV2MessageReaction>>();
+  for (const message of messages ?? []) {
+    if (message.reactions && message.reactions.length > 0) {
+      reactionsById.set(message.id, message.reactions);
+    }
+  }
+  if (reactionsById.size === 0) return feed;
+  return feed.map((entry) => {
+    if (entry.type !== "message") return entry;
+    const reactions = reactionsById.get(entry.message.id);
+    if (reactions === undefined) return entry;
+    const cached = reactedEntries.get(entry);
+    if (cached?.reactions === reactions) return cached.entry;
+    const reacted: ThreadFeedEntry = { ...entry, message: { ...entry.message, reactions } };
+    reactedEntries.set(entry, { reactions, entry: reacted });
+    return reacted;
+  });
 }
 
 const timeMarkers = new WeakMap<ThreadFeedEntry, ThreadFeedTimeMarker>();

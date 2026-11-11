@@ -9190,6 +9190,74 @@ it.layer(layerBotsTest)("bot families", (it) => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("a bot and the user each keep one reaction on a message", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const bots = yield* Bots.Bots;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-family-" });
+      const parent = yield* inHome(
+        home,
+        bots.create({ name: "Wren", modelSelection, hatch: false }),
+      );
+      const react = (emoji: string | null) =>
+        bots.reactToLatestMessage({
+          projectId: parent.projectId,
+          threadId: parent.mainThreadId,
+          emoji,
+        });
+      // The bot's own background notes are not what it reacts to.
+      yield* bots.tellMainConversation({
+        projectId: parent.projectId,
+        fromThreadId: ScheduledTaskService.heartbeatThreadId(parent.projectId),
+        text: "The visa form is due Friday.",
+      });
+      assert.deepEqual(yield* react("👍"), { reacted: false });
+
+      const child = yield* inHome(
+        home,
+        bots.createChild(
+          { parentProjectId: parent.projectId, name: "Pace", mode: "interview" },
+          approveAll,
+        ),
+      );
+      yield* bots.reportToParent({ childProjectId: child.projectId, text: "Rent is paid." });
+      const reactions = () =>
+        orchestrator
+          .getThreadProjection(parent.mainThreadId)
+          .pipe(
+            Effect.map((projection) =>
+              projection.messages
+                .find((message) => message.text === "Rent is paid.")
+                ?.reactions?.map((reaction) => [reaction.by.kind, reaction.emoji]),
+            ),
+          );
+      yield* react("👍");
+      yield* react("❤️");
+      assert.deepEqual(yield* reactions(), [["bot", "❤️"]]);
+
+      const messageId = (yield* orchestrator.getThreadProjection(
+        parent.mainThreadId,
+      )).messages.find((message) => message.text === "Rent is paid.")!.id;
+      const userReacts = (emoji: string | null) =>
+        orchestrator.dispatch({
+          type: "message.reaction.set",
+          commandId: CommandId.make(`user-reaction:${emoji}`),
+          threadId: parent.mainThreadId,
+          messageId,
+          emoji,
+        });
+      yield* userReacts("😂");
+      assert.deepEqual(yield* reactions(), [
+        ["bot", "❤️"],
+        ["user", "😂"],
+      ]);
+      yield* userReacts(null);
+      yield* react(null);
+      assert.deepEqual(yield* reactions(), []);
+    }).pipe(Effect.scoped),
+  );
+
   // Approvals and secret cards record on the asking thread, so a top-level child keeps its own.
   it.effect(
     "a child is its own top-level bot, so its requests reach the user, not its parent",

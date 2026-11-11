@@ -7,6 +7,7 @@ import {
   type BotDeleteInput,
   type BotFamilyAuthor,
   type BotMcpDelivery,
+  type BotMcpReactResult,
   type BotMessageOrigin,
   type BotRelation,
   type BotUnarchiveInput,
@@ -180,6 +181,15 @@ export class Bots extends Context.Service<
       readonly fromThreadId: ThreadId;
       readonly text: string;
     }) => Effect.Effect<BotMcpDelivery, BotFamilyError>;
+    /**
+     * Sets the bot's reaction to the latest message the user or another bot sent into
+     * `threadId`, one of its own threads; no emoji takes it back.
+     */
+    readonly reactToLatestMessage: (input: {
+      readonly projectId: ProjectId;
+      readonly threadId: ThreadId;
+      readonly emoji: string | null;
+    }) => Effect.Effect<BotMcpReactResult, BotFamilyError>;
     /** Moves every bot's routines that still post into its conversations, once at startup. */
     readonly moveRoutinesOffConversations: () => Effect.Effect<void>;
     /**
@@ -454,6 +464,37 @@ const make = Effect.gen(function* () {
         ),
       );
     return { delivery: sent.delivery } satisfies BotMcpDelivery;
+  });
+
+  const reactToLatestMessage: Bots["Service"]["reactToLatestMessage"] = Effect.fn(
+    "Bots.reactToLatestMessage",
+  )(function* (input) {
+    const bot = yield* requireBot(input.projectId);
+    const unavailable = () => familyError("unavailable", "Could not react to the message.");
+    const { messages } = yield* threads
+      .getThreadRecords(input.threadId, ["messages"], { messageRoles: ["user"] })
+      .pipe(Effect.mapError(unavailable));
+    const target = messages.findLast(
+      (message) =>
+        !message.streaming &&
+        message.notification === undefined &&
+        message.routine === undefined &&
+        message.context?.bot?.relation !== "background" &&
+        message.createdBy !== "system",
+    );
+    if (target === undefined) return { reacted: false };
+    const id = yield* random.uuidV4().pipe(Effect.mapError(unavailable));
+    yield* threads
+      .dispatch({
+        type: "message.bot-reaction.set",
+        commandId: CommandId.make(`bot-reaction:${id}`),
+        threadId: input.threadId,
+        messageId: target.id,
+        bot: { projectId: bot.id, name: bot.title },
+        emoji: input.emoji,
+      })
+      .pipe(Effect.mapError(unavailable));
+    return { reacted: true };
   });
 
   const createChild: Bots["Service"]["createChild"] = Effect.fn("Bots.createChild")(function* <E>(
@@ -757,6 +798,7 @@ const make = Effect.gen(function* () {
     messageBot,
     reportToParent,
     tellMainConversation,
+    reactToLatestMessage,
     moveRoutinesOffConversations,
     archive,
     unarchive,

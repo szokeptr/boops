@@ -1359,6 +1359,58 @@ export type OrchestrationV2SessionRollover = typeof OrchestrationV2SessionRollov
 export const SESSION_ROLLOVER_SAVE_NOTES_TEXT =
   "This session will be rolled over after this turn. Write down what your notes are missing.";
 
+/** The quick reactions clients offer first, in order; any other emoji is allowed too. */
+export const MESSAGE_QUICK_REACTIONS = ["❤️", "👍", "👎", "😂", "‼️", "❓"] as const;
+
+export const MessageReactionEmoji = TrimmedNonEmptyString.check(Schema.isMaxLength(32));
+export type MessageReactionEmoji = typeof MessageReactionEmoji.Type;
+
+/** The user, or a bot reacting as itself. */
+export const OrchestrationV2MessageReactor = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("user") }),
+  Schema.Struct({ kind: Schema.Literal("bot"), projectId: ProjectId, name: Schema.String }),
+]);
+export type OrchestrationV2MessageReactor = typeof OrchestrationV2MessageReactor.Type;
+
+export const OrchestrationV2MessageReaction = Schema.Struct({
+  emoji: MessageReactionEmoji,
+  by: OrchestrationV2MessageReactor,
+  at: IsoDateTime,
+});
+export type OrchestrationV2MessageReaction = typeof OrchestrationV2MessageReaction.Type;
+
+function isSameMessageReactor(
+  left: OrchestrationV2MessageReactor,
+  right: OrchestrationV2MessageReactor,
+): boolean {
+  return left.kind === "user"
+    ? right.kind === "user"
+    : right.kind === "bot" && right.projectId === left.projectId;
+}
+
+/** Each reactor has at most one reaction: a new emoji replaces theirs, and `null` removes it. */
+export function setMessageReaction(
+  reactions: ReadonlyArray<OrchestrationV2MessageReaction>,
+  by: OrchestrationV2MessageReactor,
+  emoji: MessageReactionEmoji | null,
+  at: string,
+): ReadonlyArray<OrchestrationV2MessageReaction> {
+  const others = reactions.filter((reaction) => !isSameMessageReactor(reaction.by, by));
+  return emoji === null ? others : [...others, { emoji, by, at }];
+}
+
+/**
+ * Only reaction commands write `reactions`. Every other message update leaves it out, so applying
+ * one keeps the reactions the message already had.
+ */
+export function withCarriedReactions<
+  M extends { readonly reactions?: ReadonlyArray<OrchestrationV2MessageReaction> | undefined },
+>(previous: M | undefined, next: M): M {
+  return next.reactions !== undefined || previous?.reactions === undefined
+    ? next
+    : { ...next, reactions: previous.reactions };
+}
+
 export const OrchestrationV2ConversationMessage = Schema.Struct({
   notification: Schema.optional(OrchestrationV2Notification),
   ...OrchestrationV2CreationFields,
@@ -1371,6 +1423,7 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
    * the workflow's opening instead and keep the script behind a disclosure.
    */
   workflowScript: Schema.optional(Schema.Boolean),
+  reactions: Schema.optional(Schema.Array(OrchestrationV2MessageReaction)),
   id: MessageId,
   threadId: ThreadId,
   runId: Schema.NullOr(RunId),
@@ -3424,6 +3477,14 @@ export const OrchestrationV2Command = Schema.Union([
     messageId: MessageId,
     text: Schema.String,
   }),
+  /** Sets the user's reaction to a message; `null` removes it. */
+  Schema.Struct({
+    type: Schema.Literal("message.reaction.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    messageId: MessageId,
+    emoji: Schema.NullOr(MessageReactionEmoji),
+  }),
   Schema.Struct({
     type: Schema.Literal("runtime-request.respond"),
     commandId: CommandId,
@@ -3550,6 +3611,15 @@ const OrchestrationV2InternalCommand = Schema.Union([
     guestMessageId: GuestMessageId,
     text: Schema.String,
     attachments: Schema.optional(Schema.Array(ChatAttachment)),
+  }),
+  /** A bot's reaction, set only by the server for the bot's own thread. */
+  Schema.Struct({
+    type: Schema.Literal("message.bot-reaction.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    messageId: MessageId,
+    bot: Schema.Struct({ projectId: ProjectId, name: Schema.String }),
+    emoji: Schema.NullOr(MessageReactionEmoji),
   }),
   /** Moves a thread to a project rooted at the folder it already works in, so its cwd never changes. */
   Schema.Struct({

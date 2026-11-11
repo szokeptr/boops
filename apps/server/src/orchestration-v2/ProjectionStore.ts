@@ -1,5 +1,5 @@
 import type { ProjectThreadAwarenessV2Input } from "@t3tools/shared/agentAwareness";
-import { pendingGuestMessageCount } from "@t3tools/contracts";
+import { pendingGuestMessageCount, withCarriedReactions } from "@t3tools/contracts";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
 import { projectTurnItemForWire } from "./WireProjection.ts";
 import * as Stream from "effect/Stream";
@@ -462,6 +462,14 @@ export interface ProjectionStoreV2Shape {
     options: ProjectionTimelinePageOptions,
   ) => Effect.Effect<ProjectionTimelinePage, ProjectionStoreV2Error>;
   readonly getMessageCount: (threadId: ThreadId) => Effect.Effect<number, ProjectionStoreV2Error>;
+  /** The user's reactions set after `since` on the thread's recent agent messages, oldest first. */
+  readonly getUserReactionsSince: (
+    threadId: ThreadId,
+    since: string,
+  ) => Effect.Effect<
+    ReadonlyArray<{ readonly emoji: string; readonly text: string }>,
+    ProjectionStoreV2Error
+  >;
   readonly getSubagentCount: (threadId: ThreadId) => Effect.Effect<number, ProjectionStoreV2Error>;
   /** Child threads of the thread's app-owned tasks, in task order, without decoding the tasks. */
   readonly listAppOwnedChildThreadIds: (
@@ -949,7 +957,13 @@ export function applyToProjection(
     case "message.updated":
       return {
         ...base,
-        messages: upsertById(base.messages, event.payload),
+        messages: upsertById(
+          base.messages,
+          withCarriedReactions(
+            base.messages.find((message) => message.id === event.payload.id),
+            event.payload,
+          ),
+        ),
       };
     case "turn-item.updated":
       return withLocalVisibleTurnItems({
@@ -2616,7 +2630,16 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 streaming = excluded.streaming,
                 created_at = excluded.created_at,
                 updated_at = excluded.updated_at,
-                payload_json = excluded.payload_json
+                payload_json = CASE
+                  WHEN json_type(excluded.payload_json, '$.reactions') IS NULL
+                    AND json_type(orchestration_v2_projection_messages.payload_json, '$.reactions') IS NOT NULL
+                  THEN json_set(
+                    excluded.payload_json,
+                    '$.reactions',
+                    json_extract(orchestration_v2_projection_messages.payload_json, '$.reactions')
+                  )
+                  ELSE excluded.payload_json
+                END
             `;
               break;
             }
@@ -5540,6 +5563,26 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         Effect.map((rows) => rows[0]?.count ?? 0),
         Effect.mapError(controlReadError(threadId)),
       );
+    // Reactions land on recent messages, so only the latest ones are read, by the thread index.
+    const getUserReactionsSince: ProjectionStoreV2Shape["getUserReactionsSince"] = (
+      threadId,
+      since,
+    ) =>
+      sql<{ readonly emoji: string; readonly text: string }>`
+        SELECT
+          json_extract(reaction.value, '$.emoji') AS emoji,
+          json_extract(recent.payload_json, '$.text') AS text
+        FROM (
+          SELECT payload_json FROM orchestration_v2_projection_messages
+          WHERE thread_id = ${threadId}
+          ORDER BY created_at DESC, message_id DESC
+          LIMIT 50
+        ) AS recent, json_each(recent.payload_json, '$.reactions') AS reaction
+        WHERE json_extract(recent.payload_json, '$.role') = 'assistant'
+          AND json_extract(reaction.value, '$.by.kind') = 'user'
+          AND json_extract(reaction.value, '$.at') > ${since}
+        ORDER BY json_extract(reaction.value, '$.at') ASC
+      `.pipe(Effect.mapError(controlReadError(threadId)));
     const getSubagentCount: ProjectionStoreV2Shape["getSubagentCount"] = (threadId) =>
       sql<{
         count: number;
@@ -7495,6 +7538,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       hasUnpairedRunInterruptRequest: readOnReader(hasUnpairedRunInterruptRequest),
       isNodeStored: readOnReader(isNodeStored),
       getMessageCount: readOnReader(getMessageCount),
+      getUserReactionsSince: readOnReader(getUserReactionsSince),
       getSubagentCount: readOnReader(getSubagentCount),
       listAppOwnedChildThreadIds: readOnReader(listAppOwnedChildThreadIds),
       getNextTurnItemOrdinal: readOnReader(getNextTurnItemOrdinal),

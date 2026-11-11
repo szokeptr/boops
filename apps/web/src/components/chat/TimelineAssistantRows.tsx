@@ -14,6 +14,12 @@ import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useAssistantMessageText, useProject, useThreadShell } from "../../state/entities";
 import { MessageCopyButton } from "./MessageCopyButton";
+import {
+  MessageReactionBadges,
+  MessageReactionMenu,
+  MessageReactionTrigger,
+  useMessageReactions,
+} from "./MessageReactions";
 import { AssistantCitationSource } from "./AssistantCitationSource";
 import { resolveAssistantMessageCopyState } from "./MessagesTimeline.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -37,6 +43,12 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   );
   const text = liveText ?? row.message.text;
   const messageText = text || (row.message.streaming ? "" : "(empty response)");
+  const reaction = useMessageReactions({
+    messageId: row.message.id,
+    reactions: row.reactions,
+    streaming: row.message.streaming,
+  });
+  const { setAnchor: setReactionAnchor } = reaction;
   const markdown = (
     <AssistantCitationSource
       messageId={row.message.id}
@@ -113,8 +125,11 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
         ) : null}
         <div className="flex min-w-0 max-w-full items-end gap-1">
           <div
+            ref={setReactionAnchor}
+            onContextMenu={reaction.onContextMenu}
             className={cn(
-              "min-w-0 rounded-2xl bg-message px-3.5 py-2.5 text-message-foreground",
+              "relative min-w-0 rounded-2xl bg-message px-3.5 py-2.5 text-message-foreground",
+              reaction.groups.length > 0 && "mt-3",
               row.groupedWithPrevious && "rounded-tl-md",
               row.groupedWithNext && "rounded-bl-md",
             )}
@@ -129,6 +144,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             }
             data-thread-find-text="true"
           >
+            <MessageReactionBadges controller={reaction} corner="end" />
             <MessageAuthorHeading>{sender?.name ?? ctx.assistantName}</MessageAuthorHeading>
             {(row.message.attachments ?? []).length > 0 ? (
               <div className={cn(text ? "mb-2" : null)}>
@@ -143,6 +159,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
           </div>
           {row.message.streaming ? null : (
             <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100">
+              <MessageReactionTrigger controller={reaction} />
               {text ? <MessageCopyButton text={text} variant="ghost" /> : null}
               <Tooltip>
                 <TooltipTrigger
@@ -157,6 +174,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             </div>
           )}
         </div>
+        <MessageReactionMenu controller={reaction} align="start" copyText={text} />
       </div>
     );
   }

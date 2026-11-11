@@ -9,6 +9,7 @@ import {
   CheckpointScopeId,
   MessageId,
   type ModelSelection,
+  type OrchestrationV2ConversationMessage,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2TurnItem,
   type OrchestrationV2ThreadHistoryPage,
@@ -2390,6 +2391,94 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
 
       const replaced = yield* projectionStore.getThreadProjection(threadId);
       assert.deepEqual(replaced.providerTurns[0]?.tokenUsage, replacementUsage);
+    }),
+  );
+
+  it.effect("keeps a message's reactions through updates that omit them", () =>
+    Effect.gen(function* () {
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const now = yield* DateTime.now;
+      const threadId = ThreadId.make("thread:message-reactions");
+      yield* projectionStore.apply({
+        id: EventId.make("event:message-reactions:thread"),
+        type: "thread.created",
+        threadId,
+        occurredAt: now,
+        payload: {
+          createdBy: "user",
+          creationSource: "web",
+          id: threadId,
+          projectId: ProjectId.make("project:message-reactions"),
+          title: "Message reactions",
+          providerInstanceId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          activeProviderThreadId: null,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        },
+      });
+      const message = {
+        createdBy: "agent" as const,
+        creationSource: "server" as const,
+        id: MessageId.make("message:message-reactions"),
+        threadId,
+        runId: null,
+        nodeId: null,
+        role: "assistant" as const,
+        text: "Rent is paid.",
+        attachments: [],
+        streaming: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const reactions = [
+        { emoji: "❤️", by: { kind: "user" as const }, at: "2026-11-11T10:00:01.000Z" },
+        {
+          emoji: "👍",
+          by: { kind: "bot" as const, projectId: ProjectId.make("wren"), name: "Wren" },
+          at: "2026-11-11T10:00:02.000Z",
+        },
+      ];
+      const update = (id: string, payload: OrchestrationV2ConversationMessage) =>
+        projectionStore.apply({
+          id: EventId.make(id),
+          type: "message.updated",
+          threadId,
+          occurredAt: now,
+          payload,
+        });
+      const stored = () =>
+        projectionStore
+          .getThreadRecords(threadId, ["messages"])
+          .pipe(Effect.map((records) => records.messages[0]));
+
+      yield* update("event:message-reactions:react", { ...message, reactions });
+      // An adapter re-sends the message from its own state, without reactions.
+      yield* update("event:message-reactions:resend", { ...message, text: "Rent is paid!" });
+      assert.deepInclude(yield* stored(), { text: "Rent is paid!", reactions });
+
+      assert.deepEqual(
+        yield* projectionStore.getUserReactionsSince(threadId, "2026-11-11T10:00:00.000Z"),
+        [{ emoji: "❤️", text: "Rent is paid!" }],
+      );
+      assert.deepEqual(
+        yield* projectionStore.getUserReactionsSince(threadId, "2026-11-11T10:00:01.000Z"),
+        [],
+      );
+
+      yield* update("event:message-reactions:clear", { ...message, reactions: [] });
+      assert.deepEqual((yield* stored())?.reactions, []);
     }),
   );
 

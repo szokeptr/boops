@@ -24,6 +24,7 @@ import type { SelectableMarkdownTextProps } from "./SelectableMarkdownText.types
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import { Menu } from "../components/ui/Menu";
 import { MarkdownMentionNamesContext } from "./MarkdownMentionNamesContext";
+import { MarkdownSelectableContext } from "./MarkdownSelectableContext";
 import { useEnrichedLinkVariants } from "./useEnrichedLinkVariants";
 import { useRetryingImageSource } from "./useRetryingImageSource";
 import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
@@ -215,6 +216,7 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
   };
   const skillRegex = useMemo(() => enrichedSkillLinkRegex(props.skills), [props.skills]);
   const mentionNames = useContext(MarkdownMentionNamesContext);
+  const selectable = useContext(MarkdownSelectableContext);
   const mentionTexts = useMemo(
     () => enrichedMentionTexts(markdown, mentionNames),
     [markdown, mentionNames],
@@ -382,7 +384,7 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
           linkRecognition={linkRecognition}
           containerStyle={{ flexShrink: 1, minWidth: 0 }}
           flavor="github"
-          selectable
+          selectable={selectable}
           selectionClipboard={selectionClipboard}
           contextMenuItems={contextMenuItems}
           selectionColor={props.textStyle.selectionColor}
