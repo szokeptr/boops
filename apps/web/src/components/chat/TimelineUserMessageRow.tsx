@@ -61,6 +61,7 @@ import {
 import { GuestMessageName, guestBubbleClassName } from "./guestMessageStyle";
 import { MessageCopyButton } from "./MessageCopyButton";
 import {
+  MESSAGE_REACTION_BUBBLE_CLEARANCE,
   MessageReactionBadges,
   MessageReactionMenu,
   MessageReactionTrigger,
@@ -1065,7 +1066,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         onContextMenu={reaction.onContextMenu}
         className={cn(
           "relative min-w-0 max-w-[80%] rounded-2xl text-message-foreground",
-          reaction.groups.length > 0 && "mt-3",
+          reaction.groups.length > 0 && MESSAGE_REACTION_BUBBLE_CLEARANCE,
           (mediaAboveText || row.groupedWithPrevious) && "rounded-tr-md",
           row.groupedWithNext && "rounded-br-md",
           BUBBLE_CHIP_CLASS_NAME,

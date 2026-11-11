@@ -169,9 +169,15 @@ export function MessageReactionTrigger({
   );
 }
 
+const NEUTRAL_BADGE_FILL = "bg-message-reaction text-foreground";
+
+/** The bubble class that leaves room above for the badges, so they clear the row before. */
+export const MESSAGE_REACTION_BUBBLE_CLEARANCE = "mt-4.5";
+
 /**
- * The reactions pinned to a bubble's top corner: `end` for the bot's bubbles on the left, `start`
- * for yours on the right. The bubble must be positioned.
+ * The reactions pinned over a bubble's top corner as tapbacks: `end` for the bot's bubbles on the
+ * left, `start` for yours on the right. Each emoji is a small bubble; they overlap toward the
+ * corner with the newest in front, and that one carries the tail. The bubble must be positioned.
  */
 export function MessageReactionBadges({
   controller,
@@ -181,77 +187,131 @@ export function MessageReactionBadges({
   readonly corner: "start" | "end";
 }) {
   const ctx = use(TimelineRowCtx);
+  const emojis = controller.groups.map((group) => group.emoji);
+  // Badges present when the row mounted stay still; only one added afterwards pops in.
+  const [settled, setSettled] = useState<ReadonlySet<string>>(() => new Set(emojis));
+  if ([...settled].some((emoji) => !emojis.includes(emoji))) {
+    setSettled(new Set(emojis.filter((emoji) => settled.has(emoji))));
+  }
   if (controller.groups.length === 0) return null;
   const ownColors = ctx.ownBubbleColors;
+  const outer = corner === "end" ? "end" : "start";
   return (
     <div
       className={cn(
-        "absolute -top-4 z-10 flex items-center gap-0.5",
-        corner === "end" ? "-end-2" : "-start-2",
+        "absolute -top-4 z-10 flex items-center drop-shadow-sm",
+        corner === "end" ? "-end-3" : "-start-3 flex-row-reverse",
       )}
       data-message-reactions=""
     >
-      {controller.groups.map((group) => {
+      {controller.groups.map((group, index) => {
         const label = messageReactionLabel(group);
-        const className = cn(
-          "flex h-6 min-w-6 items-center justify-center gap-0.5 rounded-full px-1.5 text-sm leading-none shadow-sm ring-2 ring-background",
-          group.mine
-            ? ownColors === null && "bg-primary text-primary-foreground"
-            : "bg-muted text-foreground",
-        );
-        const style: CSSProperties | undefined =
+        const front = index === controller.groups.length - 1;
+        const fill = group.mine
+          ? ownColors === null
+            ? "bg-primary text-primary-foreground"
+            : undefined
+          : NEUTRAL_BADGE_FILL;
+        const fillStyle: CSSProperties | undefined =
           group.mine && ownColors !== null
             ? { backgroundColor: ownColors.background, color: ownColors.foreground }
             : undefined;
+        const pill = cn(
+          "relative flex h-6.5 min-w-6.5 items-center justify-center gap-0.5 rounded-full px-1.5 text-sm leading-none ring-2 ring-background",
+          fill,
+        );
         const content = (
           <>
             <span aria-hidden>{group.emoji}</span>
             {group.count > 1 ? (
-              <span aria-hidden className="text-2xs tabular-nums">
+              <span aria-hidden className="pe-0.5 text-2xs font-medium tabular-nums">
                 {group.count}
               </span>
             ) : null}
           </>
         );
-        if (!controller.interactive) {
-          return (
-            <Tooltip key={group.emoji}>
+        return (
+          <div
+            key={group.emoji}
+            className={cn(
+              "relative isolate",
+              index > 0 && (outer === "end" ? "-ms-1" : "-me-1"),
+              outer === "end" ? "origin-bottom-right" : "origin-bottom-left",
+              !settled.has(group.emoji) && "motion-safe:animate-reaction-pop",
+            )}
+            style={{ zIndex: index }}
+            data-message-reaction-mine={group.mine ? "" : undefined}
+          >
+            {front ? <ReactionTail side={outer} layer="outline" /> : null}
+            <Tooltip>
               <TooltipTrigger
-                render={<span role="img" aria-label={label} className={className} style={style} />}
+                render={
+                  controller.interactive ? (
+                    <button
+                      type="button"
+                      aria-label={group.mine ? `${label}. Remove your reaction` : label}
+                      aria-pressed={group.mine}
+                      {...{ [SURFACE_ATTRIBUTE]: "" }}
+                      className={cn(
+                        pill,
+                        "cursor-pointer focus-visible:outline-2 focus-visible:outline-ring",
+                      )}
+                      style={fillStyle}
+                      onClick={() =>
+                        group.mine ? controller.choose(group.emoji) : controller.setOpen(true)
+                      }
+                    />
+                  ) : (
+                    <span role="img" aria-label={label} className={pill} style={fillStyle} />
+                  )
+                }
               >
                 {content}
               </TooltipTrigger>
               <TooltipPopup side="top">{label}</TooltipPopup>
             </Tooltip>
-          );
-        }
-        return (
-          <Tooltip key={group.emoji}>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label={group.mine ? `${label}. Remove your reaction` : label}
-                  aria-pressed={group.mine}
-                  {...{ [SURFACE_ATTRIBUTE]: "" }}
-                  className={cn(
-                    className,
-                    "cursor-pointer focus-visible:outline-2 focus-visible:outline-ring",
-                  )}
-                  style={style}
-                  onClick={() =>
-                    group.mine ? controller.choose(group.emoji) : controller.setOpen(true)
-                  }
-                />
-              }
-            >
-              {content}
-            </TooltipTrigger>
-            <TooltipPopup side="top">{label}</TooltipPopup>
-          </Tooltip>
+            {front ? (
+              <ReactionTail side={outer} layer="fill" className={fill} style={fillStyle} />
+            ) : null}
+          </div>
         );
       })}
     </div>
+  );
+}
+
+/**
+ * A tapback's tail: two dots trailing off its outer bottom corner. The outline layer goes under
+ * the badge and the fill layer over it, so badge and tail share one outline.
+ */
+function ReactionTail({
+  side,
+  layer,
+  className,
+  style,
+}: {
+  readonly side: "start" | "end";
+  readonly layer: "outline" | "fill";
+  readonly className?: string | undefined;
+  readonly style?: CSSProperties | undefined;
+}) {
+  const dot = cn(
+    "pointer-events-none absolute rounded-full",
+    layer === "outline" ? "bg-background ring-2 ring-background" : className,
+  );
+  return (
+    <>
+      <span
+        aria-hidden
+        className={cn(dot, "-bottom-0.5 size-2.25", side === "end" ? "-end-0.5" : "-start-0.5")}
+        style={style}
+      />
+      <span
+        aria-hidden
+        className={cn(dot, "-bottom-1.5 size-1", side === "end" ? "-end-1.5" : "-start-1.5")}
+        style={style}
+      />
+    </>
   );
 }
 

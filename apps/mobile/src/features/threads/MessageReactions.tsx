@@ -17,7 +17,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import Animated, { FadeIn, ZoomIn } from "react-native-reanimated";
+import Animated, { FadeIn, LayoutAnimationConfig, ZoomIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
@@ -56,65 +56,146 @@ export interface MessageReactionTarget {
   readonly actions: ReadonlyArray<MessageReactionAction>;
 }
 
-const BADGE_HEIGHT = 28;
+const BADGE_HEIGHT = 26;
+const BADGE_OUTLINE = 2;
+const BADGE_OVERLAP = 4;
 /** Room a reacted bubble keeps above it so its badges clear the row before. */
-export const MESSAGE_REACTION_BADGE_CLEARANCE = 14;
+export const MESSAGE_REACTION_BADGE_CLEARANCE = 18;
 
-/** Pinned over the bubble's top corner: right for the bot's bubbles, left for the user's. */
+/** The tail's two dots, as size and distance past the badge's outer bottom corner. */
+const TAIL_DOTS = [
+  { size: 9, reach: 2 },
+  { size: 4, reach: 6 },
+] as const;
+
+/**
+ * Tapbacks pinned over the bubble's top corner: right for the bot's bubbles, left for the user's.
+ * Each emoji is a small bubble; they overlap toward the corner with the newest in front, and that
+ * one carries the tail.
+ */
 export function MessageReactionBadges(props: {
   readonly reactions: ReadonlyArray<OrchestrationV2MessageReaction> | undefined;
   readonly align: MessageReactionAlign;
   readonly accent: MessageReactionAccent;
   readonly outlineColor: string;
+  /** The incoming bubble's colour; a badge that is not yours is a step off it. */
+  readonly surfaceColor: string;
   /** Absent in read-only feeds. */
   readonly onPress?: ((emoji: string, mine: boolean) => void) | undefined;
 }) {
   const groups = groupMessageReactions(props.reactions);
-  if (groups.length === 0) return null;
+  const outer = props.align === "left" ? "right" : "left";
   return (
-    <View
-      className="absolute flex-row gap-1"
-      style={{
-        top: -MESSAGE_REACTION_BADGE_CLEARANCE - 4,
-        ...(props.align === "left" ? { right: -8 } : { left: -8 }),
-      }}
-    >
-      {groups.map((group) => (
-        <Pressable
-          key={group.emoji}
-          accessibilityRole={props.onPress ? "button" : "text"}
-          accessibilityLabel={messageReactionLabel(group)}
-          accessibilityHint={
-            props.onPress ? (group.mine ? "Removes your reaction" : "Opens reactions") : undefined
-          }
-          disabled={!props.onPress}
-          hitSlop={6}
-          onPress={() => props.onPress?.(group.emoji, group.mine)}
-          className={
-            group.mine
-              ? "flex-row items-center justify-center gap-0.5 rounded-full px-1.5"
-              : "flex-row items-center justify-center gap-0.5 rounded-full bg-sheet-solid px-1.5"
-          }
+    // Badges present when the bubble mounts stay still; only one added afterwards pops in.
+    <LayoutAnimationConfig skipEntering>
+      {groups.length === 0 ? null : (
+        <View
+          className="absolute"
           style={{
-            minWidth: BADGE_HEIGHT,
-            height: BADGE_HEIGHT,
-            borderWidth: 2,
-            borderColor: props.outlineColor,
-            backgroundColor: group.mine ? props.accent.background : undefined,
+            top: -MESSAGE_REACTION_BADGE_CLEARANCE,
+            [outer]: -14,
+            flexDirection: outer === "right" ? "row" : "row-reverse",
           }}
         >
-          <Text style={{ fontSize: 13, lineHeight: 16 }}>{group.emoji}</Text>
-          {group.count > 1 ? (
-            <Text
-              className="font-t3-medium text-2xs tabular-nums text-foreground-secondary"
-              style={group.mine ? { color: props.accent.foreground } : undefined}
-            >
-              {group.count}
-            </Text>
-          ) : null}
-        </Pressable>
-      ))}
-    </View>
+          {groups.map((group, index) => {
+            const fill = group.mine ? props.accent.background : props.surfaceColor;
+            const front = index === groups.length - 1;
+            return (
+              <Animated.View
+                key={group.emoji}
+                entering={ZoomIn.springify().damping(13).stiffness(260)}
+                style={[
+                  { zIndex: index },
+                  index === 0
+                    ? null
+                    : outer === "right"
+                      ? { marginLeft: -BADGE_OVERLAP - BADGE_OUTLINE }
+                      : { marginRight: -BADGE_OVERLAP - BADGE_OUTLINE },
+                ]}
+              >
+                {front
+                  ? TAIL_DOTS.map((dot) => (
+                      <View
+                        key={dot.size}
+                        className="absolute rounded-full"
+                        style={{
+                          width: dot.size + BADGE_OUTLINE * 2,
+                          height: dot.size + BADGE_OUTLINE * 2,
+                          bottom: -dot.reach,
+                          [outer]: -dot.reach,
+                          backgroundColor: props.outlineColor,
+                        }}
+                      />
+                    ))
+                  : null}
+                <Pressable
+                  accessibilityRole={props.onPress ? "button" : "text"}
+                  accessibilityLabel={messageReactionLabel(group)}
+                  accessibilityHint={
+                    props.onPress
+                      ? group.mine
+                        ? "Removes your reaction"
+                        : "Opens reactions"
+                      : undefined
+                  }
+                  disabled={!props.onPress}
+                  hitSlop={6}
+                  onPress={() => props.onPress?.(group.emoji, group.mine)}
+                  className="flex-row items-center justify-center gap-0.5 overflow-hidden rounded-full px-1"
+                  style={{
+                    minWidth: BADGE_HEIGHT + BADGE_OUTLINE * 2,
+                    height: BADGE_HEIGHT + BADGE_OUTLINE * 2,
+                    borderWidth: BADGE_OUTLINE,
+                    borderColor: props.outlineColor,
+                    backgroundColor: fill,
+                  }}
+                >
+                  {group.mine ? null : <BadgeShade />}
+                  <Text style={{ fontSize: 14, lineHeight: 18 }}>{group.emoji}</Text>
+                  {group.count > 1 ? (
+                    <Text
+                      className="pr-0.5 font-t3-medium text-2xs tabular-nums text-foreground"
+                      style={group.mine ? { color: props.accent.foreground } : undefined}
+                    >
+                      {group.count}
+                    </Text>
+                  ) : null}
+                </Pressable>
+                {front
+                  ? TAIL_DOTS.map((dot) => (
+                      <View
+                        key={dot.size}
+                        pointerEvents="none"
+                        className="absolute overflow-hidden rounded-full"
+                        style={{
+                          width: dot.size,
+                          height: dot.size,
+                          bottom: BADGE_OUTLINE - dot.reach,
+                          [outer]: BADGE_OUTLINE - dot.reach,
+                          backgroundColor: fill,
+                        }}
+                      >
+                        {group.mine ? null : <BadgeShade />}
+                      </View>
+                    ))
+                  : null}
+              </Animated.View>
+            );
+          })}
+        </View>
+      )}
+    </LayoutAnimationConfig>
+  );
+}
+
+/** Darkens (or, on a dark theme, lightens) the bubble colour so a badge reads against its bubble. */
+function BadgeShade() {
+  return (
+    <View
+      pointerEvents="none"
+      className="absolute inset-0 bg-foreground"
+      style={{ opacity: 0.14 }}
+    />
   );
 }
 

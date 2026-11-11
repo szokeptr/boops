@@ -234,6 +234,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --animate-stash-pulse-row: stash-pulse-row 1400ms;
   --animate-stash-pulse-row-alt: stash-pulse-row-alt 1400ms;
   --animate-stash-pulse-count: stash-pulse-count 1400ms step-start;
+  /* One short overshoot, then it rests: a tapback landing on its bubble. */
+  --animate-reaction-pop: reaction-pop 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -282,6 +284,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-background: var(--background);
   --color-message: var(--message-surface);
   --color-message-foreground: var(--contrast-message-foreground);
+  /* A step off the message surface, so a reaction reads against both its bubble and the page. */
+  --color-message-reaction: color-mix(in srgb, var(--message-surface) 86%, var(--foreground));
   --color-message-action: var(--message-action);
   --color-message-action-foreground: var(--message-action-foreground);
   --color-message-action-hover: var(--message-action-hover);
@@ -334,6 +338,22 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     from,
     85.7% {
       color: var(--color-primary);
+    }
+  }
+  @keyframes reaction-pop {
+    0% {
+      opacity: 0;
+      scale: 0.2;
+    }
+    45% {
+      opacity: 1;
+      scale: 1.18;
+    }
+    72% {
+      scale: 0.95;
+    }
+    100% {
+      scale: 1;
     }
   }
   @keyframes status-pulse {

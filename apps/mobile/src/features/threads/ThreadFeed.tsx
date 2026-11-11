@@ -1877,6 +1877,7 @@ interface MessageReactionController {
   readonly pending: ReadonlyMap<MessageId, PendingMessageReaction>;
   readonly accent: MessageReactionAccent;
   readonly outlineColor: string;
+  readonly surfaceColor: string;
   /** Null when reactions are read-only. */
   readonly open: ((target: MessageReactionTarget) => void) | null;
   readonly choose: (
@@ -1973,7 +1974,9 @@ function ReactableBubble(props: {
             reactions={reactions}
             align={align}
             accent={controller.accent}
+            key={messageId}
             outlineColor={controller.outlineColor}
+            surfaceColor={controller.surfaceColor}
             onPress={
               open
                 ? (emoji, mine) => {
@@ -3884,6 +3887,7 @@ export const ThreadFeed = memo(function ThreadFeed({
         pending: pendingReactions,
         accent: reactionAccent,
         outlineColor: screenColor,
+        surfaceColor: userBubbleColor,
         open:
           onSetMessageReaction === null
             ? null

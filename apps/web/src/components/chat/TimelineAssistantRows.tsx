@@ -15,6 +15,7 @@ import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useAssistantMessageText, useProject, useThreadShell } from "../../state/entities";
 import { MessageCopyButton } from "./MessageCopyButton";
 import {
+  MESSAGE_REACTION_BUBBLE_CLEARANCE,
   MessageReactionBadges,
   MessageReactionMenu,
   MessageReactionTrigger,
@@ -129,7 +130,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             onContextMenu={reaction.onContextMenu}
             className={cn(
               "relative min-w-0 rounded-2xl bg-message px-3.5 py-2.5 text-message-foreground",
-              reaction.groups.length > 0 && "mt-3",
+              reaction.groups.length > 0 && MESSAGE_REACTION_BUBBLE_CLEARANCE,
               row.groupedWithPrevious && "rounded-tl-md",
               row.groupedWithNext && "rounded-bl-md",
             )}
