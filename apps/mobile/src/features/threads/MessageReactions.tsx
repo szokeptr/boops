@@ -42,7 +42,7 @@ const BADGE_HEIGHT = 26;
 const BADGE_OUTLINE = 2;
 const BADGE_OVERLAP = 4;
 /** Room a reacted bubble keeps above it so its badges clear the row before. */
-export const MESSAGE_REACTION_BADGE_CLEARANCE = 18;
+const MESSAGE_REACTION_BADGE_CLEARANCE = 18;
 
 /** The tail's two dots, as size and distance past the badge's outer bottom corner. */
 const BADGE_ENTERING = new Keyframe({

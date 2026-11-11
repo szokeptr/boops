@@ -18,7 +18,6 @@ import {
 import { ThreadContextDivider } from "./thread-context-divider";
 import { MessageSwipeReply } from "./MessageSwipeReply";
 import {
-  MESSAGE_REACTION_BADGE_CLEARANCE,
   MessageReactionBadges,
   MessageReactionSheet,
   type MessageReactionAccent,
@@ -1955,13 +1954,7 @@ function ReactableBubble(props: {
       <Animated.View
         collapsable={false}
         className={props.className}
-        style={[
-          props.style,
-          reactions && reactions.length > 0
-            ? { marginTop: MESSAGE_REACTION_BADGE_CLEARANCE }
-            : null,
-          pressStyle,
-        ]}
+        style={[props.style, pressStyle]}
         accessibilityActions={open ? REACT_ACCESSIBILITY_ACTIONS : undefined}
         onAccessibilityAction={({ nativeEvent }) => {
           if (nativeEvent.actionName === "react") openReactions();
