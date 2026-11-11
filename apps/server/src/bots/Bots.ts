@@ -40,6 +40,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { BotFamilyError, reachableBots } from "./botFamily.ts";
+import { latestReactableMessage } from "./reactionTarget.ts";
 
 export class BotHomeFolderError extends Schema.TaggedError<BotHomeFolderError>()(
   "BotHomeFolderError",
@@ -474,14 +475,7 @@ const make = Effect.gen(function* () {
     const { messages } = yield* threads
       .getThreadRecords(input.threadId, ["messages"], { messageRoles: ["user"] })
       .pipe(Effect.mapError(unavailable));
-    const target = messages.findLast(
-      (message) =>
-        !message.streaming &&
-        message.notification === undefined &&
-        message.routine === undefined &&
-        message.context?.bot?.relation !== "background" &&
-        message.createdBy !== "system",
-    );
+    const target = latestReactableMessage(messages);
     if (target === undefined) return { reacted: false };
     const id = yield* random.uuidV4().pipe(Effect.mapError(unavailable));
     yield* threads
