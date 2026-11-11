@@ -147,6 +147,7 @@ vi.mock("../state/assets", () => ({
   useAssetUrlState: () => ({ _tag: "Success", url: "https://example.com/clip.mp4" }),
   assetEnvironment: {},
 }));
+vi.mock("../features/threads/BotQuestionCard", () => ({ BotAnsweredQuestionCard: () => null }));
 vi.mock("../features/threads/ThreadMarkdownVideo", async (importOriginal) => {
   const { createContext } = await import("react");
   const actual = await importOriginal<typeof import("../features/threads/ThreadMarkdownVideo")>();
