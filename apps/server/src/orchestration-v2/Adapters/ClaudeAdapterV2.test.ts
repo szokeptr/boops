@@ -10726,6 +10726,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               callMcpTool: () => Effect.die("unexpected MCP tool call"),
               listPermissionRules: Effect.die("unexpected permission rules read"),
               stopTask: () => Effect.void,
+              setMcpServers: () => Effect.die("unexpected MCP server change"),
               interrupt: Effect.void,
               close: Queue.shutdown(sdkMessages),
             };
