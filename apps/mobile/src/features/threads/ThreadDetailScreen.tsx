@@ -578,11 +578,18 @@ function ThreadDetailBody(
       ? Math.max(bottomSafeArea, 12) - (layout.usesSplitView ? 5 : 0)
       : undefined);
   // The Duo's floating sidebar pill ends three points below the composer's usual gutter.
+  // On an iPhone the resting pill floats as far from the bottom as from the sides.
+  const restingComposerInset =
+    Platform.OS === "ios" && alignedBottomInset === undefined && !hasSidebarTabBar
+      ? Math.max(bottomSafeArea - 4, 20)
+      : undefined;
   const composerBottomInset = Math.max(
     0,
-    (alignedBottomInset !== undefined
-      ? alignedBottomInset - THREAD_COMPOSER_BOTTOM_GUTTER
-      : Math.max(bottomSafeArea, 12)) - (hasSidebarTabBar ? 3 : 0),
+    alignedBottomInset !== undefined
+      ? alignedBottomInset - THREAD_COMPOSER_BOTTOM_GUTTER - (hasSidebarTabBar ? 3 : 0)
+      : restingComposerInset !== undefined
+        ? restingComposerInset - THREAD_COMPOSER_BOTTOM_GUTTER
+        : Math.max(bottomSafeArea, 12) - (hasSidebarTabBar ? 3 : 0),
   );
   const composerKeyboardOffset = composerBottomInset;
   const contentPresentationKind = props.contentPresentation.kind;
@@ -2071,6 +2078,7 @@ function ThreadDetailBody(
                               }
                         }
                         bottomInset={composerBottomInset}
+                        restingSideInset={restingComposerInset}
                         onChangeDraftMessage={props.onChangeDraftMessage}
                         onPickDraftMedia={props.onPickDraftMedia}
                         onPickDraftFiles={props.onPickDraftFiles}

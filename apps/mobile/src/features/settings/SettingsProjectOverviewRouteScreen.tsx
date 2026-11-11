@@ -2,6 +2,7 @@ import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScroll
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
+import { BotAvatarSlot } from "../bots/BotAvatarSlot";
 import * as Dialog from "../../components/ui/Dialog";
 import {
   AuthOrchestrationOperateScope,
@@ -20,7 +21,7 @@ import {
   type ProjectGroup,
 } from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { useNavigation } from "@react-navigation/native";
+import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
 import { View } from "react-native";
@@ -56,7 +57,16 @@ import { workspaceHasColumns } from "../workspace/workspace-selection-store";
 import { DEFAULT_SETTINGS_PAGE } from "../workspace/workspace-tab-navigation";
 import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
 
-export function SettingsProjectOverviewRouteScreen() {
+type SettingsProjectOverviewRouteScreenProps = StaticScreenProps<
+  | {
+      /** Opens on this bot, as a bot's profile does. */
+      readonly environmentId?: string;
+      readonly projectId?: string;
+    }
+  | undefined
+>;
+
+export function SettingsProjectOverviewRouteScreen(props: SettingsProjectOverviewRouteScreenProps) {
   const environmentMenu = useSettingsEnvironmentMenu();
   const insets = useSafeAreaInsets();
   const [isRemoving, setIsRemoving] = useState(false);
@@ -79,25 +89,53 @@ export function SettingsProjectOverviewRouteScreen() {
     selectProject,
     getSelectedProjectKey,
   } = useSettingsEnvironmentFilter();
+  const requested = props.route.params;
+  const pinned = Boolean(requested?.environmentId && requested.projectId);
   // The filter can move to another project while a removal is still running.
   const finishProjectRemoval = (projectKey: string | null) => {
+    if (pinned) {
+      // Opened from the bot's profile: its profile and conversation are gone too.
+      if (navigation.isFocused()) navigation.dispatch(StackActions.popToTop());
+      return;
+    }
     if (getSelectedProjectKey() !== projectKey) return;
     if (navigation.isFocused())
       leaveSettingsPage(navigation, workspaceHasColumns(), DEFAULT_SETTINGS_PAGE);
     // Otherwise the filter keeps pointing at the removed project as an unavailable one.
     selectProject(null);
   };
-  const group = projectGroups.find((entry) => entry.key === selectedProjectKey);
+  const requestedKey =
+    pinned && requested?.environmentId && requested.projectId
+      ? (projectGroups.find((entry) =>
+          entry.members.some(
+            (member) =>
+              member.project.environmentId === requested.environmentId &&
+              member.project.id === requested.projectId,
+          ),
+        )?.key ?? null)
+      : null;
+  // A bot's profile pushes this page outside the Settings tab, where the filter is closed, so a
+  // pinned page shows exactly the requested bot and never falls back to the filter's choice.
+  const activeProjectKey = pinned ? requestedKey : selectedProjectKey;
+  const group = projectGroups.find((entry) => entry.key === activeProjectKey);
   const selectedEnvironmentIds = new Set(selectedTargets.map((entry) => entry.environmentId));
   const members =
     group?.members
       .map((entry) => entry.project)
-      .filter((project) => selectedEnvironmentIds.has(project.environmentId)) ?? [];
+      .filter((project) =>
+        pinned
+          ? project.environmentId === requested?.environmentId
+          : selectedEnvironmentIds.has(project.environmentId),
+      ) ?? [];
 
   return (
     <>
-      <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Bots" menus={[environmentMenu]}>
+      {/* A profile pins this page to its bot, so the filter would change nothing here. */}
+      {pinned ? null : <SettingsEnvironmentFilterHeader />}
+      <SettingsScreen
+        title={pinned ? "Bot settings" : "Bots"}
+        menus={pinned ? [] : [environmentMenu]}
+      >
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
@@ -105,7 +143,11 @@ export function SettingsProjectOverviewRouteScreen() {
           contentContainerClassName="gap-6 px-5 pt-4"
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         >
-          {selectedProjectKey === null ? (
+          {pinned && (!group || members.length === 0) ? (
+            <Text className="px-2 text-base text-foreground-muted">
+              This bot is not available. Its machine may be offline, or it was removed.
+            </Text>
+          ) : activeProjectKey === null ? (
             <Text className="px-2 text-base text-foreground-muted">
               Choose a bot with the filter above to manage its name, connectors, archive and
               deletion.
@@ -116,7 +158,7 @@ export function SettingsProjectOverviewRouteScreen() {
             </Text>
           ) : (
             <ProjectOverviewContent
-              key={`${selectedProjectKey}:${members.map((member) => member.id).join(",")}`}
+              key={`${activeProjectKey}:${members.map((member) => member.id).join(",")}`}
               members={members}
               group={group}
               connectedTargets={availableTargets}
@@ -126,7 +168,7 @@ export function SettingsProjectOverviewRouteScreen() {
               setIsRemoving={setIsRemoving}
               startRemoval={startRemoval}
               finishRemoval={finishRemoval}
-              projectKey={selectedProjectKey}
+              projectKey={activeProjectKey}
               onProjectRemoved={finishProjectRemoval}
             />
           )}
@@ -377,14 +419,23 @@ function ProjectOverviewContent(props: {
   return (
     <>
       <View className="flex-row items-center gap-4 px-2">
-        <ProjectFavicon
-          environmentId={representative.environmentId}
-          projectTitle={representative.title}
-          workspaceRoot={representative.workspaceRoot}
-          faviconPath={representative.faviconPath}
-          projectIcon={representative.projectIcon}
-          size={48}
-        />
+        {representative.avatar ? (
+          <BotAvatarSlot
+            avatar={representative.avatar}
+            name={representative.title}
+            status="idle"
+            size={48}
+          />
+        ) : (
+          <ProjectFavicon
+            environmentId={representative.environmentId}
+            projectTitle={representative.title}
+            workspaceRoot={representative.workspaceRoot}
+            faviconPath={representative.faviconPath}
+            projectIcon={representative.projectIcon}
+            size={48}
+          />
+        )}
         <View className="min-w-0 flex-1">
           <Text className="text-xl font-t3-semibold text-foreground" numberOfLines={2}>
             {displayName}

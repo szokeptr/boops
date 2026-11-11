@@ -2,16 +2,13 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { deriveBotConversations } from "@t3tools/client-runtime/state/bot-list";
 import type { EnvironmentId, ProjectAvatar, ProjectId, ThreadId } from "@t3tools/contracts";
-import type { MenuAction } from "@react-native-menu/menu";
-import { View } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import { Pressable, View } from "react-native";
 
-import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { Menu } from "../../components/ui/Menu";
-import { uuidv4 } from "../../lib/uuid";
+import { AppText as Text } from "../../components/ui/AppText";
 import { useProject } from "../../state/entities";
 import { environmentThreadShells } from "../../state/threads";
-import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 import { useBotCall } from "../bot-call/BotCallProvider";
 import { formatCallDuration } from "../bot-call/botCallPresentation";
 import { useCallClock } from "../bot-call/callClock";
@@ -31,17 +28,15 @@ export interface ConversationHeaderBot extends ConversationBot {
   readonly threadId: ThreadId | null;
 }
 
-const NEW_CONVERSATION = "new-conversation";
-
 /**
- * Heads a bot's conversation like a DM: the bot, not the project and thread. Tapping it lists
- * the bot's conversations and starts a new one; a dot on the avatar says another one needs you.
+ * Heads a bot's conversation like a DM: the bot, not the project and thread. Tapping it opens
+ * the bot's profile, where its conversations live; a dot on the avatar says another needs you.
  */
 export function BotConversationTitle(props: { readonly bot: ConversationHeaderBot }) {
   const { bot } = props;
   const project = useProject(scopeProjectRef(bot.environmentId, bot.projectId));
   const threads = useAtomValue(environmentThreadShells.quietThreadShellsAtom);
-  const selectDetail = useSelectWorkspaceDetail();
+  const navigation = useNavigation();
   const { call } = useBotCall();
   const onCall = isOnCallWith(call, bot) ? call : null;
   const now = useCallClock(onCall?.state.phase === "live");
@@ -61,59 +56,25 @@ export function BotConversationTitle(props: { readonly bot: ConversationHeaderBo
     : elsewhere.some((conversation) => conversation.unread)
       ? { label: "Unread reply in another conversation", className: "bg-primary" }
       : null;
-  const actions: MenuAction[] = [
-    ...conversations.map((conversation): MenuAction => ({
-      id: conversation.threadId,
-      title: conversation.title,
-      state: conversation.threadId === bot.threadId ? "on" : "off",
-      ...(conversation.status === "needs-you"
-        ? { subtitle: "Needs you" }
-        : conversation.unread
-          ? { subtitle: "New reply" }
-          : {}),
-    })),
-    {
-      id: NEW_CONVERSATION,
-      title: "New conversation",
-      image: "square.and.pencil",
-      state: bot.threadId === null ? "on" : "off",
-    },
-  ];
-  const onPressAction = ({ nativeEvent }: { nativeEvent: { event: string } }) => {
-    if (nativeEvent.event === NEW_CONVERSATION) {
-      if (bot.threadId === null) return;
-      selectDetail({
-        name: "Thread",
-        params: {
-          draft: {
-            requestId: uuidv4(),
-            environmentId: String(bot.environmentId),
-            projectId: String(bot.projectId),
-          },
-        },
-      });
-      return;
-    }
-    if (nativeEvent.event === bot.threadId) return;
-    selectDetail({
-      name: "Thread",
-      params: { environmentId: String(bot.environmentId), threadId: nativeEvent.event },
-    });
-  };
   return (
-    <Menu actions={actions} onPressAction={onPressAction}>
-      <View
-        accessible
-        accessibilityRole="button"
-        accessibilityLabel={[
-          `${bot.name} conversations`,
-          onCall === null ? subtitle : "On a call",
-          attention?.label,
-        ]
-          .filter(Boolean)
-          .join(", ")}
-        className="flex-row items-center gap-2"
-      >
+    <Pressable
+      onPress={() =>
+        // navigate, not push: a quick double tap must not open two profiles.
+        navigation.navigate("BotProfile", {
+          environmentId: String(bot.environmentId),
+          projectId: String(bot.projectId),
+          ...(bot.threadId === null ? {} : { threadId: String(bot.threadId) }),
+        })
+      }
+      accessibilityRole="button"
+      accessibilityHint="Opens the bot's profile"
+      accessibilityLabel={[bot.name, onCall === null ? subtitle : "On a call", attention?.label]
+        .filter(Boolean)
+        .join(", ")}
+      hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+      className="min-h-[44px] justify-center active:opacity-70"
+    >
+      <View className="flex-row items-center gap-2">
         <View>
           <BotAvatarSlot
             avatar={bot.avatar}
@@ -132,9 +93,10 @@ export function BotConversationTitle(props: { readonly bot: ConversationHeaderBo
             <Text className="shrink font-t3-bold text-base text-foreground" numberOfLines={1}>
               {bot.name}
             </Text>
+            {/* Says the pill opens something, now that it leads to the profile. */}
             <SymbolView
-              name="chevron.down"
-              size={11}
+              name="chevron.right"
+              size={10}
               tintColorClassName="accent-foreground-muted"
               type="monochrome"
             />
@@ -154,6 +116,6 @@ export function BotConversationTitle(props: { readonly bot: ConversationHeaderBo
           )}
         </View>
       </View>
-    </Menu>
+    </Pressable>
   );
 }

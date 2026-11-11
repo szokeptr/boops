@@ -30,6 +30,8 @@ import {
   threadFeedCompactionLabels,
   createThreadFeedCache,
   deriveDirectMessageFeed,
+  formatTimeMarker,
+  withTimeMarkers,
   deriveThreadFeedPresentation,
   isConnectionRequestActivityGroup,
   messageFoldRunId,
@@ -2124,4 +2126,49 @@ it("caps live thought previews while preserving reasoning detail", () => {
   expect(activity.detail).toBe(text);
   expect(JSON.parse(activity.getFullDetail()!).item).toMatchObject({ text });
   expect(activity.getCopyText()).toContain(text);
+});
+
+describe("withTimeMarkers", () => {
+  const at = (day: number, hour: number, minute = 0) =>
+    new Date(2026, 10, day, hour, minute).toISOString();
+  const answered = (id: string, createdAt: string): ThreadFeedEntry => ({
+    type: "answered-question",
+    id,
+    createdAt,
+    answers: [],
+  });
+
+  it("marks the start, an hour of quiet, and a new day, never the typing row", () => {
+    const entries: ThreadFeedEntry[] = [
+      answered("a", at(10, 21, 0)),
+      answered("b", at(10, 21, 50)),
+      answered("c", at(10, 22, 55)),
+      answered("d", at(11, 0, 10)),
+      { type: "thinking", id: "typing", createdAt: at(11, 3), runId: null },
+    ];
+    expect(withTimeMarkers(entries).map((entry) => entry.id)).toEqual([
+      "time-marker:a",
+      "a",
+      "b",
+      "time-marker:c",
+      "c",
+      "time-marker:d",
+      "d",
+      "typing",
+    ]);
+    // The same entries keep the same marker objects.
+    expect(withTimeMarkers(entries)[0]).toBe(withTimeMarkers(entries)[0]);
+  });
+
+  it("labels today, yesterday, this week by weekday, and older stretches by date", () => {
+    const now = new Date(2026, 10, 11, 12);
+    expect(formatTimeMarker(at(11, 9), now)).toMatch(/^Today /);
+    expect(formatTimeMarker(at(10, 23), now)).toMatch(/^Yesterday /);
+    const weekday = new Date(2026, 10, 9).toLocaleDateString(undefined, { weekday: "long" });
+    expect(formatTimeMarker(at(9, 16), now).startsWith(`${weekday} `)).toBe(true);
+    expect(formatTimeMarker(at(1, 16), now)).not.toMatch(/^(Today|Yesterday) /);
+    expect(formatTimeMarker(at(1, 16), now)).not.toContain(
+      new Date(2026, 10, 1).toLocaleDateString(undefined, { weekday: "long" }),
+    );
+  });
 });

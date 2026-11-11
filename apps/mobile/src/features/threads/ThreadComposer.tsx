@@ -233,6 +233,8 @@ export interface ThreadComposerProps {
   readonly contentMaxWidth?: number;
   readonly draftControls?: ReactNode;
   readonly bottomInset?: number;
+  /** Side gutter while the composer rests; it widens to the focused gutter as it opens. */
+  readonly restingSideInset?: number;
   readonly connectionState: RemoteClientConnectionState;
   readonly environmentLabel: string | null;
   readonly selectedThread: EnvironmentThreadShell;
@@ -279,6 +281,7 @@ export interface ThreadComposerProps {
 
 // Android KeyboardStickyView tracks the IME; concurrent timed layout morphs cause jitter.
 const COMPOSER_TRANSITION_DURATION_MS = 220;
+const FOCUSED_SIDE_INSET = 12;
 // Side panes animate dock width; nested horizontal transitions would make the surface trail the toolbar.
 const composerHeightTransition: LayoutAnimationFunction = (values) => {
   "worklet";
@@ -601,6 +604,18 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   );
   const isVoiceInputPresented = voicePresentation.statusKind === "active";
   const isExpanded = isFocused || settingsSheetPresentation.keepsComposerExpanded;
+  const sideInset = isExpanded
+    ? FOCUSED_SIDE_INSET
+    : (props.restingSideInset ?? FOCUSED_SIDE_INSET);
+  const sideInsetStyle = useAnimatedStyle(
+    () => ({
+      paddingHorizontal: withTiming(sideInset, {
+        duration: COMPOSER_TRANSITION_DURATION_MS,
+        reduceMotion: ReduceMotion.System,
+      }),
+    }),
+    [sideInset],
+  );
   const { layout, setComposerEditing } = useAdaptiveWorkspaceLayout();
   const floatingSidebarComposer = useAndroidFloatingTabs() && layout.usesSplitView;
   const usesLargeControls =
@@ -830,13 +845,15 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   return (
     <Animated.View
       onLayout={(event) => props.onHeightChange?.(event.nativeEvent.layout.height)}
-      className="px-[12px]"
-      style={{
-        paddingTop: 6,
-        paddingBottom: (props.bottomInset ?? 0) + THREAD_COMPOSER_BOTTOM_GUTTER,
-        backgroundColor:
-          Platform.OS === "android" ? themeColorWithAlpha(composerPanel, 1) : undefined,
-      }}
+      style={[
+        {
+          paddingTop: 6,
+          paddingBottom: (props.bottomInset ?? 0) + THREAD_COMPOSER_BOTTOM_GUTTER,
+          backgroundColor:
+            Platform.OS === "android" ? themeColorWithAlpha(composerPanel, 1) : undefined,
+        },
+        sideInsetStyle,
+      ]}
     >
       {/* Use a plain View: Reanimated Animated.View drops experimental_backgroundImage on Android. */}
       <View

@@ -220,6 +220,8 @@ import {
 import {
   createThreadFeedCache,
   deriveDirectMessageFeed,
+  formatTimeMarker,
+  withTimeMarkers,
   threadFeedCompactionLabels,
   failedFeedRunIds,
   deriveThreadFeedPresentation,
@@ -322,6 +324,38 @@ const MESSAGE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
   minute: "2-digit",
 });
+/** Re-renders at local midnight, so "Today" turns into "Yesterday" in a thread left open. */
+function useLocalDay(): string {
+  const [day, setDay] = useState(() => new Date().toDateString());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a timer to the next local midnight; JS timers resume late after backgrounding, which still lands the update
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = () => {
+      const now = new Date();
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      timer = setTimeout(
+        () => {
+          setDay(new Date().toDateString());
+          arm();
+        },
+        midnight.getTime() - now.getTime() + 1000,
+      );
+    };
+    arm();
+    return () => clearTimeout(timer);
+  }, []);
+  return day;
+}
+
+function TimeMarker(props: { readonly createdAt: string }) {
+  useLocalDay();
+  return (
+    <Text className="self-center pt-3 pb-4 text-center font-t3-medium text-[13px] text-foreground-muted">
+      {formatTimeMarker(props.createdAt)}
+    </Text>
+  );
+}
+
 function formatMessageTime(input: string): string {
   const timestamp = Date.parse(input);
   if (Number.isNaN(timestamp)) {
@@ -1964,6 +1998,10 @@ function renderFeedEntry(
     );
   }
 
+  if (entry.type === "time-marker") {
+    return <TimeMarker createdAt={entry.createdAt} />;
+  }
+
   if (entry.type === "answered-question") {
     return (
       <BotAnsweredQuestionCard
@@ -2103,6 +2141,9 @@ function renderFeedEntry(
     const styles =
       ownBubble?.markdownStyles ?? (isUser ? markdownStyles.user : markdownStyles.assistant);
     const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);
+    // A DM's time markers carry when it was said; only a pending send is called out.
+    const showTimestamp =
+      !props.directMessage || Boolean(entry.pendingMessage && !entry.acknowledged);
     const attachments = message.attachments ?? [];
     const hasReviewCommentContext = presentation.text.includes("<review_comment");
     // Android does not reposition children after maxWidth clamps bubbles; definite width prevents wide-block overlap.
@@ -2483,7 +2524,7 @@ function renderFeedEntry(
                   </Text>
                 </View>
               ) : null}
-              {intentBadge ? (
+              {intentBadge && showTimestamp ? (
                 <Text
                   accessible={false}
                   accessibilityElementsHidden
@@ -2493,9 +2534,11 @@ function renderFeedEntry(
                   ·
                 </Text>
               ) : null}
-              <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
-                {entry.pendingMessage && !entry.acknowledged ? "Pending" : timestampLabel}
-              </Text>
+              {showTimestamp ? (
+                <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
+                  {entry.pendingMessage && !entry.acknowledged ? "Pending" : timestampLabel}
+                </Text>
+              ) : null}
               {props.onEditPendingMessage !== null &&
               entry.pendingMessage &&
               !entry.acknowledged &&
@@ -2948,14 +2991,16 @@ function useThreadFeedPresentation(
 ) {
   const [feedCache] = useState(createThreadFeedCache);
   if (props.directMessage) {
-    return appendPendingThreadMessages(
-      deriveDirectMessageFeed(
+    return withTimeMarkers(
+      appendPendingThreadMessages(
+        deriveDirectMessageFeed(
+          props.feed,
+          props.directMessage.typingSince,
+          props.directMessage.parentProjectId,
+        ),
         props.feed,
-        props.directMessage.typingSince,
-        props.directMessage.parentProjectId,
+        props.queuedMessages,
       ),
-      props.feed,
-      props.queuedMessages,
     );
   }
   return appendPendingThreadMessages(

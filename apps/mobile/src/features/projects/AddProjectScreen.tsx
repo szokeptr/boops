@@ -203,6 +203,10 @@ export function ListRow(props: {
   readonly isFirst?: boolean;
   readonly right?: ReactNode;
   readonly onPress?: () => void;
+  /** The row for where the user already is, such as the open conversation. */
+  readonly current?: boolean;
+  /** Regular suits a profile's navigation rows; bold suits choices in a form. */
+  readonly titleWeight?: "bold" | "regular";
 }) {
   if (Platform.OS === "android") {
     return (
@@ -215,16 +219,31 @@ export function ListRow(props: {
         disabled={props.disabled}
         onPress={props.onPress}
         accessibilityRole={props.selected !== undefined ? "radio" : "button"}
-        accessibilityState={props.selected !== undefined ? { checked: props.selected } : undefined}
+        accessibilityState={
+          props.selected !== undefined
+            ? { checked: props.selected }
+            : props.current
+              ? { selected: true }
+              : undefined
+        }
       />
     );
   }
   return (
     <Pressable
+      accessibilityRole={
+        props.selected !== undefined ? "radio" : props.onPress ? "button" : undefined
+      }
+      accessibilityState={{
+        disabled: props.disabled,
+        ...(props.current ? { selected: true } : {}),
+        ...(props.selected !== undefined ? { checked: props.selected } : {}),
+      }}
       disabled={props.disabled}
       onPress={props.onPress}
       className={cn(
         "bg-grouped-card px-3.5 py-2.5 active:opacity-70",
+        props.titleWeight === "regular" && "min-h-[52px] justify-center",
         !props.isFirst && "border-t border-border-subtle",
         props.disabled && "opacity-[0.45]",
       )}
@@ -240,7 +259,14 @@ export function ListRow(props: {
           {props.icon}
         </View>
         <View className="flex-1 gap-0.5">
-          <Text className="text-base leading-snug font-t3-bold">{props.title}</Text>
+          <Text
+            className={cn(
+              "leading-snug",
+              props.titleWeight === "regular" ? "text-[17px]" : "text-base font-t3-bold",
+            )}
+          >
+            {props.title}
+          </Text>
           {props.subtitle ? (
             <Text className="text-sm leading-snug text-foreground-muted" numberOfLines={2}>
               {props.subtitle}

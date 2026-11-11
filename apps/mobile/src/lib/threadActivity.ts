@@ -260,7 +260,15 @@ type ThreadFeedEntryContent =
     }
   | ThreadFeedBotExchange
   | ThreadFeedRoutineRuns
-  | ThreadFeedAnsweredQuestion;
+  | ThreadFeedAnsweredQuestion
+  | ThreadFeedTimeMarker;
+
+/** A centred "Monday 4:53 PM" between a DM's quiet stretches, labelled when rendered. */
+export interface ThreadFeedTimeMarker {
+  readonly type: "time-marker";
+  readonly id: string;
+  readonly createdAt: string;
+}
 
 /** A bot's answered question in its DM, kept as a quiet card where it was asked. */
 export interface ThreadFeedAnsweredQuestion {
@@ -1397,7 +1405,8 @@ function feedEntryRunId(entry: ThreadFeedEntry): RunId | null {
   if (entry.type === "message") return entry.message.runId ?? null;
   return entry.type === "bot-exchange" ||
     entry.type === "routine-runs" ||
-    entry.type === "answered-question"
+    entry.type === "answered-question" ||
+    entry.type === "time-marker"
     ? null
     : entry.runId;
 }
@@ -1769,6 +1778,57 @@ export function deriveDirectMessageFeed(
       fold: routineRunsRow,
     },
   );
+}
+
+/** Quiet time before a DM entry that earns it a time marker. */
+const TIME_MARKER_GAP_MS = 60 * 60 * 1000;
+const timeMarkers = new WeakMap<ThreadFeedEntry, ThreadFeedTimeMarker>();
+
+/**
+ * Marks where a conversation picks up again: before its first entry, and before any entry that
+ * follows an hour of quiet or starts a new day. The typing row never gets one.
+ */
+export function withTimeMarkers(entries: ReadonlyArray<ThreadFeedEntry>): ThreadFeedEntry[] {
+  let previous: Date | null = null;
+  return entries.flatMap((entry): ThreadFeedEntry[] => {
+    if (entry.type === "thinking" || entry.type === "time-marker") return [entry];
+    const at = new Date(entry.createdAt);
+    if (Number.isNaN(at.getTime())) return [entry];
+    const quiet =
+      previous === null ||
+      at.getTime() - previous.getTime() >= TIME_MARKER_GAP_MS ||
+      at.toDateString() !== previous.toDateString();
+    previous = at;
+    if (!quiet) return [entry];
+    // Reusing the marker keeps the list from re-rendering a row that did not change.
+    const marker = timeMarkers.get(entry) ?? {
+      type: "time-marker" as const,
+      id: `time-marker:${entry.id}`,
+      createdAt: entry.createdAt,
+    };
+    timeMarkers.set(entry, marker);
+    return [marker, entry];
+  });
+}
+
+/** "Today 10:37 PM", "Yesterday 7:40 AM", "Monday 4:53 PM", then a date for older stretches. */
+export function formatTimeMarker(createdAt: string, now: Date = new Date()): string {
+  const at = new Date(createdAt);
+  const time = at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const startOfDay = (date: Date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const days = Math.round((startOfDay(now) - startOfDay(at)) / 86_400_000);
+  if (days === 0) return `Today ${time}`;
+  if (days === 1) return `Yesterday ${time}`;
+  if (days > 1 && days < 7) {
+    return `${at.toLocaleDateString(undefined, { weekday: "long" })} ${time}`;
+  }
+  const date = at.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(at.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  });
+  return `${date}, ${time}`;
 }
 
 const routineRunsRows = new WeakMap<ThreadFeedEntry, ThreadFeedRoutineRuns>();
