@@ -8,6 +8,7 @@ import {
   type BotFamilyAuthor,
   type BotMcpDelivery,
   type BotMessageOrigin,
+  type BotRelation,
   type BotUnarchiveInput,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -37,7 +38,7 @@ import * as ThreadManagementService from "../orchestration-v2/ThreadManagementSe
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { BotFamilyError } from "./botFamily.ts";
+import { BotFamilyError, reachableBots } from "./botFamily.ts";
 
 export class BotHomeFolderError extends Schema.TaggedError<BotHomeFolderError>()(
   "BotHomeFolderError",
@@ -150,6 +151,19 @@ export class Bots extends Context.Service<
     readonly messageChild: (input: {
       readonly parentProjectId: ProjectId;
       readonly childProjectId: ProjectId;
+      readonly text: string;
+    }) => Effect.Effect<BotMcpDelivery, BotFamilyError>;
+    /** The bots `projectId` may message, each with what it is to `projectId`. */
+    readonly reachableFrom: (
+      projectId: ProjectId,
+    ) => Effect.Effect<
+      ReadonlyArray<{ readonly bot: OrchestrationProjectShell; readonly relation: BotRelation }>,
+      BotFamilyError
+    >;
+    /** Posts into another bot's conversation, labelled with the sender and how to answer. */
+    readonly messageBot: (input: {
+      readonly fromProjectId: ProjectId;
+      readonly toProjectId: ProjectId;
       readonly text: string;
     }) => Effect.Effect<BotMcpDelivery, BotFamilyError>;
     /** Posts into the parent's conversation, labelled as from the child. */
@@ -538,6 +552,31 @@ const make = Effect.gen(function* () {
     },
   );
 
+  const reachableFrom: Bots["Service"]["reachableFrom"] = (projectId) =>
+    reachableBots(projectId).pipe(Effect.provideService(ProjectService.ProjectService, projects));
+
+  const messageBot: Bots["Service"]["messageBot"] = Effect.fn("Bots.messageBot")(function* (input) {
+    const from = yield* requireBot(input.fromProjectId);
+    const target = (yield* reachableFrom(from.id)).find(
+      (reachable) => reachable.bot.id === input.toProjectId,
+    );
+    if (target === undefined) {
+      return yield* familyError(
+        "unrelated",
+        "That is not a bot you can reach. list_bots lists the ones you can.",
+      );
+    }
+    const to = yield* requireBot(target.bot.id);
+    return yield* postInto({
+      to,
+      from,
+      // What the sender is to the receiver, the reverse of what the receiver is to the sender.
+      relation:
+        target.relation === "child" ? "parent" : target.relation === "parent" ? "child" : "peer",
+      text: input.text,
+    });
+  });
+
   const reportToParent: Bots["Service"]["reportToParent"] = Effect.fn("Bots.reportToParent")(
     function* (input) {
       const child = yield* requireBot(input.childProjectId);
@@ -714,6 +753,8 @@ const make = Effect.gen(function* () {
     childrenOf,
     readChild,
     messageChild,
+    reachableFrom,
+    messageBot,
     reportToParent,
     tellMainConversation,
     moveRoutinesOffConversations,

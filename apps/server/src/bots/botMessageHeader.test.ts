@@ -4,7 +4,7 @@ import { POCKS_BOT_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrat
 
 import { isHelperTask, withBotMessageHeader, withHelperTaskHeader } from "./botMessageHeader.ts";
 
-const context = (relation: "parent" | "child" | "background", name = "Wren") => ({
+const context = (relation: "parent" | "child" | "peer" | "background", name = "Wren") => ({
   version: 1 as const,
   records: [],
   bot: { projectId: ProjectId.make("wren"), name, relation },
@@ -17,6 +17,9 @@ describe("withBotMessageHeader", () => {
     );
     expect(withBotMessageHeader("Dana ran 14 km.", context("child"))).toBe(
       "[From Wren, a bot you created. Answer with message_child_bot.]\n\nDana ran 14 km.",
+    );
+    expect(withBotMessageHeader("Rent is paid.", context("peer"))).toBe(
+      "[From Wren, another bot. Answer with message_bot, projectId wren.]\n\nRent is paid.",
     );
     expect(
       withBotMessageHeader("The visa form is due Friday.", context("background", "Heartbeat")),

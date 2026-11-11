@@ -73,6 +73,7 @@ export function useComposerMenuItems({
   showSkillsInSlashMenu,
   workspaceSkillsScanning,
   questionAttachmentTarget,
+  directMessage,
 }: {
   readonly composerTrigger: ComposerTrigger | null;
   readonly environmentId: EnvironmentId;
@@ -92,6 +93,8 @@ export function useComposerMenuItems({
   readonly showSkillsInSlashMenu: boolean;
   readonly workspaceSkillsScanning: boolean;
   readonly questionAttachmentTarget: DraftId | null;
+  /** A bot's conversation mentions other conversations, not its workspace files or machines. */
+  readonly directMessage: boolean;
 }) {
   // Thread mentions rank by recency as of when the composer mounted.
   const [now] = useState(() => Date.now());
@@ -122,7 +125,7 @@ export function useComposerMenuItems({
   }));
   const workspaceEntries = useComposerPathSearch({
     environmentId,
-    cwd: isPathTrigger ? gitCwd : null,
+    cwd: isPathTrigger && !directMessage ? gitCwd : null,
     query: isPathTrigger ? pathTriggerQuery : null,
   });
 
@@ -197,7 +200,7 @@ export function useComposerMenuItems({
           now,
         }),
         // An answer to an agent's question carries thread links, not machines.
-        ...(questionAttachmentTarget === null && offersMachines
+        ...(questionAttachmentTarget === null && offersMachines && !directMessage
           ? matchComposerEnvironmentItems({
               environments: mentionableEnvironments,
               environmentId,
@@ -402,9 +405,8 @@ export function useComposerMenuItems({
         ? `No pull request matches ${composerTrigger.query}.`
         : "No pull requests found in this repository.";
     }
-    return composerTriggerKind === "path"
-      ? "No matching files or folders."
-      : "No matching command.";
+    if (composerTriggerKind !== "path") return "No matching command.";
+    return directMessage ? "No matching conversations." : "No matching files or folders.";
   })();
 
   return { items, isLoading, emptyState };

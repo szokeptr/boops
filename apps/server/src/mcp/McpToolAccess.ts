@@ -20,7 +20,7 @@ import {
   DispatchModeLimit,
   type DispatchModeRefusal,
 } from "../orchestration-v2/DispatchModeLimit.ts";
-import { assertBotsMayTalk, type BotFamilyError } from "../bots/botFamily.ts";
+import { assertNotAnotherBotsThread, type BotFamilyError } from "../bots/botFamily.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -225,7 +225,7 @@ export const writesThreads = <P, A, E, R>(
             yield* assertTargetWithinLimits(caller.limits, target);
             yield* assertSameLink(caller, target);
             if (caller.caller !== undefined && Option.isSome(projects)) {
-              yield* assertBotsMayTalk(caller.caller.projectId, target.projectId).pipe(
+              yield* assertNotAnotherBotsThread(caller.caller.projectId, target.projectId).pipe(
                 Effect.provideService(ProjectService.ProjectService, projects.value),
                 Effect.mapError(botFamilyFailure),
               );

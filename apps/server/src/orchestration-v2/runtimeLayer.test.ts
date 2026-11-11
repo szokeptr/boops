@@ -9067,6 +9067,66 @@ it.layer(layerBotsTest)("bot families", (it) => {
         ]),
         ["allowed", "allowed", "unrelated"],
       );
+
+      const relations = (yield* bots.reachableFrom(child.projectId)).map(
+        ({ bot, relation }) => `${bot.title}:${relation}`,
+      );
+      assert.sameMembers(relations, [
+        "Wren:parent",
+        "Stride:child",
+        "Tally:sibling",
+        "Stranger:other",
+      ]);
+
+      // Any bot pair the family allows talks through message_bot, labelled so both DMs fold it.
+      yield* bots.messageBot({
+        fromProjectId: child.projectId,
+        toProjectId: sibling.projectId,
+        text: "Is rent paid?",
+      });
+      yield* bots.messageBot({
+        fromProjectId: child.projectId,
+        toProjectId: parent.projectId,
+        text: "Rent is paid.",
+      });
+      const lastFrom = (threadId: ThreadId) =>
+        orchestrator
+          .getThreadProjection(threadId)
+          .pipe(Effect.map((projection) => projection.messages.at(-1)?.context?.bot));
+      assert.deepEqual(yield* lastFrom(sibling.mainThreadId), {
+        projectId: child.projectId,
+        name: "Pace",
+        relation: "peer",
+      });
+      assert.deepEqual(yield* lastFrom(parent.mainThreadId), {
+        projectId: child.projectId,
+        name: "Pace",
+        relation: "child",
+      });
+      const unreachable = yield* bots
+        .messageBot({
+          fromProjectId: grandchild.projectId,
+          toProjectId: sibling.projectId,
+          text: "hi",
+        })
+        .pipe(Effect.flip);
+      assert.strictEqual(unreachable.reason, "unrelated");
+
+      // Raw thread writes would read as the user's, so another bot's threads refuse them.
+      const threadWrite = (from: ProjectId, to: ProjectId) =>
+        BotFamily.assertNotAnotherBotsThread(from, to).pipe(
+          Effect.as("allowed"),
+          Effect.catchTags({ BotFamilyError: (error) => Effect.succeed(error.reason) }),
+        );
+      assert.deepEqual(
+        yield* Effect.all([
+          threadWrite(child.projectId, sibling.projectId),
+          threadWrite(stranger.projectId, child.projectId),
+          threadWrite(child.projectId, child.projectId),
+          threadWrite(child.projectId, plain.id),
+        ]),
+        ["unrelated", "unrelated", "allowed", "allowed"],
+      );
     }).pipe(Effect.scoped),
   );
 

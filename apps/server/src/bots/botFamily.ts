@@ -1,4 +1,9 @@
-import type { ProjectId, ThreadId } from "@t3tools/contracts";
+import type {
+  BotRelation,
+  OrchestrationProjectShell,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -70,3 +75,45 @@ export const assertBotsMayTalk = Effect.fn("BotFamily.assertMayTalk")(function* 
       "A bot can only reach its parent, the bots it created, and its siblings, unless one of the two talks with any bot.",
   });
 });
+
+const unavailable = () =>
+  new BotFamilyError({ reason: "unavailable", detail: "Could not read the bots." });
+
+/** The bots `projectId` may message, each with what it is to `projectId`. Empty for a non-bot. */
+export const reachableBots = Effect.fn("BotFamily.reachableBots")(function* (projectId: ProjectId) {
+  const projects = yield* ProjectService.ProjectService;
+  const shells = yield* projects.listShells().pipe(Effect.mapError(unavailable));
+  const self = shells.find((shell) => shell.id === projectId);
+  if (!isBot(self)) return [];
+  return shells.flatMap(
+    (other): Array<{ readonly bot: OrchestrationProjectShell; readonly relation: BotRelation }> => {
+      if (other.id === self.id || !isBot(other)) return [];
+      const relation = botRelation(self, other);
+      if (relation === null && self.talksWithAnyBot !== true && other.talksWithAnyBot !== true) {
+        return [];
+      }
+      return [{ bot: other, relation: relation ?? "other" }];
+    },
+  );
+});
+
+/**
+ * A bot's threads take only its user's and its own writes. Another bot reaches it with
+ * message_bot, whose messages carry who sent them; a raw thread write would read as the user's.
+ */
+export const assertNotAnotherBotsThread = Effect.fn("BotFamily.assertNotAnotherBotsThread")(
+  function* (fromProjectId: ProjectId, toProjectId: ProjectId) {
+    if (fromProjectId === toProjectId) return;
+    const projects = yield* ProjectService.ProjectService;
+    const shells = yield* projects
+      .listShells({ projectIds: [fromProjectId, toProjectId] })
+      .pipe(Effect.mapError(unavailable));
+    const from = shells.find((shell) => shell.id === fromProjectId);
+    const to = shells.find((shell) => shell.id === toProjectId);
+    if (!isBot(from) || !isBot(to)) return;
+    return yield* new BotFamilyError({
+      reason: "unrelated",
+      detail: `That thread is ${to.title}'s. Message ${to.title} with message_bot instead.`,
+    });
+  },
+);

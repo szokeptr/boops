@@ -282,16 +282,16 @@ export const GuestMessageAttribution = Schema.Struct({
 export type GuestMessageAttribution = typeof GuestMessageAttribution.Type;
 
 /**
- * Marks a message a bot sent its parent or child bot, or one of its own background threads sent
- * its main conversation. The message `text` is the sender's words; the server adds a routing line
+ * Marks a message a bot sent another bot, or one of its own background threads sent its main
+ * conversation. The message `text` is the sender's words; the server adds a routing line
  * from this when it hands the text to the agent. Only the server sets it.
  */
 export const BotMessageOrigin = Schema.Struct({
   projectId: ProjectId,
   /** The sending bot's name; for "background", the sending thread's title. */
   name: TrimmedNonEmptyString,
-  /** What the sender is to the bot that receives the message. */
-  relation: Schema.Literals(["parent", "child", "background"]),
+  /** What the sender is to the bot that receives the message; "peer" is any other bot. */
+  relation: Schema.Literals(["parent", "child", "peer", "background"]),
 });
 export type BotMessageOrigin = typeof BotMessageOrigin.Type;
 

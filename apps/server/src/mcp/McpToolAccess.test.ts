@@ -472,7 +472,7 @@ it.effect("refuses a linked environment to a tool that acts as its calling threa
   }),
 );
 
-it.effect("refuses thread writes between bots that are not parent and child", () =>
+it.effect("refuses one bot's thread writes into another bot's threads, family included", () =>
   Effect.gen(function* () {
     const project = (id: string, parentBotProjectId: string | null = null) => ({
       id: ProjectId.make(id),
@@ -527,7 +527,7 @@ it.effect("refuses thread writes between bots that are not parent and child", ()
         ),
       ),
     );
-    expect(outcomes).toEqual(["ran", "ran", "capability_denied"]);
+    expect(outcomes).toEqual(["capability_denied", "capability_denied", "capability_denied"]);
   }),
 );
 

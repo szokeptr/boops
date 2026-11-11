@@ -266,14 +266,14 @@ export function UserMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mes
 
 function UserMessageContent({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const { attribution } = resolveUserMessagePresentation(row.message);
+  const { attribution, bot } = resolveUserMessagePresentation(row.message);
   return ctx.workflowOpening?.messageId === row.message.id ? (
     <WorkflowOpeningBlock
       opening={ctx.workflowOpening}
       environmentId={ctx.activeThreadEnvironmentId}
       onOpenThread={(threadId) => ctx.onOpenThread(ThreadId.make(threadId))}
     />
-  ) : attribution === "automation" ? (
+  ) : attribution === "automation" || bot?.background ? (
     <AutomationMessageRow row={row} />
   ) : attribution === "system" ? (
     <SystemMessageRow text={row.message.text} />
@@ -423,14 +423,21 @@ function CallWork({
   );
 }
 
-/** A routine wake is an event in the thread, not a turn by anyone; it reads as a faded status line. */
+/**
+ * A routine wake, or a note a bot's own background thread left for it, is an event in the thread,
+ * not a turn by anyone; it reads as a faded status line.
+ */
 function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const [expanded, setExpanded] = useState(false);
   const revealRef = findRevealRef(() => setExpanded(true));
-  const { text, routine } = resolveUserMessagePresentation(row.message);
+  const { text, routine, bot } = resolveUserMessagePresentation(row.message);
+  const backgroundThreadName = bot?.background ? row.message.context?.bot?.name : undefined;
+  const senderThreadId =
+    backgroundThreadName === undefined ? undefined : row.message.senderThreadId;
   const summary =
-    routine === undefined ? (text.trim().split(/\r?\n/, 1)[0] ?? "") : routineLabelText(routine);
+    backgroundThreadName ??
+    (routine === undefined ? (text.trim().split(/\r?\n/, 1)[0] ?? "") : routineLabelText(routine));
 
   const revertTurnCount = row.revertTurnCount;
   const promptLink = promptLinkFor(text);
@@ -488,6 +495,11 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               >
                 Open routine
               </Link>
+            ) : null}
+            {senderThreadId ? (
+              <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">
+                Open thread
+              </InlineButton>
             ) : null}
             <div className="flex items-center gap-0.5">
               {typeof revertTurnCount === "number" && (
@@ -591,20 +603,17 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const userMessage = resolveUserMessagePresentation(row.message);
   // Messages from other agents fold to one line so the user's own messages stay easy to find. What
   // the agent sent into its own thread, such as a file it shared, stays open.
-  const agentFolded =
+  const folded =
     userMessage.attribution === "agent" &&
     !(ctx.threadRef !== null && isAgentSelfSentMessage(row.message, ctx.threadRef.threadId));
-  // A routine's note is addressed to the bot, which retells it right below.
-  const backgroundBotName = userMessage.bot?.background ? userMessage.bot.name : undefined;
-  const folded = agentFolded || backgroundBotName !== undefined;
   const [expanded, setExpanded] = useState(false);
   const revealFoldRef = findRevealRef(() => setExpanded(true));
   const senderShell = useQuietThreadShell(
-    agentFolded && senderThreadId
+    folded && senderThreadId
       ? { environmentId: ctx.activeThreadEnvironmentId, threadId: senderThreadId }
       : null,
   );
-  const senderLabel = backgroundBotName ?? (senderShell?.title.trim() || "Agent");
+  const senderLabel = senderShell?.title.trim() || "Agent";
   const senderBotProjectId = userMessage.bot?.projectId ?? null;
   const senderBot = useProject(
     senderBotProjectId === null
@@ -988,7 +997,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   return (
     <div
       className="group @container flex flex-col items-end gap-1"
-      data-user-message-attribution={agentFolded ? "agent" : undefined}
+      data-user-message-attribution={folded ? "agent" : undefined}
     >
       {userMessage.attribution === "t3code" ? (
         <p
@@ -1005,7 +1014,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         </p>
       ) : null}
       {/* The row's heading already names the sender for screen readers. */}
-      {senderBotName !== undefined && !folded ? (
+      {senderBotName !== undefined ? (
         <div
           aria-hidden
           className="me-1 flex items-center gap-1.5 text-2xs text-muted-foreground"

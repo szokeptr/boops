@@ -48,7 +48,7 @@ You coordinate and helpers do long work, so this conversation stays free.
 
 - A login, token, PIN, password or pairing code only the user can give: call \`request_secret\`, not a chat ask. Not for access you already have.
 - \`boops_thread_launch\` and \`create_threads\` start new threads, only when the user asks for one. Mention a thread by its \`link\`.
-- A new bot for separate, lasting work, when the user asks: \`create_child_bot\`. Reach your children with \`message_child_bot\` and \`read_child_bot\`, and your parent with \`report_to_parent\`. You reach no other bots. Secrets and approvals always go to the user, never to a parent.
+- A new bot for separate, lasting work, when the user asks: \`create_child_bot\`. Reach your children with \`message_child_bot\` and \`read_child_bot\`, and your parent with \`report_to_parent\`. Any other bot you can reach is in \`list_bots\`: write to it with \`message_bot\`, never into its threads. Secrets and approvals always go to the user, never to a parent.
 - These tools come from the \`boops\` MCP server and may load late. Try a name once before you call it absent.`,
   `### Visuals and preview
 

@@ -1163,6 +1163,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     showSkillsInSlashMenu: settings.showSkillsInSlashMenu,
     workspaceSkillsScanning,
     questionAttachmentTarget,
+    directMessage: botName !== undefined,
   });
 
   const composerMenuOpen = Boolean(composerTrigger);

@@ -5,7 +5,8 @@ import {
   BotMcpListGroupChatsResult,
   BotMcpPostToGroupChatInput,
   BotMcpEndCallResult,
-  BotMcpListChildrenResult,
+  BotMcpListBotsResult,
+  BotMcpMessageBotInput,
   BotMcpMessageChildInput,
   BotMcpReadChildInput,
   BotMcpReadChildResult,
@@ -54,14 +55,15 @@ const CreateChildBotTool = Tool.make("create_child_bot", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, true);
 
-const ListChildBotsTool = Tool.make("list_child_bots", {
-  description: "List the bots you created.",
-  success: BotMcpListChildrenResult,
+const ListBotsTool = Tool.make("list_bots", {
+  description:
+    "List the other bots you can message: your parent, the bots you created, your siblings, and any bot that talks with any bot.",
+  success: BotMcpListBotsResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
   dependencies,
 })
-  .annotate(Tool.Title, "List child bots")
+  .annotate(Tool.Title, "List bots")
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
@@ -89,6 +91,19 @@ const MessageChildBotTool = Tool.make("message_child_bot", {
   dependencies,
 })
   .annotate(Tool.Title, "Message a child bot")
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.OpenWorld, true);
+
+const MessageBotTool = Tool.make("message_bot", {
+  description:
+    "Send a message to another bot from list_bots, into its conversation, as yourself. It is queued behind its current turn, and its answer comes back the same way. Never write into another bot's threads with thread tools.",
+  parameters: BotMcpMessageBotInput,
+  success: BotMcpDelivery,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "Message a bot")
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, true);
 
@@ -146,9 +161,10 @@ const PostToGroupChatTool = Tool.make("post_to_group_chat", {
 
 export const BotToolkit = Toolkit.make(
   CreateChildBotTool,
-  ListChildBotsTool,
+  ListBotsTool,
   ReadChildBotTool,
   MessageChildBotTool,
+  MessageBotTool,
   ReportToParentTool,
   TellMainConversationTool,
   EndCallTool,

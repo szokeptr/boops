@@ -82,16 +82,17 @@ const handlers = {
       );
     }).pipe(mapBotErrors),
   ),
-  list_child_bots: McpToolAccess.readsAsCaller(() =>
+  list_bots: McpToolAccess.readsAsCaller(() =>
     Effect.gen(function* () {
-      const parentProjectId = yield* callerBot;
+      const projectId = yield* callerBot;
       const bots = yield* Bots.Bots;
-      const children = yield* bots.childrenOf(parentProjectId);
+      const reachable = yield* bots.reachableFrom(projectId);
       return {
-        children: children.map((child) => ({
-          projectId: child.id,
-          name: child.title,
-          archived: child.archivedAt != null,
+        bots: reachable.map(({ bot, relation }) => ({
+          projectId: bot.id,
+          name: bot.title,
+          relation,
+          archived: bot.archivedAt != null,
         })),
       };
     }).pipe(mapBotErrors),
@@ -115,6 +116,17 @@ const handlers = {
       return yield* bots.messageChild({
         parentProjectId,
         childProjectId: input.projectId,
+        text: input.message,
+      });
+    }).pipe(mapBotErrors),
+  ),
+  message_bot: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const fromProjectId = yield* callerBot;
+      const bots = yield* Bots.Bots;
+      return yield* bots.messageBot({
+        fromProjectId,
+        toProjectId: input.projectId,
         text: input.message,
       });
     }).pipe(mapBotErrors),

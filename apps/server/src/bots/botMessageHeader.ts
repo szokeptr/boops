@@ -6,7 +6,7 @@ import type {
 } from "@t3tools/contracts";
 
 /**
- * The agent text of a message from a parent or child bot, one of the bot's background threads, or
+ * The agent text of a message from another bot, one of the bot's background threads, or
  * a voice call: a routing line naming the sender and how to answer, then the sender's words. People
  * see the sender on the message row.
  */
@@ -29,7 +29,9 @@ export function withBotMessageHeader(
       ? `[From ${bot.name}, your parent bot. Answer with report_to_parent.]`
       : bot.relation === "child"
         ? `[From ${bot.name}, a bot you created. Answer with message_child_bot.]`
-        : `[From your background thread "${bot.name}". The user has not seen this; tell them what needs them.]`;
+        : bot.relation === "peer"
+          ? `[From ${bot.name}, another bot. Answer with message_bot, projectId ${bot.projectId}.]`
+          : `[From your background thread "${bot.name}". The user has not seen this; tell them what needs them.]`;
   return `${header}\n\n${text}`;
 }
 

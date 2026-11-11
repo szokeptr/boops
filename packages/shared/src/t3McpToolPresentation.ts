@@ -106,6 +106,7 @@ export function isT3McpServerName(name: string): boolean {
 
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   message_child_bot: tool(["Message", "Messaging", "Messaged", "a bot"], "thread-send"),
+  message_bot: tool(["Message", "Messaging", "Messaged", "a bot"], "thread-send"),
   report_to_parent: tool(["Report", "Reporting", "Reported", "to the parent bot"], "thread-send"),
   link_pull_request: tool(
     ["Link", "Linking", "Linked", "a pull request"],
@@ -494,13 +495,13 @@ export function resolveT3McpToolId(toolName: string | null | undefined): string 
   return name !== null && Object.hasOwn(T3_MCP_TOOLS, name) ? name : null;
 }
 
-/** A bot writing to its child or parent bot; `to` is the child's project id, null for the parent. */
+/** A bot writing to another bot; `to` is that bot's project id, null for the parent. */
 export function resolveBotMessageToolCall(
   toolName: string | null | undefined,
   input: unknown,
 ): { readonly to: string | null; readonly text: string } | null {
   const id = resolveT3McpToolId(toolName);
-  if (id !== "message_child_bot" && id !== "report_to_parent") return null;
+  if (id !== "message_child_bot" && id !== "message_bot" && id !== "report_to_parent") return null;
   const fields = typeof input === "object" && input !== null ? (input as SummaryInput) : {};
   const text = typeof fields.message === "string" ? fields.message : "";
   if (id === "report_to_parent") return { to: null, text };

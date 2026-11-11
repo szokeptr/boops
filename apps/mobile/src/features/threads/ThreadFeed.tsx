@@ -1554,18 +1554,15 @@ function useMarkdownStyles(): MarkdownStyleSets {
 function AgentMessageFoldHeader(props: {
   readonly environmentId: EnvironmentId;
   readonly senderThreadId?: ThreadId;
-  readonly label: string | undefined;
   readonly summary: string;
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly iconSubtleColor: ColorValue;
 }) {
   const senderShell = useQuietThreadShell(
-    props.label === undefined && props.senderThreadId
-      ? scopeThreadRef(props.environmentId, props.senderThreadId)
-      : null,
+    props.senderThreadId ? scopeThreadRef(props.environmentId, props.senderThreadId) : null,
   );
-  const label = props.label ?? (senderShell?.title.trim() || "Agent");
+  const label = senderShell?.title.trim() || "Agent";
   return (
     <Pressable
       accessibilityRole="button"
@@ -1626,12 +1623,16 @@ function OpenSenderThreadButton(props: {
   );
 }
 
-/** A routine wake is an event in the thread, not a turn by anyone; it reads as a faded status line. */
+/**
+ * A routine wake, or a note a bot's own background thread left for it, is an event in the thread,
+ * not a turn by anyone; it reads as a faded status line.
+ */
 function ThreadAutomationMessageRow(props: {
   readonly environmentId: EnvironmentId;
   readonly text: string;
   readonly context?: OrchestrationMessageContext;
   readonly routine: OrchestrationV2RoutineLabel | undefined;
+  readonly backgroundThread: { readonly name: string; readonly threadId?: ThreadId } | undefined;
   readonly timestampLabel: string;
   readonly expanded: boolean;
   readonly onToggle: () => void;
@@ -1646,9 +1647,10 @@ function ThreadAutomationMessageRow(props: {
 }) {
   const navigation = useNavigation();
   const summary =
-    props.routine === undefined
+    props.backgroundThread?.name ??
+    (props.routine === undefined
       ? (props.text.trim().split(/\r?\n/, 1)[0] ?? "")
-      : routineLabelText(props.routine);
+      : routineLabelText(props.routine));
 
   return (
     <View className="mb-5 items-center">
@@ -1706,6 +1708,12 @@ function ThreadAutomationMessageRow(props: {
             >
               <Text className="font-t3-medium text-xs text-foreground-secondary">Open routine</Text>
             </Pressable>
+          ) : null}
+          {props.backgroundThread?.threadId ? (
+            <OpenSenderThreadButton
+              environmentId={props.environmentId}
+              senderThreadId={props.backgroundThread.threadId}
+            />
           ) : null}
           <UserMessageCopyButton
             text={props.text}
@@ -2195,7 +2203,8 @@ function renderFeedEntry(
         />
       );
     }
-    if (isUser && presentation.attribution === "automation") {
+    const backgroundBotName = presentation.bot?.background ? message.context?.bot?.name : undefined;
+    if (isUser && (presentation.attribution === "automation" || backgroundBotName !== undefined)) {
       const rowId = `automation:${message.id}`;
       return (
         <ThreadAutomationMessageRow
@@ -2203,6 +2212,14 @@ function renderFeedEntry(
           text={presentation.text}
           context={message.context}
           routine={presentation.routine}
+          backgroundThread={
+            backgroundBotName === undefined
+              ? undefined
+              : {
+                  name: backgroundBotName,
+                  ...(message.senderThreadId ? { threadId: message.senderThreadId } : {}),
+                }
+          }
           timestampLabel={timestampLabel}
           expanded={props.expandedWorkRows[rowId] ?? false}
           onToggle={() => props.onToggleWorkRow(rowId, entry.id)}
@@ -2248,12 +2265,7 @@ function renderFeedEntry(
     }
     if (isUser) {
       const enterAnimated = isFreshTimestamp(message.createdAt);
-      // A routine's note is addressed to the bot, which retells it right below.
-      const backgroundBotName = presentation.bot?.background ? presentation.bot.name : undefined;
-      const foldRowId =
-        presentation.attribution === "agent" || backgroundBotName !== undefined
-          ? `agent:${message.id}`
-          : null;
+      const foldRowId = presentation.attribution === "agent" ? `agent:${message.id}` : null;
       const foldExpanded = foldRowId !== null && (props.expandedWorkRows[foldRowId] ?? false);
       const bubbleBodyVisible = foldRowId === null || foldExpanded;
       const intentBadge = props.messageGrouping.continuesSteer
@@ -2320,12 +2332,9 @@ function renderFeedEntry(
               <Text className="font-t3-medium text-2xs text-foreground-muted">Said on a call</Text>
             </View>
           ) : null}
-          {presentation.bot !== undefined && foldRowId === null ? (
+          {presentation.bot !== undefined ? (
             <View className="mb-1 flex-row items-center gap-1.5 pr-1">
-              {/* A look drawn from "From Heartbeat" would pass for some other bot. */}
-              {presentation.bot.background ? null : (
-                <BotAvatarSlot avatar={null} name={presentation.bot.name} status="idle" size={16} />
-              )}
+              <BotAvatarSlot avatar={null} name={presentation.bot.name} status="idle" size={16} />
               <Text className="font-t3-medium text-2xs text-foreground-muted">
                 {presentation.bot.name}
               </Text>
@@ -2399,7 +2408,6 @@ function renderFeedEntry(
                 <AgentMessageFoldHeader
                   environmentId={props.environmentId}
                   senderThreadId={message.senderThreadId}
-                  label={backgroundBotName}
                   summary={
                     replaceComposerContextReferences(presentation.text, (ref) => ref.label)
                       .split(/\r?\n/)
@@ -4384,7 +4392,8 @@ export const ThreadFeed = memo(function ThreadFeed({
                 ) {
                   return "message:assistant-progress";
                 }
-                const { attribution } = resolveUserMessagePresentation(entry.message);
+                const { attribution, bot } = resolveUserMessagePresentation(entry.message);
+                if (bot?.background) return "message:automation";
                 return attribution === "automation" || attribution === "agent"
                   ? `message:${attribution}`
                   : `message:${entry.message.role}`;

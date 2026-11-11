@@ -246,6 +246,8 @@ export interface ThreadComposerProps {
   readonly canStopThread: boolean;
   readonly environmentId: EnvironmentId;
   readonly projectCwd: string | null;
+  /** Set in a bot's conversation: `@` offers conversations, not workspace files or machines. */
+  readonly directMessage?: boolean;
   readonly sendBlockedReason?: string | null;
   readonly interactionLocked?: boolean;
   readonly draftKey?: string;
@@ -575,6 +577,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     linkedEnvironments: useLinkedEnvironments(props.environmentId),
     currentThreadId: props.selectedThread.id,
     projectCwd: props.projectCwd,
+    directMessage: props.directMessage === true,
     selectedProviderStatus,
     hasThread: !props.isDraft,
     hasCompactableConversation: props.hasCompactableConversation,

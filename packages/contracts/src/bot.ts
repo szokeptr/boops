@@ -42,15 +42,20 @@ export const BotMcpCreateChildInput = Schema.Struct({
 });
 export type BotMcpCreateChildInput = typeof BotMcpCreateChildInput.Type;
 
-export const BotMcpChild = Schema.Struct({
+/** What another bot is to the one asking: its parent, a bot it created, a sibling, or neither. */
+export const BotRelation = Schema.Literals(["parent", "child", "sibling", "other"]);
+export type BotRelation = typeof BotRelation.Type;
+
+export const BotMcpReachableBot = Schema.Struct({
   projectId: ProjectId,
   name: Schema.String,
+  relation: BotRelation,
   archived: Schema.Boolean,
 });
-export type BotMcpChild = typeof BotMcpChild.Type;
+export type BotMcpReachableBot = typeof BotMcpReachableBot.Type;
 
-export const BotMcpListChildrenResult = Schema.Struct({ children: Schema.Array(BotMcpChild) });
-export type BotMcpListChildrenResult = typeof BotMcpListChildrenResult.Type;
+export const BotMcpListBotsResult = Schema.Struct({ bots: Schema.Array(BotMcpReachableBot) });
+export type BotMcpListBotsResult = typeof BotMcpListBotsResult.Type;
 
 export const BotMcpReadChildInput = Schema.Struct({
   projectId: ChildBotProject,
@@ -78,6 +83,12 @@ export const BotMcpMessageChildInput = Schema.Struct({
   message: BotMessageText,
 });
 export type BotMcpMessageChildInput = typeof BotMcpMessageChildInput.Type;
+
+export const BotMcpMessageBotInput = Schema.Struct({
+  projectId: ProjectId.annotate({ description: "The bot's projectId, from list_bots." }),
+  message: BotMessageText,
+});
+export type BotMcpMessageBotInput = typeof BotMcpMessageBotInput.Type;
 
 export const BotMcpReportToParentInput = Schema.Struct({ message: BotMessageText });
 export type BotMcpReportToParentInput = typeof BotMcpReportToParentInput.Type;

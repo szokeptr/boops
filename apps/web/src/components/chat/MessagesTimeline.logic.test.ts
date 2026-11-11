@@ -2784,7 +2784,7 @@ describe("v2 run and attempt history", () => {
     const fromJarvis = {
       context: {
         version: 1,
-        bot: { projectId: "jarvis" as never, name: "Jarvis", relation: "child" as const },
+        bot: { projectId: "jarvis" as never, name: "Jarvis", relation: "peer" as const },
         records: [],
       },
     };
@@ -2801,7 +2801,7 @@ describe("v2 run and attempt history", () => {
           item: {
             type: "dynamic_tool",
             status: "running",
-            toolName: "mcp__boops__message_child_bot",
+            toolName: "mcp__boops__message_bot",
             input: { projectId: "jarvis", message: "File them please" },
           },
         } as never,

@@ -212,6 +212,7 @@ export function useComposerCommandMenu({
   hasCompactableConversation,
   offersUsageLimits = false,
   enabled = true,
+  directMessage = false,
   onChangeDraftMessage,
   onUpdateInteractionMode,
   onUsageLimits,
@@ -230,6 +231,8 @@ export function useComposerCommandMenu({
   readonly hasCompactableConversation: boolean;
   readonly offersUsageLimits?: boolean;
   readonly enabled?: boolean;
+  /** A bot's conversation mentions other conversations, not its workspace files or machines. */
+  readonly directMessage?: boolean;
   readonly onChangeDraftMessage: (value: string) => void;
   readonly onUpdateInteractionMode?: (mode: ProviderInteractionMode) => void;
   readonly onUsageLimits?: () => void;
@@ -286,7 +289,7 @@ export function useComposerCommandMenu({
   })();
   const pathSearch = useComposerPathSearch({
     environmentId,
-    cwd: trigger?.kind === "path" ? projectCwd : null,
+    cwd: trigger?.kind === "path" && !directMessage ? projectCwd : null,
     query: trigger?.kind === "path" ? trigger.query : null,
   });
   // Mounts older settled threads matching the mention, which shells may leave out.
@@ -427,9 +430,10 @@ export function useComposerCommandMenu({
             now,
           })
         : [];
-      const environmentItems = environmentId
-        ? matchComposerEnvironmentItems({ environments, environmentId, query: trigger.query })
-        : [];
+      const environmentItems =
+        environmentId && !directMessage
+          ? matchComposerEnvironmentItems({ environments, environmentId, query: trigger.query })
+          : [];
       return [
         ...threadItems,
         ...environmentItems,

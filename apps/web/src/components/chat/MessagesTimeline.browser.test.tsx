@@ -826,10 +826,12 @@ const AGENT_MESSAGE = "Review finished\n\nThe migration drops the index before b
 
 describe("MessagesTimeline agent messages", () => {
   it.each([
-    { name: "another agent", label: /^Agent/, context: undefined },
+    { name: "another agent", label: /^Agent/, preview: "Review finished", context: undefined },
     {
+      // A routine's note reads as an event, like a routine wake, not as the user's message.
       name: "the bot's own routine",
-      label: /^From Landlord bills/,
+      label: /^Routine: Landlord bills/,
+      preview: "Landlord bills",
       context: {
         version: 1 as const,
         records: [],
@@ -840,7 +842,7 @@ describe("MessagesTimeline agent messages", () => {
         },
       },
     },
-  ])("folds a message from $name into a one-line preview", async ({ label, context }) => {
+  ])("folds a message from $name into a one-line preview", async ({ label, preview, context }) => {
     setup();
     const onOpenThread = vi.fn();
     await using screen = await renderTimeline(
@@ -854,7 +856,7 @@ describe("MessagesTimeline agent messages", () => {
       { onOpenThread },
     );
     const row = screen.button(label);
-    expect(row.textContent).toContain("Review finished");
+    expect(row.textContent).toContain(preview);
     expect(row.getAttribute("aria-expanded")).toBe("false");
     expect(screen.text()).not.toContain("drops the index");
     expect(screen.buttons("Open thread")).toHaveLength(0);
