@@ -29,6 +29,7 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { openRenameRoomDialog } from "./RenameRoomDialog";
+import { openRoomListeningDialog } from "./RoomListeningDialog";
 import { RoomAvatar } from "./RoomAvatar";
 import { RoomComposer } from "./RoomComposer";
 import { RoomRequests } from "./RoomRequests";
@@ -258,6 +259,11 @@ function RoomHeader({
               }
             >
               Rename…
+            </MenuItem>
+          ) : null}
+          {canManage && room.participants.some((entry) => entry.participant.kind === "bot") ? (
+            <MenuItem onClick={() => openRoomListeningDialog({ environmentId, roomId: room.id })}>
+              Bots chiming in…
             </MenuItem>
           ) : null}
           <MenuItem onClick={() => void commands.setMuted(room.id, !room.muted)}>

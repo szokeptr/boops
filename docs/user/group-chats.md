@@ -1,6 +1,6 @@
 # Group chats
 
-A group chat puts you, the people you invited, and your bots in one conversation. Bots stay quiet until someone mentions them, then answer in front of everyone.
+A group chat puts you, the people you invited, and your bots in one conversation. Bots answer when someone mentions them, and can chime in on their own when the chat is about something they can help with.
 
 ## Start one
 
@@ -10,7 +10,13 @@ People you invited can start group chats too, once you turn on **Can start group
 
 ## Talk to a bot
 
-Type `@` and pick a bot, or write its name after `@`. Only the bots you mention answer. Each one reads what was said since it last spoke, so you can talk among yourselves first and bring a bot in when you need it. A bot you add to a chat catches up on its last 20 messages.
+Type `@` and pick a bot, or write its name after `@`. Every bot you mention answers. Each one reads what was said since it last spoke, so you can talk among yourselves first and bring a bot in when you need it. A bot you add to a chat catches up on its last 20 messages.
+
+## Bots chiming in
+
+With an OpenAI API key in **Settings → Providers**, bots can also speak up without a mention. A few seconds after people stop typing, a small OpenAI model reads the recent messages and picks the one bot they are most likely for, if any. Usually that is the bot that just answered, when you follow up on what it said. The bot then decides for itself whether it has something to add, and stays quiet otherwise. Mentioning a bot keeps the others out of it. Without a key, bots answer only when mentioned.
+
+Every bot chimes in by default. To change that, or to say what a bot is there for, such as "flights and hotels", choose **Bots chiming in** from the chat's menu. Whoever started the chat, and you as owner, can change it.
 
 Bots can mention each other to hand work along. After a few hand-offs they stop and wait for a person.
 

@@ -52,6 +52,7 @@ import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/Cont
 import { withInlineContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
 import { AttachmentToolkit } from "../../apps/server/src/mcp/toolkits/attachment/tools.ts";
 import { BotToolkit } from "../../apps/server/src/mcp/toolkits/bots/tools.ts";
+import { roomDeliveryText } from "../../apps/server/src/rooms/roomDelivery.ts";
 import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "../../apps/server/src/mcp/toolkits/environment/tools.ts";
 import { HtmlToolkit } from "../../apps/server/src/mcp/toolkits/html/tools.ts";
@@ -314,6 +315,8 @@ export const McpToolUseCase = Schema.Struct({
   prompt: Schema.String,
   /** The prompt is this shipped routine's run message, read from source. Leave `prompt` empty. */
   routine: Schema.optional(Schema.Literals(["heartbeat", "check-in"])),
+  /** The prompt is a group chat turn nobody @mentioned the bot in, built as the room builds it. */
+  groupChat: Schema.optional(Schema.Literals(["unasked-small-talk", "unasked-follow-up"])),
   /** Records for the context chips `prompt` links, projected as T3 sends them. */
   promptContext: Schema.optional(Schema.Struct({ records: Schema.Array(ComposerContextRecord) })),
   expect: McpToolUseExpect,
@@ -339,9 +342,47 @@ const ROUTINE_PROMPTS = {
   })}\n\nCheck acme/app on GitHub: CI on main and my open PRs. Tell me what changed since the last check.\n\n${ROUTINE_THREAD_NOTE}`,
 } as const;
 
+const groupChatTurn = (
+  followUp: boolean,
+  messages: ReadonlyArray<readonly [author: string, text: string]>,
+) =>
+  roomDeliveryText({
+    roomTitle: "Lisbon trip",
+    botName: "Wren",
+    botProjectId: Contracts.ProjectId.make("project:wren"),
+    people: [
+      { name: "Dana", isOwner: true },
+      { name: "Sam", isOwner: false },
+    ],
+    otherBots: ["Chef"],
+    messages: messages.map(([authorName, text]) => ({
+      author: { kind: "owner" },
+      authorName,
+      text,
+      mentions: [],
+      attachments: [],
+    })),
+    canSeeImages: true,
+    unasked: { followUp, listensFor: "travel plans: flights, hotels and trains" },
+  });
+
+const GROUP_CHAT_PROMPTS = {
+  "unasked-small-talk": groupChatTurn(false, [
+    ["Sam", "haha did you see the match last night"],
+    ["Dana", "don't remind me 😭"],
+  ]),
+  "unasked-follow-up": groupChatTurn(true, [
+    ["Dana", "ok and is there a train from the airport to the old town?"],
+  ]),
+} as const;
+
 /** The user message a case sends. */
-export const casePrompt = (testCase: Pick<McpToolUseCase, "prompt" | "routine">) =>
-  testCase.routine === undefined ? testCase.prompt : ROUTINE_PROMPTS[testCase.routine];
+export const casePrompt = (testCase: Pick<McpToolUseCase, "prompt" | "routine" | "groupChat">) =>
+  testCase.routine !== undefined
+    ? ROUTINE_PROMPTS[testCase.routine]
+    : testCase.groupChat !== undefined
+      ? GROUP_CHAT_PROMPTS[testCase.groupChat]
+      : testCase.prompt;
 const AnyBlock = Schema.StructWithRest(
   Schema.Struct({ type: Schema.String, text: Schema.optional(Schema.String) }),
   Rest,

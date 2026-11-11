@@ -28,6 +28,7 @@ import {
   RoomId,
   RoomMessageId,
   type RoomParticipant,
+  type RoomParticipantView,
   type RoomPerson,
   roomParticipantKey,
   RoomsError,
@@ -36,6 +37,7 @@ import {
   type RoomsHistoryInput,
   type RoomsPostInput,
   type RoomsRespondInput,
+  type RoomsSetListeningInput,
   type RoomPendingRequest,
   type OrchestrationV2TurnItem,
   type RoomsSnapshot,
@@ -48,6 +50,7 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FiberMap from "effect/FiberMap";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -65,6 +68,7 @@ import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as RoomAttachmentClaims from "./RoomAttachmentClaims.ts";
 import { roomDeliveryText } from "./roomDelivery.ts";
+import * as RoomRouter from "./RoomRouter.ts";
 
 /** Who is asking: the owner, or the member a session belongs to. */
 export type RoomViewer = RoomHuman;
@@ -72,6 +76,12 @@ export type RoomViewer = RoomHuman;
 /** Until the owner says what to call them. */
 const OWNER_FALLBACK_NAME = "Owner";
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "interrupted", "cancelled"]);
+/** How long a room stays quiet after a message nobody @mentioned before a bot is picked. */
+const UNASKED_SETTLE = "4 seconds";
+/** Messages the decision model reads, newest last. */
+const UNASKED_CONTEXT = 12;
+/** A bot that spoke within this many messages may be getting a follow-up. */
+const FOLLOW_UP_WINDOW = 4;
 /** Drivers whose prompts carry images natively. */
 const IMAGE_DRIVERS: ReadonlySet<string> = new Set(["claudeAgent", "codex"]);
 
@@ -80,6 +90,17 @@ const notFound = () => new RoomsError({ reason: "not-found" });
 const notAllowed = () => new RoomsError({ reason: "not-allowed" });
 
 const isOwner = (viewer: RoomViewer) => viewer.kind === "owner";
+
+/** The bot that spoke within the last few messages, whom the newest may be following up. */
+const followUpBot = (
+  recent: ReadonlyArray<Pick<RoomStore.RoomMessageRecord, "author">>,
+): ProjectId | undefined => {
+  const author = recent
+    .filter((message) => message.author.kind !== "system")
+    .slice(-FOLLOW_UP_WINDOW)
+    .findLast((message) => message.author.kind === "bot")?.author;
+  return author?.kind === "bot" ? author.projectId : undefined;
+};
 
 /** The turn a room thread runs: who started it, and after how many bot hand-offs. */
 interface RoomTurn {
@@ -152,6 +173,11 @@ export class Rooms extends Context.Service<
       muted: boolean,
     ) => Effect.Effect<void, RoomsError>;
     readonly remove: (viewer: RoomViewer, roomId: RoomId) => Effect.Effect<void, RoomsError>;
+    /** Whether a bot chimes in without an @mention, and what about; whoever manages the room. */
+    readonly setListening: (
+      viewer: RoomViewer,
+      input: RoomsSetListeningInput,
+    ) => Effect.Effect<void, RoomsError>;
     readonly markRead: (
       viewer: RoomViewer,
       roomId: RoomId,
@@ -202,6 +228,11 @@ export class Rooms extends Context.Service<
       readonly roomId: RoomId;
       readonly text: string;
     }) => Effect.Effect<void, RoomsError>;
+    /**
+     * The bot ends its room turn without posting, as when it was woken unasked and has nothing to
+     * add. Fails `not-allowed` outside a room turn.
+     */
+    readonly stayQuiet: (thread: WorkThread) => Effect.Effect<void, RoomsError>;
     /** Copies a finished room turn's reply into its room; idempotent. */
     readonly finishTurn: (
       threadId: ThreadId,
@@ -221,6 +252,11 @@ const make = Effect.gen(function* () {
   const attachmentClaims = yield* RoomAttachmentClaims.RoomAttachmentClaims;
   const relay = yield* AgentAwarenessRelay.AgentAwarenessRelay;
   const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
+  const router = yield* RoomRouter.RoomRouter;
+  /** Per room, the wait before picking a bot for messages nobody @mentioned; a new one restarts it. */
+  const unaskedWaits = yield* FiberMap.make<RoomId>();
+  /** Per room, whose messages the pending wait covers: the turn it starts runs for them. */
+  const unaskedOrigins = new Map<RoomId, Set<string>>();
   /** Bots' waiting approvals and questions, by room; refreshed when one opens or closes. */
   const pendingByRoom = new Map<RoomId, ReadonlyArray<PendingRequest>>();
 
@@ -380,15 +416,30 @@ const make = Effect.gen(function* () {
     };
   });
 
+  /**
+   * Bots in a turn someone asked for. A bot woken unasked shows nothing until it speaks, since it
+   * mostly stays quiet; a typing row that comes to nothing would be a lie.
+   */
+  const workingIn = (participants: ReadonlyArray<RoomStore.RoomParticipantRecord>) =>
+    participants.flatMap((participant) =>
+      participant.participant.kind === "bot" &&
+      participant.turnRunId !== null &&
+      !participant.turnAmbient
+        ? [participant.participant.projectId]
+        : [],
+    );
+
   const listFor = Effect.fn("Rooms.list")(function* (viewer: RoomViewer) {
-    const [rooms, participants, lastMessages, lastSpoken, names, memberRows] = yield* Effect.all([
-      db(store.listRooms),
-      db(store.listParticipants()),
-      db(store.lastMessages),
-      db(store.lastSpoken),
-      directory,
-      memberList,
-    ]);
+    const [rooms, participants, lastMessages, lastSpoken, names, memberRows, canListen] =
+      yield* Effect.all([
+        db(store.listRooms),
+        db(store.listParticipants()),
+        db(store.lastMessages),
+        db(store.lastSpoken),
+        directory,
+        memberList,
+        router.available,
+      ]);
     const viewerKey = roomParticipantKey(viewer);
     const summaries: Array<RoomSummary> = [];
     for (const room of rooms) {
@@ -401,23 +452,26 @@ const make = Effect.gen(function* () {
         title: room.title,
         createdBy:
           createdBy?.kind === "member" ? createdBy : ({ kind: "owner" } satisfies RoomHuman),
-        participants: inRoom.flatMap((participant) => {
+        participants: inRoom.flatMap((participant): ReadonlyArray<RoomParticipantView> => {
           const name = nameOf(participant.participant, names);
-          return name === undefined ? [] : [{ participant: participant.participant, name }];
+          if (name === undefined) return [];
+          return participant.participant.kind === "bot"
+            ? [
+                {
+                  participant: participant.participant,
+                  name,
+                  listening: participant.listening,
+                  listensFor: participant.listensFor,
+                },
+              ]
+            : [{ participant: participant.participant, name }];
         }),
         joined: mine !== undefined,
         muted: mine?.muted ?? false,
         archivedAt: room.archivedAt,
         createdAt: room.createdAt,
         lastMessage: mine === undefined ? null : (lastMessages.get(room.id) ?? null),
-        working:
-          mine === undefined
-            ? []
-            : inRoom.flatMap((participant) =>
-                participant.participant.kind === "bot" && participant.turnRunId !== null
-                  ? [participant.participant.projectId]
-                  : [],
-              ),
+        working: mine === undefined ? [] : workingIn(inRoom),
         // System notes never make a room unread, nor hide a message that does.
         unread: (() => {
           const last = lastSpoken.get(room.id);
@@ -450,6 +504,7 @@ const make = Effect.gen(function* () {
       canCreate,
       people,
       ownerNamed: names.ownerNamed,
+      canListen,
     } satisfies RoomsSnapshot;
   });
 
@@ -543,15 +598,7 @@ const make = Effect.gen(function* () {
   });
 
   const emitWorking = Effect.fn("Rooms.emitWorking")(function* (roomId: RoomId) {
-    const participants = yield* participantsOf(roomId);
-    yield* emit(roomId, {
-      kind: "working",
-      working: participants.flatMap((participant) =>
-        participant.participant.kind === "bot" && participant.turnRunId !== null
-          ? [participant.participant.projectId]
-          : [],
-      ),
-    });
+    yield* emit(roomId, { kind: "working", working: workingIn(yield* participantsOf(roomId)) });
     yield* roomChanged(roomId);
   });
 
@@ -676,6 +723,7 @@ const make = Effect.gen(function* () {
     projectId: ProjectId,
     hop: number,
     requestedOrigin: string,
+    unasked: boolean,
   ) {
     const botKey = roomParticipantKey({ kind: "bot", projectId });
     const room = yield* requireRoom(roomId);
@@ -723,8 +771,8 @@ const make = Effect.gen(function* () {
       yield* systemNote(roomId, `${bot.title} has no model to answer with.`, originKey);
       return;
     }
-    const latest = yield* db(store.history({ roomId, limit: 1 }));
-    const throughSeq = latest[0]?.seq ?? self.cursorSeq;
+    const recent = yield* db(store.history({ roomId, limit: UNASKED_CONTEXT }));
+    const throughSeq = recent.at(-1)?.seq ?? self.cursorSeq;
     const unseen = yield* db(store.messagesBetween(roomId, self.cursorSeq, throughSeq));
     const names = yield* directory;
     const text = roomDeliveryText({
@@ -748,6 +796,14 @@ const make = Effect.gen(function* () {
       messages: unseen,
       botProjectId: projectId,
       canSeeImages: yield* seesImages(runtime.modelSelection),
+      ...(unasked
+        ? {
+            unasked: {
+              followUp: followUpBot(recent) === projectId,
+              listensFor: self.listensFor,
+            },
+          }
+        : {}),
     });
     // Files people sent since the bot last spoke come along; its own are already in its thread.
     const seeImages = yield* seesImages(runtime.modelSelection);
@@ -776,14 +832,21 @@ const make = Effect.gen(function* () {
         hop,
         origin: originKey,
         cursorSeq: throughSeq,
+        ambient: unasked,
       }),
     );
     yield* emitWorking(roomId);
   });
 
   /** Starts the bot's turn, or says why it couldn't; the caller holds its lock. */
-  const startTurn = (roomId: RoomId, projectId: ProjectId, hop: number, originKey: string) =>
-    beginTurn(roomId, projectId, hop, originKey).pipe(
+  const startTurn = (
+    roomId: RoomId,
+    projectId: ProjectId,
+    hop: number,
+    originKey: string,
+    unasked: boolean,
+  ) =>
+    beginTurn(roomId, projectId, hop, originKey, unasked).pipe(
       Effect.catch((cause) =>
         Effect.logWarning("Could not start a room turn", { roomId, cause }).pipe(
           Effect.andThen(cannotAnswer(roomId, projectId, originKey)),
@@ -791,8 +854,14 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  /** Gives the bot a turn, or one right after the turn it is in. */
-  const requestTurn = (roomId: RoomId, projectId: ProjectId, hop: number, originKey: string) => {
+  /** Gives the bot a turn, or one right after the turn it is in. A mention outranks `unasked`. */
+  const requestTurn = (
+    roomId: RoomId,
+    projectId: ProjectId,
+    hop: number,
+    originKey: string,
+    unasked = false,
+  ) => {
     const botKey = roomParticipantKey({ kind: "bot", projectId });
     return botLocks.withLock(
       `${roomId}|${botKey}`,
@@ -801,7 +870,9 @@ const make = Effect.gen(function* () {
           (participant) => participant.key === botKey,
         );
         if (self === undefined) return;
-        if (self.turnRunId === null) return yield* startTurn(roomId, projectId, hop, originKey);
+        if (self.turnRunId === null) {
+          return yield* startTurn(roomId, projectId, hop, originKey, unasked);
+        }
         const project = yield* db(projects.getById(projectId));
         if (Option.isNone(project)) return;
         const origin =
@@ -812,6 +883,7 @@ const make = Effect.gen(function* () {
           store.setWanted(roomId, botKey, {
             hop: Math.min(self.wantedHop ?? hop, hop),
             origin,
+            ambient: unasked && (self.wantedOrigin === null || self.wantedAmbient),
           }),
         );
       }),
@@ -843,6 +915,105 @@ const make = Effect.gen(function* () {
       { discard: true, concurrency: "unbounded" },
     );
   });
+
+  /**
+   * After a burst nobody @mentioned, wakes the one listening bot the decision model thinks it is
+   * for, which may still stay quiet. Without an answer, the bot that spoke last gets the follow-up.
+   */
+  const routeUnasked = Effect.fn("Rooms.routeUnasked")(function* (roomId: RoomId) {
+    // Read, not taken: a newer message interrupts this and its wait still covers these people.
+    const origins = [...(unaskedOrigins.get(roomId) ?? [])];
+    if (origins.length === 0) return;
+    const room = yield* requireRoom(roomId);
+    const listening = (yield* participantsOf(roomId)).flatMap((participant) =>
+      participant.participant.kind === "bot" && participant.listening
+        ? [{ projectId: participant.participant.projectId, listensFor: participant.listensFor }]
+        : [],
+    );
+    if (room.archivedAt !== null || listening.length === 0 || !(yield* router.available)) {
+      unaskedOrigins.delete(roomId);
+      return;
+    }
+    const recent = yield* db(store.history({ roomId, limit: UNASKED_CONTEXT }));
+    const burstStart =
+      recent.findLastIndex(
+        (message) => message.author.kind === "bot" || message.mentions.length > 0,
+      ) + 1;
+    const names = yield* directory;
+    const followUp = followUpBot(recent);
+    const candidates = listening.map((bot): RoomRouter.RouteCandidate => ({
+      projectId: bot.projectId,
+      name: names.botNames.get(bot.projectId) ?? "A bot",
+      listensFor: bot.listensFor,
+      followUp: bot.projectId === followUp,
+    }));
+    const messages = recent.flatMap((message, index) =>
+      message.author.kind === "system"
+        ? []
+        : [
+            {
+              authorName: message.authorName,
+              isBot: message.author.kind === "bot",
+              text: message.text,
+              isNew: index >= burstStart,
+            },
+          ],
+    );
+    if (!messages.some((message) => message.isNew)) {
+      unaskedOrigins.delete(roomId);
+      return;
+    }
+    const chosen = yield* router.score({ roomTitle: room.title, messages, candidates }).pipe(
+      Effect.map((scores) => RoomRouter.pickBot(scores, candidates)),
+      Effect.catch((error) =>
+        Effect.logWarning("Could not pick a bot to chime in", {
+          roomId,
+          reason: error.reason,
+        }).pipe(Effect.as(candidates.find((candidate) => candidate.followUp)?.projectId)),
+      ),
+    );
+    unaskedOrigins.delete(roomId);
+    // Never the chat itself: what was said stays out of the logs.
+    yield* Effect.logDebug("Picked a bot to chime in", {
+      roomId,
+      chosen: chosen ?? null,
+      candidates: candidates.length,
+    });
+    if (chosen === undefined) return;
+    const project = yield* db(projects.getById(chosen));
+    if (Option.isNone(project)) return;
+    let origin = origins[0]!;
+    for (const other of origins.slice(1)) {
+      origin = yield* leastTrusted(project.value, origin, other);
+    }
+    yield* requestTurn(roomId, chosen, 1, origin, true);
+  });
+
+  /** A message nobody @mentioned: once the room settles, a listening bot may chime in. */
+  const awaitUnasked = Effect.fn("Rooms.awaitUnasked")(function* (
+    roomId: RoomId,
+    originKey: string,
+  ) {
+    const origins = unaskedOrigins.get(roomId) ?? new Set<string>();
+    origins.add(originKey);
+    unaskedOrigins.set(roomId, origins);
+    yield* FiberMap.run(
+      unaskedWaits,
+      roomId,
+    )(
+      Effect.sleep(UNASKED_SETTLE).pipe(
+        Effect.andThen(routeUnasked(roomId)),
+        Effect.catch((cause) => Effect.logWarning("Could not wake a bot unasked", { cause })),
+      ),
+    );
+  });
+
+  /** Someone was addressed by name, so no other bot chimes in on what came before. */
+  const cancelUnasked = (roomId: RoomId) =>
+    Effect.suspend(() => {
+      unaskedOrigins.delete(roomId);
+      return FiberMap.remove(unaskedWaits, roomId);
+    });
 
   const parseRoomThread = (threadId: ThreadId) => {
     // `room:<roomId>:<projectId>`; room ids are UUIDs, so the first colon after the prefix splits.
@@ -891,7 +1062,9 @@ const make = Effect.gen(function* () {
           );
           yield* db(store.endTurn(roomId, botKey));
           let posted: RoomStore.RoomMessageRecord | undefined;
-          if (reply !== undefined || shared.length > 0) {
+          if (self.turnQuiet) {
+            // It chose to say nothing; whatever it wrote anyway stays in its own thread.
+          } else if (reply !== undefined || shared.length > 0) {
             const names = yield* directory;
             posted = yield* appendAndEmit({
               id: RoomMessageId.make(`bot:${reply?.id ?? `${run.id}:files`}`),
@@ -920,13 +1093,15 @@ const make = Effect.gen(function* () {
             const name = yield* authorNameOf({ kind: "bot", projectId });
             yield* systemNote(roomId, `${name} couldn't answer.`, originKey);
           }
-          const wanted =
-            self.wantedOrigin === null
-              ? undefined
-              : { hop: self.wantedHop ?? hop, origin: self.wantedOrigin };
-          if (wanted !== undefined) {
+          if (self.wantedOrigin !== null) {
             yield* db(store.setWanted(roomId, botKey, null));
-            yield* startTurn(roomId, projectId, wanted.hop, wanted.origin);
+            yield* startTurn(
+              roomId,
+              projectId,
+              self.wantedHop ?? hop,
+              self.wantedOrigin,
+              self.wantedAmbient,
+            );
           }
           yield* emitWorking(roomId);
           return posted === undefined ? undefined : { posted, hop };
@@ -1179,9 +1354,30 @@ const make = Effect.gen(function* () {
       messages.flatMap((message) => message.attachments),
     );
     pendingByRoom.delete(roomId);
+    yield* cancelUnasked(roomId);
     yield* emit(roomId, { kind: "working", working: [] });
     yield* changedFor([...participants.map((participant) => participant.key), "owner"]);
   });
+
+  const setListening: Rooms["Service"]["setListening"] = Effect.fn("Rooms.setListening")(
+    function* (viewer, input) {
+      yield* requireManager(viewer, input.roomId);
+      const botKey = roomParticipantKey({ kind: "bot", projectId: input.projectId });
+      if (
+        !(yield* participantsOf(input.roomId)).some((participant) => participant.key === botKey)
+      ) {
+        return yield* notFound();
+      }
+      const listensFor = input.listensFor?.trim() ?? "";
+      yield* db(
+        store.setListening(input.roomId, botKey, {
+          listening: input.listening,
+          listensFor: listensFor === "" ? null : listensFor,
+        }),
+      );
+      yield* roomChanged(input.roomId, { owner: true });
+    },
+  );
 
   const markRead: Rooms["Service"]["markRead"] = Effect.fn("Rooms.markRead")(
     function* (viewer, roomId, throughSeq) {
@@ -1218,6 +1414,8 @@ const make = Effect.gen(function* () {
     if (stored === undefined) return;
     // What you write, you have read.
     yield* db(store.markRead(input.roomId, roomParticipantKey(viewer), stored.seq));
+    if (stored.mentions.length > 0) yield* cancelUnasked(input.roomId);
+    else yield* awaitUnasked(input.roomId, roomParticipantKey(viewer));
     yield* deliverMentions(stored, 1);
   });
 
@@ -1486,6 +1684,17 @@ const make = Effect.gen(function* () {
     };
   });
 
+  const stayQuiet: Rooms["Service"]["stayQuiet"] = Effect.fn("Rooms.stayQuiet")(function* (thread) {
+    const parsed = isRoomThreadId(thread.id) ? parseRoomThread(thread.id) : undefined;
+    if (parsed === undefined) return yield* notAllowed();
+    const shell = yield* db(threads.getThreadShell(thread.id));
+    const runId = shell?.activeRunId ?? null;
+    const marked =
+      runId !== null &&
+      (yield* db(store.markQuiet(parsed.roomId, `bot:${parsed.projectId}`, runId)));
+    if (!marked) return yield* notAllowed();
+  });
+
   const postAsBot: Rooms["Service"]["postAsBot"] = Effect.fn("Rooms.postAsBot")(function* (input) {
     const projectId = input.from.projectId;
     const botKey = roomParticipantKey({ kind: "bot", projectId });
@@ -1616,8 +1825,9 @@ const make = Effect.gen(function* () {
 
   const start = Effect.gen(function* () {
     yield* forkParked(
+      // Rooms show the owner's name, and whether bots can chime in, which needs the API key.
       settings.streamChanges.pipe(
-        Stream.map((current) => current.ownerName),
+        Stream.map((current) => JSON.stringify([current.ownerName, current.voiceCalls])),
         Stream.changes,
         Stream.drop(1),
         Stream.runForEach(() => changedForEveryone),
@@ -1694,10 +1904,12 @@ const make = Effect.gen(function* () {
       setArchived,
       setMuted,
       remove,
+      setListening,
       markRead,
       post,
       roomsOfBot,
       turnOf,
+      stayQuiet,
       postAsBot,
       respond,
       interrupt,
@@ -1718,4 +1930,7 @@ export const layer = Layer.effect(
 ).pipe(Layer.provideMerge(RoomStore.layer));
 
 /** With the attachment claims that need the server's files; tests swap those for a mock. */
-export const layerLive = layer.pipe(Layer.provide(RoomAttachmentClaims.layer));
+export const layerLive = layer.pipe(
+  Layer.provide(RoomAttachmentClaims.layer),
+  Layer.provide(RoomRouter.layer),
+);

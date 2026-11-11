@@ -67,6 +67,10 @@ export const RoomParticipantView = Schema.Struct({
   participant: RoomParticipant,
   /** The current name: the bot's title, the member's label, or the owner's. */
   name: TrimmedNonEmptyString,
+  /** For a bot: it may chime in without an @mention. Absent from older servers and for people. */
+  listening: Schema.optionalKey(Schema.Boolean),
+  /** For a listening bot: what it is here for, in the words of whoever set it. */
+  listensFor: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type RoomParticipantView = typeof RoomParticipantView.Type;
 
@@ -79,7 +83,7 @@ export const RoomMessage = Schema.Struct({
   /** The sender's name when they sent it. */
   authorName: TrimmedNonEmptyString,
   text: Schema.String,
-  /** Bots this message addressed; each takes a turn. */
+  /** Bots this message addressed; each takes a turn. Without any, a listening bot may chime in. */
   mentions: Schema.Array(ProjectId),
   /** Files and images sent with it; a bot that answers gets them too. */
   attachments: Schema.Array(ChatAttachment),
@@ -118,6 +122,8 @@ export const RoomsSnapshot = Schema.Struct({
   people: Schema.Array(RoomPerson),
   /** Whether the owner has said what to call them; rooms ask once before the first one. */
   ownerNamed: Schema.Boolean,
+  /** Whether bots can chime in unasked: it needs the owner's OpenAI API key. */
+  canListen: Schema.optionalKey(Schema.Boolean),
 });
 export type RoomsSnapshot = typeof RoomsSnapshot.Type;
 
@@ -160,6 +166,17 @@ export type RoomsMarkReadInput = typeof RoomsMarkReadInput.Type;
 
 export const RoomsSetMutedInput = Schema.Struct({ roomId: RoomId, muted: Schema.Boolean });
 export type RoomsSetMutedInput = typeof RoomsSetMutedInput.Type;
+
+export const ROOM_LISTENS_FOR_MAX_LENGTH = 280;
+
+/** Whether a bot chimes in without an @mention, and what about. */
+export const RoomsSetListeningInput = Schema.Struct({
+  roomId: RoomId,
+  projectId: ProjectId,
+  listening: Schema.Boolean,
+  listensFor: Schema.NullOr(Schema.String.check(Schema.isMaxLength(ROOM_LISTENS_FOR_MAX_LENGTH))),
+});
+export type RoomsSetListeningInput = typeof RoomsSetListeningInput.Type;
 
 const ROOM_MESSAGE_MAX_ATTACHMENTS = 8;
 

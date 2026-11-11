@@ -175,6 +175,19 @@ const PostToGroupChatTool = Tool.make("post_to_group_chat", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, true);
 
+const StayQuietTool = Tool.make("stay_quiet", {
+  description:
+    "In a group chat, end this turn without posting anything. Call it when you were woken without an @mention and have nothing specific to add; any text you write instead is posted to everyone.",
+  success: Schema.Struct({ quiet: Schema.Boolean }),
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: [...dependencies, Rooms.Rooms],
+})
+  .annotate(Tool.Title, "Stay quiet")
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true)
+  .annotate(Tool.OpenWorld, false);
+
 export const BotToolkit = Toolkit.make(
   CreateChildBotTool,
   ListBotsTool,
@@ -187,4 +200,5 @@ export const BotToolkit = Toolkit.make(
   ReactToMessageTool,
   ListGroupChatsTool,
   PostToGroupChatTool,
+  StayQuietTool,
 );

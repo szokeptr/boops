@@ -43,6 +43,8 @@ interface RoomLookup {
   readonly room: RoomSummary | null;
   readonly canCreate: boolean;
   readonly people: ReadonlyArray<RoomPerson>;
+  /** Bots can chime in without an @mention: the owner set an OpenAI API key. */
+  readonly canListen: boolean;
 }
 
 const roomLookupAtom = Atom.family((key: string) => {
@@ -55,6 +57,7 @@ const roomLookupAtom = Atom.family((key: string) => {
       room: snapshot?.rooms.find((room) => room.id === roomId) ?? null,
       canCreate: snapshot?.canCreate ?? false,
       people: snapshot?.people ?? NO_PEOPLE,
+      canListen: snapshot?.canListen ?? false,
     };
     // Rooms keep their identity while unchanged, so other rooms' changes stop here.
     if (
@@ -62,7 +65,8 @@ const roomLookupAtom = Atom.family((key: string) => {
       previous.loaded === next.loaded &&
       previous.room === next.room &&
       previous.canCreate === next.canCreate &&
-      previous.people === next.people
+      previous.people === next.people &&
+      previous.canListen === next.canListen
     ) {
       return previous;
     }

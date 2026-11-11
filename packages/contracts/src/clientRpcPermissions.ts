@@ -45,6 +45,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.roomsCreate]: AuthOrchestrationOperateScope,
   [WS_METHODS.roomsRename]: AuthOrchestrationOperateScope,
   [WS_METHODS.roomsAddParticipant]: AuthOrchestrationOperateScope,
+  [WS_METHODS.roomsSetListening]: AuthOrchestrationOperateScope,
   [WS_METHODS.roomsRemoveParticipant]: AuthOrchestrationOperateScope,
   [WS_METHODS.roomsSetArchived]: AuthOrchestrationOperateScope,
   [WS_METHODS.roomsDelete]: AuthOrchestrationOperateScope,

@@ -54,6 +54,15 @@ export interface RoomParticipantRecord {
   readonly turnOrigin: string | null;
   readonly wantedHop: number | null;
   readonly wantedOrigin: string | null;
+  /** Whether the wanted turn is one nobody @mentioned it for; a mention outranks it. */
+  readonly wantedAmbient: boolean;
+  /** For a bot: it may chime in without an @mention, about `listensFor` when set. */
+  readonly listening: boolean;
+  readonly listensFor: string | null;
+  /** The turn was nobody's @mention, so the room doesn't show it working until it speaks. */
+  readonly turnAmbient: boolean;
+  /** The bot chose to end its turn without posting. */
+  readonly turnQuiet: boolean;
 }
 
 export interface RoomMessageRecord extends RoomMessage {
@@ -80,6 +89,13 @@ export interface BotTurn {
   readonly hop: number;
   readonly origin: string;
   readonly cursorSeq: number;
+  readonly ambient: boolean;
+}
+
+export interface WantedTurn {
+  readonly hop: number;
+  readonly origin: string;
+  readonly ambient: boolean;
 }
 
 type Row = Record<string, unknown>;
@@ -111,6 +127,11 @@ const toParticipant = (row: Row): RoomParticipantRecord | undefined => {
     turnOrigin: nullableString(row.turn_origin),
     wantedHop: nullableNumber(row.wanted_hop),
     wantedOrigin: nullableString(row.wanted_origin),
+    wantedAmbient: Number(row.wanted_ambient) === 1,
+    listening: Number(row.listening) === 1,
+    listensFor: nullableString(row.listens_for),
+    turnAmbient: Number(row.turn_ambient) === 1,
+    turnQuiet: Number(row.turn_quiet) === 1,
   };
 };
 
@@ -216,8 +237,19 @@ export class RoomRepository extends Context.Service<
     readonly setWanted: (
       roomId: RoomId,
       botKey: string,
-      wanted: { readonly hop: number; readonly origin: string } | null,
+      wanted: WantedTurn | null,
     ) => Effect.Effect<void, PersistenceSqlError>;
+    readonly setListening: (
+      roomId: RoomId,
+      botKey: string,
+      listening: { readonly listening: boolean; readonly listensFor: string | null },
+    ) => Effect.Effect<void, PersistenceSqlError>;
+    /** Marks the bot's turn on `runId` as ended quietly; false when that is not its turn. */
+    readonly markQuiet: (
+      roomId: RoomId,
+      botKey: string,
+      runId: RunId,
+    ) => Effect.Effect<boolean, PersistenceSqlError>;
   }
 >()("boops/persistence/Rooms/RoomRepository") {}
 
@@ -481,7 +513,7 @@ const make = Effect.gen(function* () {
       yield* sql`
         UPDATE room_participants
         SET turn_run_id = ${turn.runId}, turn_hop = ${turn.hop}, turn_origin = ${turn.origin},
-          cursor_seq = ${turn.cursorSeq}
+          cursor_seq = ${turn.cursorSeq}, turn_ambient = ${turn.ambient ? 1 : 0}, turn_quiet = 0
         WHERE room_id = ${roomId} AND participant_key = ${botKey}
       `;
     },
@@ -492,7 +524,7 @@ const make = Effect.gen(function* () {
     function* (roomId: RoomId, botKey: string) {
       yield* sql`
         UPDATE room_participants
-        SET turn_run_id = NULL, turn_hop = NULL
+        SET turn_run_id = NULL, turn_hop = NULL, turn_ambient = 0, turn_quiet = 0
         WHERE room_id = ${roomId} AND participant_key = ${botKey}
       `;
     },
@@ -500,18 +532,42 @@ const make = Effect.gen(function* () {
   );
 
   const setWanted = Effect.fn("RoomRepository.setWanted")(
-    function* (
-      roomId: RoomId,
-      botKey: string,
-      wanted: { readonly hop: number; readonly origin: string } | null,
-    ) {
+    function* (roomId: RoomId, botKey: string, wanted: WantedTurn | null) {
       yield* sql`
         UPDATE room_participants
-        SET wanted_hop = ${wanted?.hop ?? null}, wanted_origin = ${wanted?.origin ?? null}
+        SET wanted_hop = ${wanted?.hop ?? null}, wanted_origin = ${wanted?.origin ?? null},
+          wanted_ambient = ${wanted?.ambient === true ? 1 : 0}
         WHERE room_id = ${roomId} AND participant_key = ${botKey}
       `;
     },
     Effect.mapError(sqlError("setWanted")),
+  );
+
+  const setListening = Effect.fn("RoomRepository.setListening")(
+    function* (
+      roomId: RoomId,
+      botKey: string,
+      listening: { readonly listening: boolean; readonly listensFor: string | null },
+    ) {
+      yield* sql`
+        UPDATE room_participants
+        SET listening = ${listening.listening ? 1 : 0}, listens_for = ${listening.listensFor}
+        WHERE room_id = ${roomId} AND participant_key = ${botKey}
+      `;
+    },
+    Effect.mapError(sqlError("setListening")),
+  );
+
+  const markQuiet = Effect.fn("RoomRepository.markQuiet")(
+    function* (roomId: RoomId, botKey: string, runId: RunId) {
+      const rows = yield* sql<{ readonly changed: number }>`
+        UPDATE room_participants SET turn_quiet = 1
+        WHERE room_id = ${roomId} AND participant_key = ${botKey} AND turn_run_id = ${runId}
+        RETURNING 1 AS changed
+      `;
+      return rows.length > 0;
+    },
+    Effect.mapError(sqlError("markQuiet")),
   );
 
   return RoomRepository.of({
@@ -534,6 +590,8 @@ const make = Effect.gen(function* () {
     startTurn,
     endTurn,
     setWanted,
+    setListening,
+    markQuiet,
   });
 });
 

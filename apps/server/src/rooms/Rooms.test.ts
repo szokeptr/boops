@@ -33,6 +33,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as Members from "../members/Members.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
@@ -43,6 +44,7 @@ import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.
 import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as RoomAttachmentClaims from "./RoomAttachmentClaims.ts";
+import * as RoomRouter from "./RoomRouter.ts";
 import * as Rooms from "./Rooms.ts";
 
 const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" };
@@ -121,6 +123,11 @@ const makeHarness = Effect.gen(function* () {
   const applicationEvents = yield* Queue.unbounded<ApplicationStoredEvent>();
   const driver = { current: "codex" };
   const failing = { send: false };
+  /** Each bot's chance, as the decision model would answer; `failing` makes it not answer. */
+  const router = { available: true, failing: false, scores: new Map<ProjectId, number>() };
+  const routed = yield* Queue.unbounded<RoomRouter.RouteInput>();
+  /** Every turn the room starts, in order, to await one that starts later. */
+  const turns = yield* Queue.unbounded<{ threadId: ThreadId; text: string; runId: RunId }>();
 
   const finished = new Set<RunId>();
   const shell = (id: ThreadId, projectId: ProjectId, runtimeMode: RuntimeMode) =>
@@ -180,7 +187,7 @@ const makeHarness = Effect.gen(function* () {
               instanceId: modelSelection.instanceId,
             }),
           ) as never)
-        : Effect.sync(() => {
+        : Effect.gen(function* () {
             const runId = RunId.make(`run-${sent.length + 1}`);
             sent.push({
               threadId: input.threadId,
@@ -188,6 +195,7 @@ const makeHarness = Effect.gen(function* () {
               runId,
               attachments: input.attachments,
             });
+            yield* Queue.offer(turns, { threadId: input.threadId, text: input.text, runId });
             return { run: { id: runId }, delivery: "started" } as never;
           }),
     getThreadRecords: ((threadId: ThreadId) =>
@@ -249,6 +257,22 @@ const makeHarness = Effect.gen(function* () {
           }),
           Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
             getInstance: () => Effect.sync(() => ({ driverKind: driver.current }) as never),
+          }),
+          Layer.mock(RoomRouter.RoomRouter)({
+            available: Effect.sync(() => router.available),
+            score: (input) =>
+              Queue.offer(routed, input).pipe(
+                Effect.andThen(
+                  router.failing
+                    ? Effect.fail(new RoomRouter.RoomRouterError({ reason: "failed" }))
+                    : Effect.succeed(
+                        input.candidates.map((candidate) => ({
+                          projectId: candidate.projectId,
+                          probability: router.scores.get(candidate.projectId) ?? 0,
+                        })),
+                      ),
+                ),
+              ),
           }),
         ),
       ),
@@ -383,6 +407,9 @@ const makeHarness = Effect.gen(function* () {
     finished,
     failing,
     driver,
+    router,
+    routed,
+    turns,
   };
 });
 
@@ -1007,4 +1034,97 @@ it.effect("after a restart, a run that ended posts once and one that vanished cl
       (yield* textsOf(restarted, room.id)).filter((text) => text === "Back with flights."),
     ).toHaveLength(1);
   }),
+);
+
+it.effect(
+  "a message nobody mentioned wakes the likeliest listening bot, which may stay quiet",
+  () =>
+    Effect.gen(function* () {
+      const { rooms, router, routed, turns, reply, post, shellOf } = yield* makeHarness;
+      const room = yield* roomWithEveryone(rooms);
+      yield* rooms.setListening(owner, {
+        roomId: room.id,
+        projectId: chefId,
+        listening: true,
+        listensFor: "  dinner plans ",
+      });
+      router.scores.set(chefId, 0.9).set(scoutId, 0.4);
+
+      yield* post(asAnna, room.id, "what should we cook tonight?");
+      yield* TestClock.adjust("4 seconds");
+      const input = yield* Queue.take(routed);
+      expect(input.candidates).toEqual([
+        expect.objectContaining({ projectId: scoutId, listensFor: null, followUp: false }),
+        expect.objectContaining({ projectId: chefId, listensFor: "dinner plans", followUp: false }),
+      ]);
+      expect(input.messages).toEqual([
+        { authorName: "Anna", isBot: false, text: "what should we cook tonight?", isNew: true },
+      ]);
+
+      const turn = yield* Queue.take(turns);
+      expect(turn.threadId).toBe(botRoomThreadId(room.id, chefId));
+      expect(turn.text).toContain("Nobody @mentioned you");
+      expect(turn.text).toContain("here for: dinner plans");
+      // Mostly these end quietly, so nobody sees the bot typing.
+      expect((yield* summaryFor(rooms, owner, room.id))?.working).toEqual([]);
+
+      yield* rooms.stayQuiet(shellOf(turn.threadId));
+      yield* reply(room.id, chefId, turn.runId, "No reply needed.");
+      expect(yield* textsOf(rooms, room.id)).toEqual(["what should we cook tonight?"]);
+      expect(yield* reasonOf(rooms.stayQuiet(shellOf(turn.threadId)))).toBe("not-allowed");
+    }),
+);
+
+it.effect("a mention keeps other bots out of what came before it, and quiet bots out of all", () =>
+  Effect.gen(function* () {
+    const { rooms, router, routed, turns, post } = yield* makeHarness;
+    const room = yield* roomWithEveryone(rooms);
+    yield* rooms.setListening(owner, {
+      roomId: room.id,
+      projectId: chefId,
+      listening: false,
+      listensFor: null,
+    });
+    expect(
+      (yield* summaryFor(rooms, owner, room.id))?.participants.find(
+        (entry) => entry.participant.kind === "bot" && entry.participant.projectId === chefId,
+      )?.listening,
+    ).toBe(false);
+    router.scores.set(scoutId, 0.1);
+
+    yield* post(owner, room.id, "anyone hungry?");
+    yield* post(owner, room.id, "@Scout find us flights", [scoutId]);
+    expect((yield* Queue.take(turns)).threadId).toBe(botRoomThreadId(room.id, scoutId));
+    yield* TestClock.adjust("4 seconds");
+
+    yield* post(asAnna, room.id, "nice");
+    yield* TestClock.adjust("4 seconds");
+    const input = yield* Queue.take(routed);
+    expect(input.candidates.map((candidate) => candidate.projectId)).toEqual([scoutId]);
+    expect(
+      input.messages.filter((message) => message.isNew).map((message) => message.text),
+    ).toEqual(["nice"]);
+  }),
+);
+
+it.effect(
+  "without an answer the bot that just spoke takes the follow-up, as the least trusted",
+  () =>
+    Effect.gen(function* () {
+      const { rooms, router, turns, threads, reply, post } = yield* makeHarness;
+      const room = yield* roomWithEveryone(rooms);
+      const threadId = botRoomThreadId(room.id, scoutId);
+      yield* post(owner, room.id, "@Scout find us flights", [scoutId]);
+      const first = yield* Queue.take(turns);
+      yield* reply(room.id, scoutId, first.runId, "TAP has a direct flight.");
+      router.failing = true;
+
+      yield* post(owner, room.id, "and hotels?");
+      yield* post(asAnna, room.id, "cheap ones");
+      yield* TestClock.adjust("4 seconds");
+      const followUp = yield* Queue.take(turns);
+      expect(followUp.threadId).toBe(threadId);
+      expect(followUp.text).toContain("as a follow-up to your last reply");
+      expect(threads.get(threadId)?.runtimeMode).toBe("approval-required");
+    }),
 );

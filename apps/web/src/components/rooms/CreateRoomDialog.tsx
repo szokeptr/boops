@@ -223,8 +223,8 @@ function Form(props: {
       <DialogHeader>
         <DialogTitle>New group chat</DialogTitle>
         <DialogDescription>
-          Pick who's in it. Bots answer when someone @mentions them, and catch up on what they
-          missed.
+          Pick who's in it. Bots answer when someone @mentions them, and can chime in when the chat
+          is about something they help with.
         </DialogDescription>
       </DialogHeader>
       <DialogPanel>

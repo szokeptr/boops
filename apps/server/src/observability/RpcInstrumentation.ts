@@ -94,6 +94,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.roomsCreate]: "rooms",
   [WS_METHODS.roomsRename]: "rooms",
   [WS_METHODS.roomsAddParticipant]: "rooms",
+  [WS_METHODS.roomsSetListening]: "rooms",
   [WS_METHODS.roomsRemoveParticipant]: "rooms",
   [WS_METHODS.roomsLeave]: "rooms",
   [WS_METHODS.roomsSetArchived]: "rooms",

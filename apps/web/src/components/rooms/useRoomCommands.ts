@@ -3,7 +3,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, RoomId, RoomParticipant } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, RoomId, RoomParticipant } from "@t3tools/contracts";
 
 import { requestConfirmDialog } from "../../confirmDialog";
 import { roomEnvironment } from "../../state/rooms";
@@ -31,6 +31,7 @@ export function useRoomCommands(environmentId: EnvironmentId) {
   const runLeave = useAtomCommand(roomEnvironment.leave, quiet);
   const runArchive = useAtomCommand(roomEnvironment.setArchived, quiet);
   const runMute = useAtomCommand(roomEnvironment.setMuted, quiet);
+  const runListening = useAtomCommand(roomEnvironment.setListening, quiet);
   const runDelete = useAtomCommand(roomEnvironment.remove, quiet);
   const ok = (title: string) => (result: AtomCommandResult<unknown, unknown>) =>
     result._tag === "Success" || reportFailure(title, result);
@@ -54,6 +55,15 @@ export function useRoomCommands(environmentId: EnvironmentId) {
       ),
     setMuted: (roomId: RoomId, muted: boolean) =>
       runMute({ environmentId, input: { roomId, muted } }).then(ok("Could not change it")),
+    setListening: (
+      roomId: RoomId,
+      projectId: ProjectId,
+      listening: boolean,
+      listensFor: string | null,
+    ) =>
+      runListening({ environmentId, input: { roomId, projectId, listening, listensFor } }).then(
+        ok("Could not change it"),
+      ),
     leave: async (roomId: RoomId, title: string) => {
       const confirmed = await (requestConfirmDialog(
         `Leave "${title}"? Someone has to add you back.`,

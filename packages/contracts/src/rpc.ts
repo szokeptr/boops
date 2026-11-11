@@ -456,6 +456,7 @@ import {
   RoomsRoomInput,
   RoomsSetArchivedInput,
   RoomsSetMutedInput,
+  RoomsSetListeningInput,
   RoomsSnapshot,
   RoomSummary,
 } from "./rooms.ts";
@@ -627,6 +628,7 @@ export const WS_METHODS = {
   roomsLeave: "rooms.leave",
   roomsSetArchived: "rooms.setArchived",
   roomsSetMuted: "rooms.setMuted",
+  roomsSetListening: "rooms.setListening",
   roomsDelete: "rooms.delete",
   roomsPost: "rooms.post",
   roomsHistory: "rooms.history",
@@ -1027,6 +1029,10 @@ const WsRoomsSetArchivedRpc = Rpc.make(WS_METHODS.roomsSetArchived, {
 });
 const WsRoomsSetMutedRpc = Rpc.make(WS_METHODS.roomsSetMuted, {
   payload: RoomsSetMutedInput,
+  error: RoomsRpcError,
+});
+const WsRoomsSetListeningRpc = Rpc.make(WS_METHODS.roomsSetListening, {
+  payload: RoomsSetListeningInput,
   error: RoomsRpcError,
 });
 const WsRoomsDeleteRpc = Rpc.make(WS_METHODS.roomsDelete, {
@@ -2538,6 +2544,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsRoomsLeaveRpc,
   WsRoomsSetArchivedRpc,
   WsRoomsSetMutedRpc,
+  WsRoomsSetListeningRpc,
   WsRoomsDeleteRpc,
   WsRoomsPostRpc,
   WsRoomsHistoryRpc,

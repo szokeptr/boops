@@ -2866,6 +2866,7 @@ export const layerWsRpc = (
         [WS_METHODS.roomsSetMuted]: ({ roomId, muted }) =>
           rooms.setMuted(roomViewer, roomId, muted),
         [WS_METHODS.roomsDelete]: ({ roomId }) => rooms.remove(roomViewer, roomId),
+        [WS_METHODS.roomsSetListening]: (input) => rooms.setListening(roomViewer, input),
         [WS_METHODS.roomsPost]: (input) => rooms.post(roomViewer, input),
         [WS_METHODS.roomsRespond]: (input) => rooms.respond(roomViewer, input),
         [WS_METHODS.roomsInterrupt]: ({ roomId, projectId }) =>

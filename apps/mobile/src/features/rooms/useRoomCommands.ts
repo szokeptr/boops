@@ -8,6 +8,7 @@ import {
   type EnvironmentId,
   type ProjectAvatar,
   type ProjectId,
+  ROOM_LISTENS_FOR_MAX_LENGTH,
   type RoomId,
   type RoomParticipant,
   roomParticipantKey,
@@ -57,6 +58,7 @@ export function useRoomCommands(environmentId: EnvironmentId) {
   const runLeave = useAtomCommand(roomEnvironment.leave, quiet);
   const runArchive = useAtomCommand(roomEnvironment.setArchived, quiet);
   const runMute = useAtomCommand(roomEnvironment.setMuted, quiet);
+  const runListening = useAtomCommand(roomEnvironment.setListening, quiet);
   const runDelete = useAtomCommand(roomEnvironment.remove, quiet);
   const runInterrupt = useAtomCommand(roomEnvironment.interrupt, quiet);
   const ok = (title: string) => (result: AtomCommandResult<unknown, unknown>) =>
@@ -96,6 +98,40 @@ export function useRoomCommands(environmentId: EnvironmentId) {
       ),
     setMuted: (roomId: RoomId, muted: boolean) =>
       runMute({ environmentId, input: { roomId, muted } }).then(ok("Could not change it")),
+    setListening: (
+      roomId: RoomId,
+      projectId: ProjectId,
+      listening: boolean,
+      listensFor: string | null,
+    ) =>
+      runListening({ environmentId, input: { roomId, projectId, listening, listensFor } }).then(
+        ok("Could not change it"),
+      ),
+    /** Asks what a listening bot is here for; empty clears it. */
+    editListensFor: (
+      roomId: RoomId,
+      bot: { readonly projectId: ProjectId; readonly name: string },
+      current: string | null,
+    ) =>
+      Dialog.prompt({
+        title: `What is ${bot.name} here for?`,
+        message:
+          "It chimes in when the chat is about this. Leave empty for anything it can help with.",
+        initialValue: current ?? "",
+        confirmText: "Save",
+        onConfirm: (value) => {
+          const listensFor = value.trim().slice(0, ROOM_LISTENS_FOR_MAX_LENGTH);
+          void runListening({
+            environmentId,
+            input: {
+              roomId,
+              projectId: bot.projectId,
+              listening: true,
+              listensFor: listensFor === "" ? null : listensFor,
+            },
+          }).then(ok("Could not change it"));
+        },
+      }),
     leave: (roomId: RoomId, title: string, onDone: () => void) =>
       Dialog.confirm({
         title: `Leave "${title}"?`,

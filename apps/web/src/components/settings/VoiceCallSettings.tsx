@@ -18,7 +18,7 @@ import { SettingsRow, SettingsSection } from "./settingsLayout";
 const hasKey = (value: SettingsSecretValue | undefined) =>
   typeof value === "string" ? value.trim() !== "" : value !== undefined && isSecretReference(value);
 
-/** The OpenAI API key bot calls run on. */
+/** The OpenAI API key bot calls run on, and that decides when bots chime in to group chats. */
 export function VoiceCallSettings({
   environmentId,
   savedKey,
@@ -54,8 +54,9 @@ export function VoiceCallSettings({
         title="OpenAI API key"
         description={
           <>
-            Calls with your bots run on OpenAI&apos;s GPT-Live voice model and are billed to this
-            key.{" "}
+            Calls with your bots run on OpenAI&apos;s GPT-Live voice model, and in group chats a
+            small OpenAI model reads recent messages to decide when a bot should chime in without an
+            @mention. Both are billed to this key.{" "}
             <InlineButton
               render={
                 <a

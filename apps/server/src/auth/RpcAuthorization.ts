@@ -277,6 +277,7 @@ const MEMBER_RPC_POLICY = {
   [WS_METHODS.roomsCreate]: "allow",
   [WS_METHODS.roomsRename]: "allow",
   [WS_METHODS.roomsAddParticipant]: "allow",
+  [WS_METHODS.roomsSetListening]: "allow",
   [WS_METHODS.roomsRemoveParticipant]: "allow",
   [WS_METHODS.roomsLeave]: "allow",
   [WS_METHODS.roomsSetArchived]: "allow",

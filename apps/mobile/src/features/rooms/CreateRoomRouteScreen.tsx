@@ -151,8 +151,8 @@ export function CreateRoomRouteScreen(props: CreateRoomRouteScreenProps) {
         keyboardDismissMode="on-drag"
       >
         <Text className="font-sans text-sm leading-5 text-foreground-muted">
-          Pick who's in it. Bots answer when someone @mentions them, and catch up on what they
-          missed.
+          Pick who's in it. Bots answer when someone @mentions them, and can chime in when the chat
+          is about something they help with.
         </Text>
         {askName ? (
           <View className="gap-2">

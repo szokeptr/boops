@@ -185,6 +185,22 @@ const handlers = {
       return { posted: true };
     }),
   ),
+  stay_quiet: McpToolAccess.actsAsCaller(() =>
+    Effect.gen(function* () {
+      const thread = yield* callerThread;
+      const rooms = yield* Rooms.Rooms;
+      yield* rooms.stayQuiet(thread).pipe(
+        Effect.mapError(
+          () =>
+            new OrchestratorMcpFailure({
+              code: "invalid_request",
+              message: "There is no group chat turn to end here. Just reply as usual.",
+            }),
+        ),
+      );
+      return { quiet: true };
+    }),
+  ),
 } satisfies McpToolAccess.Handlers<typeof BotToolkit.tools>;
 
 export const layer = McpToolAccess.toLayer(BotToolkit, handlers);

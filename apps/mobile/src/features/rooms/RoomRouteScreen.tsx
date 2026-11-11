@@ -176,6 +176,7 @@ function useRoomMenu(
   const isOwner = viewer.kind === "owner";
   const { members } = useEnvironmentMembers(isOwner ? environmentId : null);
   const manages = canManageRoom(room, viewer);
+  const { canListen } = useRooms(environmentId);
   const inRoom = new Set(room.participants.map((entry) => roomParticipantKey(entry.participant)));
   const viewerKey = roomParticipantKey(viewer);
   // A member's session sees only the bots shared with them, which are the ones they may add.
@@ -259,6 +260,61 @@ function useRoomMenu(
               title: entry.name,
               onPress: () => commands.remove(room.id, entry.participant, entry.name),
             })),
+          },
+        ]
+      : []),
+    ...(manages && bots.length > 0
+      ? [
+          {
+            id: "chiming-in",
+            title: "Bots chiming in",
+            icon: "sparkles",
+            items: [
+              ...(canListen
+                ? []
+                : [
+                    {
+                      id: "chiming-in:unavailable",
+                      title: isOwner
+                        ? "Add an OpenAI API key in Providers settings on desktop"
+                        : "The owner hasn't set this up yet",
+                      disabled: true,
+                      onPress: () => {},
+                    },
+                  ]),
+              ...bots.map((bot) => {
+                const entry = room.participants.find(
+                  (participant) =>
+                    participant.participant.kind === "bot" &&
+                    participant.participant.projectId === bot.projectId,
+                );
+                const listening = entry?.listening ?? false;
+                const listensFor = entry?.listensFor ?? null;
+                return {
+                  id: `chiming-in:${bot.projectId}`,
+                  title: bot.name,
+                  items: [
+                    {
+                      id: `chiming-in:${bot.projectId}:toggle`,
+                      title: "Chimes in without @mention",
+                      selected: listening,
+                      onPress: () =>
+                        void commands.setListening(room.id, bot.projectId, !listening, listensFor),
+                    },
+                    ...(listening
+                      ? [
+                          {
+                            id: `chiming-in:${bot.projectId}:for`,
+                            title: "Here for…",
+                            ...(listensFor === null ? {} : { subtitle: listensFor }),
+                            onPress: () => commands.editListensFor(room.id, bot, listensFor),
+                          },
+                        ]
+                      : []),
+                  ],
+                };
+              }),
+            ],
           },
         ]
       : []),

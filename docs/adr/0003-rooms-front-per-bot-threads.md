@@ -17,9 +17,10 @@ id, so copying is idempotent and catches up after a restart. Files people send a
 room, not a bot thread, so deleting a bot never takes them out of the chat; deleting the room
 deletes them and its hidden threads, whose files are the bots' replies.
 
-**A bot takes a turn only when @mentioned.** Messages it was not mentioned in cost nothing. They
-ride along, as a transcript, on the next message that mentions it, from a per-bot cursor. Bots
-mentioning bots start turns too, at most three bot-started turns per human message.
+**A bot takes a turn when @mentioned, or when the room picks it to chime in** ([ADR
+0004](0004-bots-chime-in-unasked.md)). Messages that start no turn ride along, as a transcript, on
+its next turn, from a per-bot cursor. Bots mentioning bots start turns too, at most three
+bot-started turns per human message.
 
 **A turn runs at the access of the human who started it.** Access is fixed per thread elsewhere,
 so the room service runs one turn at a time per room thread, records whose turn it is, and sets the

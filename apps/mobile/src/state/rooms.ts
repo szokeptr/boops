@@ -20,6 +20,8 @@ export function useRooms(environmentId: EnvironmentId | null) {
     rooms: query.data?.rooms ?? NO_ROOMS,
     canCreate: query.data?.canCreate ?? false,
     people: query.data?.people ?? NO_PEOPLE,
+    /** Bots can chime in without an @mention: the owner set an OpenAI API key. */
+    canListen: query.data?.canListen ?? false,
     // Assume named until the list says otherwise, so the sheet never flashes the question.
     ownerNamed: query.data?.ownerNamed ?? true,
     loaded: query.data !== null,

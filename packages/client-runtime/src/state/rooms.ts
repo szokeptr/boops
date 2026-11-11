@@ -165,6 +165,10 @@ export function createRoomEnvironmentAtoms<R, E>(
       label: "environment-data:rooms:set-muted",
       tag: WS_METHODS.roomsSetMuted,
     }),
+    setListening: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:rooms:set-listening",
+      tag: WS_METHODS.roomsSetListening,
+    }),
     remove: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:rooms:delete",
       tag: WS_METHODS.roomsDelete,

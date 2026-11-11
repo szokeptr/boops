@@ -10,12 +10,10 @@ import {
   type ProjectId,
   type RunId,
   type ThreadId,
-  isSecretReference,
 } from "@t3tools/contracts";
 import { subagentResultForRun } from "@t3tools/provider-core/server/subagentProjection";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as Clock from "effect/Clock";
-import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -32,9 +30,9 @@ import * as Socket from "effect/socket/Socket";
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
-import { requireSettingsSecret } from "../secrets/settingsSecretValue.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { PERSONA_FILE } from "./BotPersona.ts";
+import { openaiApiKey } from "./openaiApiKey.ts";
 import {
   type CallEffect,
   type CallState,
@@ -111,18 +109,14 @@ const make = Effect.gen(function* () {
   >();
 
   const apiKey = Effect.gen(function* () {
-    const configured = (yield* settings.getSettings).voiceCalls.openaiApiKey;
-    const key =
-      isSecretReference(configured) || configured !== ""
-        ? yield* requireSettingsSecret(secrets, configured)
-        : Option.getOrElse(yield* Config.String("OPENAI_API_KEY").pipe(Config.option), () => "");
-    if (key.trim() === "") {
+    const key = yield* openaiApiKey(settings, secrets);
+    if (key === "") {
       return yield* callError(
         "not-configured",
         "Add an OpenAI API key in Settings to call your bots.",
       );
     }
-    return key.trim();
+    return key;
   }).pipe(
     Effect.catchTags({
       SettingsSecretUnresolvedError: (error) =>
