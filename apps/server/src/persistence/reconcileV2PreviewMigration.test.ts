@@ -72,6 +72,7 @@ describe("V2 preview upgrade", () => {
         [90, "SecretVaults"],
         [91, "Rooms"],
         [92, "SidebarLayouts"],
+        [93, "RoomListening"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -187,6 +188,7 @@ describe("V2 preview upgrade", () => {
         [90, "SecretVaults"],
         [91, "Rooms"],
         [92, "SidebarLayouts"],
+        [93, "RoomListening"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
