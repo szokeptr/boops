@@ -219,6 +219,13 @@ vi.mock("react-native-reanimated", () => {
   const transition = { delay: () => transition, duration: () => transition };
   return {
     default: { View: ({ children }: { children?: ReactNode }) => children },
+    Easing: { out: () => () => 0, cubic: () => 0 },
+    Keyframe: class {
+      duration() {
+        return this;
+      }
+    },
+    LayoutAnimationConfig: ({ children }: { children?: ReactNode }) => children,
     FadeIn: transition,
     FadeInDown: transition,
     FadeInUp: transition,
@@ -238,6 +245,11 @@ vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
 }));
 vi.mock("expo-haptics", () => ({ selectionAsync: async () => {} }));
+vi.mock("react-native-screens", () => ({ FormSheet: () => null }));
+vi.mock("react-native-gesture-handler", () => ({
+  GestureDetector: ({ children }: { children?: ReactNode }) => children,
+  useLongPressGesture: () => ({}),
+}));
 vi.mock("expo-image", () => ({}));
 vi.mock("expo-clipboard", () => ({}));
 vi.mock("react-native-svg", () => ({
