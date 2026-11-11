@@ -97,6 +97,7 @@ import Migration0090 from "./Migrations/090_SecretVaults.ts";
 import Migration0091 from "./Migrations/091_Rooms.ts";
 import Migration0092 from "./Migrations/092_SidebarLayouts.ts";
 import Migration0093 from "./Migrations/093_RoomListening.ts";
+import Migration0094 from "./Migrations/094_TurnItemConversationIndex.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -193,6 +194,7 @@ const migrationEntries = [
   [91, "Rooms", Migration0091],
   [92, "SidebarLayouts", Migration0092],
   [93, "RoomListening", Migration0093],
+  [94, "TurnItemConversationIndex", Migration0094],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
