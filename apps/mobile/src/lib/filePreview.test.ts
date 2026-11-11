@@ -235,6 +235,17 @@ vi.mock("react-native-reanimated", () => {
 vi.mock("../features/threads/MessageSwipeReply", () => ({
   MessageSwipeReply: ({ children }: { children?: ReactNode }) => children,
 }));
+// The reaction sheet pulls in react-native-screens, whose untransformed Flow source
+// cannot load under jsdom; the feed only needs inert stand-ins here.
+vi.mock("../features/threads/MessageReactions", () => ({
+  MESSAGE_REACTION_BADGE_CLEARANCE: 18,
+  MessageReactionBadges: () => null,
+  MessageReactionSheet: () => null,
+}));
+vi.mock("react-native-gesture-handler", () => ({
+  GestureDetector: ({ children }: { children?: ReactNode }) => children,
+  useLongPressGesture: () => ({}),
+}));
 vi.mock("react-native-keyboard-controller", () => ({
   KeyboardController: { isVisible: () => false },
 }));
