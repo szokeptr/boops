@@ -2372,6 +2372,7 @@ describe("OrchestratorMcpService provider resolution", () => {
               ]),
               Layer.mock(ProjectService.ProjectService)({}),
               Layer.mock(SecretRequests.SecretRequests)({}),
+              Layer.mock(SecretVaults.SecretVaults)({}),
               layerRemoteDelegation,
               Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
             ),
