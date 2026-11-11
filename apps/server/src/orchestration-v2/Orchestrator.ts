@@ -42,6 +42,8 @@ import {
   type OrchestrationV2ContextTransfer,
   type OrchestrationV2ContextTransferResolution,
   type OrchestrationV2ConversationMessage,
+  type OrchestrationV2MessageReactor,
+  setMessageReaction,
   type OrchestrationV2DelegatedCompletionCohort,
   type OrchestrationV2DelegatedCompletionDelivery,
   type OrchestrationV2DomainEvent,
@@ -598,6 +600,8 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "queued-run.cancel":
     case "queued-run.edit":
     case "message.edit":
+    case "message.reaction.set":
+    case "message.bot-reaction.set":
     case "runtime-request.respond":
     case "runtime-request.delivery.fail":
     case "thread.user-input.dismiss":
@@ -4541,6 +4545,56 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         },
       })),
     );
+  });
+
+  const dispatchMessageReaction = Effect.fn("Orchestrator.dispatchMessageReaction")(function* (
+    command: Extract<
+      OrchestrationV2ServerCommand,
+      { readonly type: "message.reaction.set" | "message.bot-reaction.set" }
+    >,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+  ) {
+    const refuse = (cause: string) =>
+      new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause,
+      });
+    const { thread, messages } = yield* projectionStore
+      .getThreadRecords(command.threadId, ["messages"], { messageIds: [command.messageId] })
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    const message = messages[0];
+    if (message === undefined || message.role === "system" || message.streaming) {
+      return yield* refuse("Only a finished message can get a reaction.");
+    }
+    if (thread.deletedAt !== null) return yield* refuse("The thread was deleted.");
+    const by: OrchestrationV2MessageReactor =
+      command.type === "message.reaction.set" ? { kind: "user" } : { kind: "bot", ...command.bot };
+    const now = yield* DateTime.now;
+    yield* emit(
+      events,
+      command,
+    )({
+      type: "message.updated",
+      threadId: command.threadId,
+      ...(message.runId === null ? {} : { runId: message.runId }),
+      ...(message.nodeId === null ? {} : { nodeId: message.nodeId }),
+      occurredAt: now,
+      // updatedAt stays: a reaction is not a new message and must not mark the thread unread.
+      payload: {
+        ...message,
+        reactions: setMessageReaction(
+          message.reactions ?? [],
+          by,
+          command.emoji,
+          DateTime.formatIso(now),
+        ),
+      },
+    });
   });
 
   /**
@@ -13775,6 +13829,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "message.edit":
         yield* dispatchMessageEdit(command, events, effects);
+        break;
+      case "message.reaction.set":
+      case "message.bot-reaction.set":
+        yield* dispatchMessageReaction(command, events);
         break;
       case "thread.project.adopt-folder":
         yield* dispatchThreadProjectAdoptFolder(command, events);

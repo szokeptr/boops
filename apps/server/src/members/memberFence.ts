@@ -434,6 +434,7 @@ export const authorizeMemberCommand = Effect.fn("memberFence.authorizeMemberComm
       return command;
     }
     case "message.edit":
+    case "message.reaction.set":
     case "thread.stop":
     case "run.interrupt":
     case "thread.visit":

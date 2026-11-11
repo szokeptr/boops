@@ -1816,6 +1816,26 @@ export default function ChatView(props: ChatViewProps) {
     return true;
   };
   const editMessageStable = useStableCallback(editMessage);
+  const setMessageReaction = useOrchestrationCommand(threadEnvironment.setMessageReaction, {
+    reportFailure: false,
+  });
+  const reactToMessage = async (messageId: MessageId, emoji: string | null) => {
+    if (!isServerThread || activeThreadId === null) return false;
+    const result = await setMessageReaction({
+      environmentId,
+      input: { threadId: activeThreadId, messageId, emoji },
+    });
+    if (result._tag !== "Failure") return true;
+    if (!isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      setThreadError(
+        activeThreadId,
+        error instanceof Error ? error.message : "Could not react to the message.",
+      );
+    }
+    return false;
+  };
+  const reactToMessageStable = useStableCallback(reactToMessage);
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
 
   const {
@@ -3284,6 +3304,12 @@ export default function ChatView(props: ChatViewProps) {
                   {...(embedded || isProviderSubagent || !canOperateThread
                     ? {}
                     : { onEditMessage: editMessageStable })}
+                  {...(isBotConversation && canOperateThread && !embedded
+                    ? { onReactToMessage: reactToMessageStable }
+                    : {})}
+                  {...(serverProjection === null
+                    ? {}
+                    : { conversationMessages: serverProjection.messages })}
                   onOpenThread={onOpenRelatedThreadStable}
                   parentThreadLink={parentThreadLink}
                   workflowOpening={workflowOpening}

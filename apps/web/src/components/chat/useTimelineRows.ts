@@ -2,6 +2,8 @@ import { useState } from "react";
 import {
   computeStableMessagesTimelineRows,
   handoffRunsSignature,
+  type MessageReactionsById,
+  messageReactionsById,
   type MessagesTimelineRowsInput,
   sameRowsInput,
   deriveMessagesTimelineRowsWithState,
@@ -9,6 +11,20 @@ import {
   type MessagesTimelineRow,
 } from "./MessagesTimeline.logic";
 import { type HandoffTimelineRun } from "./V2LifecycleRow";
+
+type ReactionMessages = Parameters<typeof messageReactionsById>[0];
+
+/** Reactions by message id, the same map until some message's reactions change. */
+export function useMessageReactionsById(messages: ReactionMessages): MessageReactionsById {
+  const [state, setState] = useState<{
+    readonly source: ReactionMessages | null;
+    readonly value: MessageReactionsById;
+  }>(() => ({ source: messages, value: messageReactionsById(messages) }));
+  if (state.source === messages) return state.value;
+  const value = messageReactionsById(messages, state.value);
+  setState({ source: messages, value });
+  return value;
+}
 
 const EMPTY_TIMELINE_RUNS: ReadonlyArray<HandoffTimelineRun> = [];
 

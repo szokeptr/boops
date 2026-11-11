@@ -149,6 +149,17 @@ const handlers = {
       });
     }).pipe(mapBotErrors),
   ),
+  react_to_message: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const thread = yield* callerThread;
+      const bots = yield* Bots.Bots;
+      return yield* bots.reactToLatestMessage({
+        projectId: thread.projectId,
+        threadId: thread.id,
+        emoji: input.emoji ?? null,
+      });
+    }).pipe(mapBotErrors),
+  ),
   end_call: McpToolAccess.actsAsCaller(() =>
     Effect.gen(function* () {
       const thread = yield* callerThread;

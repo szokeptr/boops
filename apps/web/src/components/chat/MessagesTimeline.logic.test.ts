@@ -28,6 +28,7 @@ import {
   deriveMessagesTimelineRows,
   timelineTurnFoldRunIdsByEntryId,
   deriveMessagesTimelineRowsWithState,
+  messageReactionsById,
   shouldCollapseUserMessage,
   resolveAssistantMessageCopyState,
   type MessagesTimelineRow,
@@ -2730,6 +2731,41 @@ describe("v2 run and attempt history", () => {
       ["assistant-thought-entry", false],
       ["assistant-final-entry", false],
     ]);
+
+    // Reactions reach their bubbles, and a new reaction replaces only the row it is on.
+    const heart = [{ emoji: "❤️", by: { kind: "user" as const }, at: "2026-01-01T00:00:00.000Z" }];
+    const finalMessage = timelineEntries.find((entry) => entry.id === "assistant-final-entry");
+    const finalMessageId = finalMessage?.kind === "message" ? finalMessage.message.id : null;
+    const unreacted = [{ id: finalMessageId!, reactions: undefined }];
+    const reactions = messageReactionsById([{ id: finalMessageId!, reactions: heart }]);
+    expect(messageReactionsById(unreacted).size).toBe(0);
+    expect(messageReactionsById([{ id: finalMessageId!, reactions: heart }], reactions)).toBe(
+      reactions,
+    );
+    const reactedRows = (reactionsByMessageId: typeof reactions) =>
+      deriveMessagesTimelineRows({
+        timelineEntries,
+        isWorking: false,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+        directMessage: true,
+        reactionsByMessageId,
+      });
+    const before = computeStableMessagesTimelineRows(reactedRows(messageReactionsById(unreacted)), {
+      byId: new Map(),
+      result: [],
+    });
+    const after = computeStableMessagesTimelineRows(reactedRows(reactions), before);
+    expect(
+      after.result.flatMap((row) => (row.kind === "message" ? [[row.id, row.reactions]] : [])),
+    ).toEqual([
+      ["user-entry", undefined],
+      ["assistant-thought-entry", undefined],
+      ["assistant-final-entry", heart],
+    ]);
+    expect(
+      after.result.filter((row, index) => row !== before.result[index]).map((row) => row.id),
+    ).toEqual(["assistant-final-entry"]);
 
     // An answered question stays a card of what was asked and picked, where it was asked. It
     // came after an hour of quiet, so a time marker heads it.

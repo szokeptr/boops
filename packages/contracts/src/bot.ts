@@ -3,7 +3,11 @@ import * as Schema from "effect/Schema";
 
 import { ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ModelSelection } from "./modelSelection.ts";
-import { isListedThreadLineage, type OrchestrationV2AppThreadLineage } from "./orchestrationV2.ts";
+import {
+  isListedThreadLineage,
+  MessageReactionEmoji,
+  type OrchestrationV2AppThreadLineage,
+} from "./orchestrationV2.ts";
 import { ProjectAvatar } from "./project.ts";
 
 export const BotCreateInput = Schema.Struct({
@@ -113,6 +117,19 @@ export const BotMcpPostToGroupChatInput = Schema.Struct({
   text: BotMessageText,
 });
 export type BotMcpPostToGroupChatInput = typeof BotMcpPostToGroupChatInput.Type;
+
+export const BotMcpReactInput = Schema.Struct({
+  emoji: Schema.optional(
+    MessageReactionEmoji.annotate({
+      description: "One emoji, such as ❤️ 👍 😂 ‼️ ❓. Omit to take your reaction back.",
+    }),
+  ),
+});
+export type BotMcpReactInput = typeof BotMcpReactInput.Type;
+
+/** `reacted: false` when there was no message to react to. */
+export const BotMcpReactResult = Schema.Struct({ reacted: Schema.Boolean });
+export type BotMcpReactResult = typeof BotMcpReactResult.Type;
 
 export const BotMcpDelivery = Schema.Struct({
   delivery: Schema.Literals(["started", "queued", "steered", "restarted"]),

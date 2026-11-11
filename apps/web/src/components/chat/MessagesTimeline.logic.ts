@@ -61,6 +61,8 @@ import {
   type MessageId,
   type OrchestrationV2IdleCompaction,
   type WorktreeSetupSnapshot,
+  type OrchestrationV2ConversationMessage,
+  type OrchestrationV2MessageReaction,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2RoutineLabel,
   type ProjectId,
@@ -615,6 +617,8 @@ type MessagesTimelineRowContent =
       continuesSteer?: boolean;
       /** On a call's transcript: what the bot did on the call, folded out of the conversation. */
       callWork?: ReadonlyArray<BotCallWorkEntry<ChatMessage>>;
+      /** In a bot's conversation, the tapbacks on this message. */
+      reactions?: ReadonlyArray<OrchestrationV2MessageReaction>;
     }
   | {
       kind: "assistant-meta";
@@ -1449,6 +1453,33 @@ function deriveTimelineTurnFolds(
   });
 }
 
+export type MessageReactionsById = ReadonlyMap<
+  MessageId,
+  ReadonlyArray<OrchestrationV2MessageReaction>
+>;
+
+const EMPTY_MESSAGE_REACTIONS: MessageReactionsById = new Map();
+
+/**
+ * Each reacted message's reactions, keyed by id. Returns `previous` while every message keeps the
+ * same reactions, so unrelated message updates leave the timeline rows alone.
+ */
+export function messageReactionsById(
+  messages: ReadonlyArray<Pick<OrchestrationV2ConversationMessage, "id" | "reactions">>,
+  previous: MessageReactionsById = EMPTY_MESSAGE_REACTIONS,
+): MessageReactionsById {
+  const next = new Map<MessageId, ReadonlyArray<OrchestrationV2MessageReaction>>();
+  for (const message of messages) {
+    if (message.reactions !== undefined && message.reactions.length > 0) {
+      next.set(message.id, message.reactions);
+    }
+  }
+  if (next.size === previous.size && [...next].every(([id, value]) => previous.get(id) === value)) {
+    return previous;
+  }
+  return next.size === 0 ? EMPTY_MESSAGE_REACTIONS : next;
+}
+
 export function deriveMessagesTimelineRows(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   pendingApprovalRequestIds?: ReadonlySet<RuntimeRequestId>;
@@ -1470,6 +1501,8 @@ export function deriveMessagesTimelineRows(input: {
   directMessage?: boolean;
   /** Names the bot a DM's report_to_parent call goes to. */
   botParentProjectId?: ProjectId | null;
+  /** A DM's reactions by message; keep the same map while they are unchanged. */
+  reactionsByMessageId?: MessageReactionsById;
 }): MessagesTimelineRow[] {
   const timelineEntries = timelineRowEntries(input.timelineEntries);
   const isPendingApproval = (entry: WorkLogEntry) => {
@@ -2212,6 +2245,7 @@ export function deriveMessagesTimelineRows(input: {
         typing: input.isWorking && !input.pendingApprovalRequestIds?.size,
         startedAt: input.activeTurnStartedAt ?? null,
       },
+      input.reactionsByMessageId ?? EMPTY_MESSAGE_REACTIONS,
     );
   }
   const result = attachTrailingToolGroupsToAssistant(
@@ -2377,6 +2411,7 @@ function directMessageRows(
   rows: ReadonlyArray<MessagesTimelineRow>,
   sent: ReadonlyArray<SentBotMessage>,
   activity: { readonly typing: boolean; readonly startedAt: string | null },
+  reactionsByMessageId: MessageReactionsById,
 ): MessagesTimelineRow[] {
   const calls = foldBotCallMessages(
     rows.flatMap((row) => (row.kind === "message" ? [row.message] : [])),
@@ -2450,8 +2485,10 @@ function directMessageRows(
     folded.map((row, index): MessagesTimelineRow => {
       if (row.kind !== "message") return row;
       const own = side(row);
+      const reactions = reactionsByMessageId.get(row.message.id);
       return {
         ...row,
+        ...(reactions === undefined ? {} : { reactions }),
         showAssistantMeta: false,
         groupedWithPrevious: own !== null && side(folded[index - 1]) === own,
         groupedWithNext: own !== null && side(folded[index + 1]) === own,
@@ -2904,6 +2941,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.groupedWithNext === bm.groupedWithNext &&
         a.groupedWithPrevious === bm.groupedWithPrevious &&
         a.continuesSteer === bm.continuesSteer &&
+        a.reactions === bm.reactions &&
         sameCallWork(a.callWork, bm.callWork)
       );
     }

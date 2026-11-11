@@ -45,6 +45,8 @@ const COMMAND_FEATURES: {
   "queued-message.promote-to-steer": () => ({ feature: "queue.steer" }),
   "queued-run.edit": () => ({ feature: "queue.edit" }),
   "message.edit": () => ({ feature: "message.edit" }),
+  "message.reaction.set": (command) =>
+    use("message.reaction.set", command.emoji === null ? "remove" : "set"),
   "thread.guest-share.close": () => ({ feature: "guest_share.close" }),
   "thread.guest-message.dismiss": () => ({ feature: "guest_message.dismiss" }),
 };

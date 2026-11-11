@@ -271,6 +271,12 @@ export interface EditSentMessageInput extends ThreadCommandInput {
   readonly text: string;
 }
 
+export interface SetMessageReactionInput extends ThreadCommandInput {
+  readonly messageId: MessageId;
+  /** `null` removes the user's reaction. */
+  readonly emoji: string | null;
+}
+
 export interface EditQueuedRunInput extends ThreadCommandInput {
   readonly runId: RunId;
   readonly text: string;
@@ -655,6 +661,18 @@ export const editSentMessage = Effect.fn("EnvironmentCommands.editSentMessage")(
     threadId: input.threadId,
     messageId: input.messageId,
     text: input.text,
+  });
+});
+
+export const setMessageReaction = Effect.fn("EnvironmentCommands.setMessageReaction")(function* (
+  input: SetMessageReactionInput,
+) {
+  return yield* dispatch({
+    type: "message.reaction.set",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    messageId: input.messageId,
+    emoji: input.emoji,
   });
 });
 

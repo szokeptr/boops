@@ -741,6 +741,70 @@ describe("MessagesTimeline citations", () => {
   });
 });
 
+describe("MessagesTimeline reactions", () => {
+  it("reacts to a bot's message from its bar, and choosing your reaction again takes it back", async () => {
+    setup();
+    const onReactToMessage = vi.fn(async () => true);
+    const messageId = MessageId.make("message-1");
+    await using screen = await renderTimeline(
+      [message("Morning! Coffee first?", { role: "assistant" })],
+      {
+        directMessage: true,
+        canOperateThread: true,
+        onReactToMessage,
+        conversationMessages: [
+          { id: messageId, reactions: [{ emoji: "❤️", by: { kind: "user" }, at: CREATED_AT }] },
+        ],
+      },
+    );
+    await expect
+      .element(page.getByRole("button", { name: "You reacted with ❤️. Remove your reaction" }))
+      .toBeInTheDocument();
+
+    await click(screen.button("React"));
+    const current = page.getByRole("button", { name: "Remove ❤️ reaction" });
+    await expect.element(current).toHaveAttribute("aria-pressed", "true");
+    await current.click();
+    expect(onReactToMessage).toHaveBeenLastCalledWith(messageId, null);
+    // The bar closes and the badge leaves before the server answers.
+    await vi.waitFor(() => expect(document.querySelector("[data-slot=popover-popup]")).toBeNull());
+    expect(screen.container.querySelector("[data-message-reactions]")).toBeNull();
+
+    await click(screen.button("React"));
+    await page.getByRole("button", { name: "React with 👍" }).click();
+    expect(onReactToMessage).toHaveBeenLastCalledWith(messageId, "👍");
+    await expect
+      .element(page.getByRole("button", { name: "You reacted with 👍. Remove your reaction" }))
+      .toBeInTheDocument();
+  });
+
+  it("shows reactions without a bar where you cannot react", async () => {
+    setup();
+    await using screen = await renderTimeline(
+      [message("Morning! Coffee first?", { role: "assistant" })],
+      {
+        directMessage: true,
+        conversationMessages: [
+          {
+            id: MessageId.make("message-1"),
+            reactions: [
+              {
+                emoji: "😂",
+                by: { kind: "bot", projectId: ProjectId.make("bot"), name: "Pixel" },
+                at: CREATED_AT,
+              },
+            ],
+          },
+        ],
+      },
+    );
+    await expect
+      .element(page.getByRole("img", { name: "Pixel reacted with 😂" }))
+      .toBeInTheDocument();
+    expect(screen.buttons("React")).toHaveLength(0);
+  });
+});
+
 describe("MessagesTimeline routine messages", () => {
   it("folds a routine message into a bubble labelled with its routine and trigger", async () => {
     setup();

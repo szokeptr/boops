@@ -623,6 +623,20 @@ function ThreadDetailBody(
   const editSentMessage = useAtomCommand(threadEnvironment.editSentMessage, {
     reportFailure: false,
   });
+  const setMessageReaction = useAtomCommand(threadEnvironment.setMessageReaction, {
+    reportFailure: false,
+  });
+  const handleSetMessageReaction = async (messageId: MessageId, emoji: string | null) => {
+    const result = await setMessageReaction({
+      environmentId: props.environmentId,
+      input: { threadId: props.selectedThread.id, messageId, emoji },
+    });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      Dialog.alert("Could not react", error instanceof Error ? error.message : undefined);
+    }
+    return result._tag === "Success";
+  };
   const anyRunStop = useAtomValue(
     props.selectedThreadDetailRef === null
       ? NO_RUN_STOP_ATOM
@@ -1668,6 +1682,9 @@ function ThreadDetailBody(
                 }
                 onEditSentMessage={
                   isProviderSubagent || !props.canOperateThread ? null : handleEditSentMessage
+                }
+                onSetMessageReaction={
+                  directMessage && props.canOperateThread ? handleSetMessageReaction : null
                 }
                 contentPresentation={props.contentPresentation}
                 threadTitle={props.selectedThread.title}

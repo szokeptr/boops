@@ -48,7 +48,11 @@ import { resolveProviderInteractionMode } from "./legacy-plan-mode";
 
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
-import { buildThreadFeed, createThreadFeedCache } from "../lib/threadActivity";
+import {
+  buildThreadFeed,
+  createThreadFeedCache,
+  withMessageReactions,
+} from "../lib/threadActivity";
 import { acknowledgedThreadMessagesAtom } from "./acknowledged-thread-messages";
 import {
   appendPendingThreadMessages,
@@ -253,13 +257,16 @@ export function useThreadComposerState() {
       !selectedThreadMessages?.some((message) => message.id === pendingCreationMessage.messageId)
         ? [pendingThreadCreationMessage(pendingCreationMessage)]
         : [];
-    const feed = buildThreadFeed(selectedThreadVisibleTurnItems, {
-      anchoredMessages: pendingCreation,
-      attempts: selectedThreadAttempts,
-      nodes: selectedThreadNodes,
-      checkpointSummaries,
-      cache: feedCache,
-    });
+    const feed = withMessageReactions(
+      buildThreadFeed(selectedThreadVisibleTurnItems, {
+        anchoredMessages: pendingCreation,
+        attempts: selectedThreadAttempts,
+        nodes: selectedThreadNodes,
+        checkpointSummaries,
+        cache: feedCache,
+      }),
+      selectedThreadMessages,
+    );
     const pendingAcknowledgments = selectPendingAcknowledgedMessages(acknowledgedMessages, {
       threadKey: selectedThreadKey,
       queuedMessages: selectedThreadQueuedMessages,

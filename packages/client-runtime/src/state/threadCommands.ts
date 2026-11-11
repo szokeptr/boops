@@ -27,6 +27,7 @@ import {
   deleteThread,
   editQueuedRun,
   editSentMessage,
+  setMessageReaction,
   interruptThreadTurn,
   forkSideChat,
   forkThreadFromRun,
@@ -368,6 +369,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     editSentMessage: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:edit-sent-message",
       execute: editSentMessage,
+      scheduler,
+      concurrency,
+    }),
+    setMessageReaction: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:set-message-reaction",
+      execute: setMessageReaction,
       scheduler,
       concurrency,
     }),

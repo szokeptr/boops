@@ -1,9 +1,11 @@
 import { applyThreadPullRequestLinkUpdate } from "../threadPullRequests.ts";
-import type {
-  OrchestrationV2DomainEvent,
-  OrchestrationV2Run,
-  OrchestrationV2ThreadProjection,
-  OrchestrationV2TurnItem,
+import {
+  type OrchestrationV2ConversationMessage,
+  type OrchestrationV2DomainEvent,
+  type OrchestrationV2Run,
+  type OrchestrationV2ThreadProjection,
+  type OrchestrationV2TurnItem,
+  withCarriedReactions,
 } from "@t3tools/contracts";
 import {
   restoreSubagentBodies,
@@ -58,6 +60,17 @@ function upsertEntity<T extends { readonly id: unknown }>(
   if (index === -1) return [...items, item];
   const next = [...items];
   next[index] = item;
+  return next;
+}
+
+function upsertMessage(
+  messages: ReadonlyArray<OrchestrationV2ConversationMessage>,
+  message: OrchestrationV2ConversationMessage,
+): ReadonlyArray<OrchestrationV2ConversationMessage> {
+  const index = messages.findIndex((candidate) => candidate.id === message.id);
+  if (index === -1) return [...messages, message];
+  const next = [...messages];
+  next[index] = withCarriedReactions(messages[index], message);
   return next;
 }
 
@@ -367,7 +380,7 @@ export function applyOrchestrationV2ProjectionEvent(
     case "runtime-request.updated":
       return { ...base, runtimeRequests: upsertEntity(base.runtimeRequests, event.payload) };
     case "message.updated":
-      return { ...base, messages: upsertEntity(base.messages, event.payload) };
+      return { ...base, messages: upsertMessage(base.messages, event.payload) };
     case "plan.updated":
       return { ...base, plans: upsertEntity(base.plans, event.payload) };
     case "turn-item.updated": {

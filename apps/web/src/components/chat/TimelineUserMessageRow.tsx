@@ -60,6 +60,13 @@ import {
 } from "./SnapShotAttachmentDetails";
 import { GuestMessageName, guestBubbleClassName } from "./guestMessageStyle";
 import { MessageCopyButton } from "./MessageCopyButton";
+import {
+  MESSAGE_REACTION_BUBBLE_CLEARANCE,
+  MessageReactionBadges,
+  MessageReactionMenu,
+  MessageReactionTrigger,
+  useMessageReactions,
+} from "./MessageReactions";
 import { UserMessageEditor } from "./UserMessageEditor";
 import { promptLinkFor } from "../promptLinks/copyPromptLink";
 import { PierreEntryIcon } from "./PierreEntryIcon";
@@ -632,6 +639,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     !activity.isWorking &&
     resolvedContext.text.trim() !== "" &&
     isEditableSentMessage(row.message);
+  const reaction = useMessageReactions({
+    messageId: row.message.id,
+    reactions: row.reactions,
+    // A folded message from another agent is a disclosure, not a bubble to react to.
+    streaming: folded,
+  });
+  const { setAnchor: setReactionAnchor } = reaction;
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const revertTurnCount = row.revertTurnCount;
   const attachmentReferences = collectComposerContextReferences(resolvedContext.text).flatMap(
@@ -969,6 +983,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         {typeof revertTurnCount === "number" && (
           <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
         )}
+        <MessageReactionTrigger controller={reaction} />
         {editable ? <EditUserMessageButton onEdit={() => setEditing(true)} /> : null}
         {copyText && (
           <MessageCopyButton
@@ -1047,8 +1062,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         </div>
       ) : null}
       <div
+        ref={setReactionAnchor}
+        onContextMenu={reaction.onContextMenu}
         className={cn(
           "relative min-w-0 max-w-[80%] rounded-2xl text-message-foreground",
+          reaction.groups.length > 0 && MESSAGE_REACTION_BUBBLE_CLEARANCE,
           (mediaAboveText || row.groupedWithPrevious) && "rounded-tr-md",
           row.groupedWithNext && "rounded-br-md",
           BUBBLE_CHIP_CLASS_NAME,
@@ -1075,6 +1093,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             : undefined
         }
       >
+        <MessageReactionBadges controller={reaction} corner="start" />
         {/* Outside the fold so a collapsed message still has a heading to navigate to. */}
         {mediaAboveText ? null : (
           <MessageAuthorHeading>
@@ -1244,6 +1263,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         ) : null}
       </div>
       <UserMessageProjectedStatus row={row} />
+      <MessageReactionMenu
+        controller={reaction}
+        align="end"
+        copyText={contextClipboardFragment ? copyText : plainText}
+        onEdit={editable ? () => setEditing(true) : undefined}
+      />
       {(!folded || expanded) && !editing ? (
         <div
           className={cn(
