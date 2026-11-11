@@ -20,7 +20,7 @@ import { MessageSwipeReply } from "./MessageSwipeReply";
 import {
   MESSAGE_REACTION_BADGE_CLEARANCE,
   MessageReactionBadges,
-  MessageReactionOverlay,
+  MessageReactionSheet,
   type MessageReactionAccent,
   type MessageReactionAction,
   type MessageReactionAlign,
@@ -186,6 +186,10 @@ import Animated, {
   FadeIn,
   FadeInDown,
   useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSpring,
+  withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
@@ -1909,7 +1913,6 @@ function ReactableBubble(props: {
   const { messageId, align } = props;
   const controller = useContext(MessageReactionContext);
   const staticRow = useContext(ThreadFeedStaticRowContext);
-  const bubbleRef = useRef<ComponentRef<typeof View>>(null);
   const pending = controller?.pending.get(messageId);
   const reactions =
     pending !== undefined && pending.basis === props.reactions
@@ -1917,41 +1920,39 @@ function ReactableBubble(props: {
       : props.reactions;
   const current = myMessageReaction(reactions);
   const open = staticRow || !props.reactable ? null : (controller?.open ?? null);
-  const openOverlay = () => {
-    bubbleRef.current?.measureInWindow((x, y, width, height) => {
-      open?.({
-        messageId,
-        rect: { x, y, width, height },
-        align,
-        current,
-        serverReactions: props.reactions,
-        bubble: (
-          <MarkdownSelectableContext value={false}>
-            <View
-              className={props.className}
-              style={[props.style, { width, maxWidth: width, marginTop: 0 }]}
-            >
-              {props.children}
-            </View>
-          </MarkdownSelectableContext>
-        ),
-        actions: [
-          { id: "copy", title: "Copy", icon: "doc.on.doc", onPress: props.onCopy },
-          ...props.actions,
-        ],
-      });
+  const openReactions = () =>
+    open?.({
+      messageId,
+      current,
+      serverReactions: props.reactions,
+      actions: [
+        ...props.actions,
+        { id: "copy", title: "Copy", icon: "doc.on.doc", onPress: props.onCopy },
+      ],
     });
+  // The bubble sinks a little while held, then springs back as the drawer opens.
+  const pressScale = useSharedValue(1);
+  const pressStyle = useAnimatedStyle(() => ({ transform: [{ scale: pressScale.get() }] }));
+  const release = () => {
+    pressScale.set(withSpring(1, { damping: 14, stiffness: 320 }));
   };
   const longPress = useLongPressGesture({
     minDuration: 350,
     runOnJS: true,
     enabled: open !== null,
-    onActivate: openOverlay,
+    // A short delay keeps a scroll's touch-down from twitching the bubble.
+    onBegin: () => {
+      pressScale.set(withDelay(80, withTiming(0.96, { duration: 270 })));
+    },
+    onActivate: () => {
+      release();
+      openReactions();
+    },
+    onFinalize: release,
   });
   return (
     <GestureDetector gesture={longPress}>
-      <View
-        ref={bubbleRef}
+      <Animated.View
         collapsable={false}
         className={props.className}
         style={[
@@ -1959,10 +1960,11 @@ function ReactableBubble(props: {
           reactions && reactions.length > 0
             ? { marginTop: MESSAGE_REACTION_BADGE_CLEARANCE }
             : null,
+          pressStyle,
         ]}
         accessibilityActions={open ? REACT_ACCESSIBILITY_ACTIONS : undefined}
         onAccessibilityAction={({ nativeEvent }) => {
-          if (nativeEvent.actionName === "react") openOverlay();
+          if (nativeEvent.actionName === "react") openReactions();
         }}
       >
         {/* Native selection would claim the long-press that opens reactions. */}
@@ -1981,13 +1983,13 @@ function ReactableBubble(props: {
               open
                 ? (emoji, mine) => {
                     if (mine) controller.choose(messageId, props.reactions, current, emoji);
-                    else openOverlay();
+                    else openReactions();
                   }
                 : undefined
             }
           />
         ) : null}
-      </View>
+      </Animated.View>
     </GestureDetector>
   );
 }
@@ -4759,8 +4761,8 @@ export const ThreadFeed = memo(function ThreadFeed({
           ) : null}
           <VideoPreviewModal source={expandedVideo} onRequestClose={closeVideoPreview} />
           <FilePreviewModal source={expandedFile} onRequestClose={closeFilePreview} />
-          {reactionTarget ? (
-            <MessageReactionOverlay
+          {props.directMessage ? (
+            <MessageReactionSheet
               target={reactionTarget}
               accent={reactionAccent}
               iconColor={iconSubtleColor}

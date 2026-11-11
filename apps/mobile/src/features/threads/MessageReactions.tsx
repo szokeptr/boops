@@ -6,23 +6,15 @@ import {
   MORE_REACTION_EMOJIS,
 } from "@t3tools/client-runtime/message-reactions";
 import type { MessageId, OrchestrationV2MessageReaction } from "@t3tools/contracts";
-import { BlurView } from "expo-blur";
-import { type ComponentRef, type ReactNode, useRef, useState } from "react";
-import {
-  type ColorValue,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from "react-native";
-import Animated, { FadeIn, LayoutAnimationConfig, ZoomIn } from "react-native-reanimated";
+import { type ComponentRef, useRef, useState } from "react";
+import { type ColorValue, Platform, Pressable, useWindowDimensions, View } from "react-native";
+import Animated, { LayoutAnimationConfig, ZoomIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FormSheet } from "react-native-screens";
+import { useResolveClassNames } from "uniwind";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { type AppSymbolViewProps, SymbolView } from "../../components/ui/AppSymbol";
-import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
 export type MessageReactionAlign = "left" | "right";
 
@@ -40,16 +32,6 @@ export interface MessageReactionAction {
 
 export interface MessageReactionTarget {
   readonly messageId: MessageId;
-  /** The bubble's frame in window coordinates. */
-  readonly rect: {
-    readonly x: number;
-    readonly y: number;
-    readonly width: number;
-    readonly height: number;
-  };
-  readonly align: MessageReactionAlign;
-  /** A copy of the bubble, lifted above the dimmed feed. */
-  readonly bubble: ReactNode;
   readonly current: string | null;
   /** What the server had when the overlay opened; a pending choice holds only while it lasts. */
   readonly serverReactions: ReadonlyArray<OrchestrationV2MessageReaction> | undefined;
@@ -199,189 +181,174 @@ function BadgeShade() {
   );
 }
 
-const EDGE = 12;
-const GAP = 10;
-const REACTION_SIZE = 40;
-const PILL_PADDING = 6;
-const PILL_HEIGHT = REACTION_SIZE + PILL_PADDING * 2;
-const PILL_WIDTH = (MESSAGE_QUICK_REACTIONS.length + 1) * REACTION_SIZE + PILL_PADDING * 2;
-const MENU_ROW_HEIGHT = 44;
-const MENU_WIDTH = 220;
-const GRID_COLUMNS = 8;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(value, max));
-}
+const SHEET_PADDING = 20;
+const GRID_GAP = 12;
+const GRID_COLUMNS = 6;
+const MAX_REACTION_SIZE = 56;
+const ACTION_ROW_HEIGHT = 52;
+// The quick reactions, then a few more, filling two rows with the "more" button last.
+const SHEET_REACTIONS = [...MESSAGE_QUICK_REACTIONS, "🎉", "🔥", "👀", "🙏", "💯"];
+const MORE_SHEET_REACTIONS = MORE_REACTION_EMOJIS.filter(
+  (emoji) => !SHEET_REACTIONS.includes(emoji),
+);
 
 /**
- * Long-press on a bubble: the feed dims, the bubble lifts with the reactions above it and its
- * actions below, shifted to stay on screen.
+ * Long-press on a bubble opens this drawer: a grid of reactions, any emoji behind the last
+ * button, and the bubble's actions below. Each opening is a fresh native sheet.
  */
-export function MessageReactionOverlay(props: {
-  readonly target: MessageReactionTarget;
+export function MessageReactionSheet(props: {
+  readonly target: MessageReactionTarget | null;
   readonly accent: MessageReactionAccent;
   readonly iconColor: ColorValue;
   readonly onChoose: (target: MessageReactionTarget, emoji: string) => void;
   readonly onClose: () => void;
 }) {
-  const { target, onClose } = props;
-  const { themeAppearance } = useAppearancePreferences();
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const containerStyle = useResolveClassNames(Platform.OS === "android" ? "bg-header" : "bg-sheet");
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const [moreOpen, setMoreOpen] = useState(false);
   const typedInput = useRef<ComponentRef<typeof TextInput>>(null);
-
+  // Keeps the last target drawn while the sheet slides away.
+  const [presented, setPresented] = useState({
+    target: props.target,
+    open: props.target !== null,
+    session: 0,
+  });
+  if (props.target !== null && props.target !== presented.target) {
+    setPresented({
+      target: props.target,
+      open: true,
+      session: presented.open ? presented.session : presented.session + 1,
+    });
+    setMoreOpen(false);
+  } else if (props.target === null && presented.open) {
+    setPresented({ ...presented, open: false });
+  }
+  // An action may present another screen, so it waits until the sheet is gone.
+  const afterClose = useRef<(() => void) | null>(null);
+  const dismissed = () => {
+    setPresented((current) => ({ ...current, target: null }));
+    const then = afterClose.current;
+    afterClose.current = null;
+    then?.();
+  };
+  const target = presented.target;
+  if (target === null) return null;
   const choose = (emoji: string) => props.onChoose(target, emoji);
-  const menuHeight = target.actions.length * MENU_ROW_HEIGHT;
-  const topLimit = insets.top + EDGE + PILL_HEIGHT + GAP;
-  const bottomLimit = windowHeight - insets.bottom - EDGE - (menuHeight > 0 ? menuHeight + GAP : 0);
-  const bubbleHeight = Math.min(
-    target.rect.height,
-    Math.max(REACTION_SIZE * 2, bottomLimit - topLimit),
+  const size = Math.min(
+    MAX_REACTION_SIZE,
+    (Math.min(windowWidth, 500) - SHEET_PADDING * 2 - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS,
   );
-  const bubbleTop = Math.max(topLimit, Math.min(target.rect.y, bottomLimit - bubbleHeight));
-  const sideLeft = (width: number) =>
-    clamp(
-      target.align === "left" ? target.rect.x : target.rect.x + target.rect.width - width,
-      EDGE,
-      windowWidth - EDGE - width,
-    );
-  const gridWidth = Math.min(windowWidth - EDGE * 2, GRID_COLUMNS * REACTION_SIZE + 16);
 
   return (
-    <Modal transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Close reactions"
-        onPress={onClose}
-        style={StyleSheet.absoluteFill}
+    <FormSheet
+      key={presented.session}
+      isOpen={presented.open}
+      detents="fitToContents"
+      prefersGrabberVisible
+      preferredCornerRadius={Platform.OS === "android" ? 28 : undefined}
+      nativeContainerStyle={containerStyle}
+      onDismiss={dismissed}
+      onNativeDismiss={() => {
+        props.onClose();
+        dismissed();
+      }}
+    >
+      <View
+        collapsable={false}
+        className="gap-5 bg-sheet"
+        style={{
+          paddingHorizontal: SHEET_PADDING,
+          paddingTop: SHEET_PADDING + 8,
+          paddingBottom: Math.max(insets.bottom, SHEET_PADDING),
+        }}
       >
-        {Platform.OS === "ios" ? (
-          <BlurView
-            intensity={24}
-            tint={themeAppearance === "dark" ? "dark" : "default"}
-            style={StyleSheet.absoluteFill}
-          />
-        ) : null}
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: themeAppearance === "dark" ? "#00000066" : "#00000033" },
-          ]}
-        />
-      </Pressable>
-
-      {moreOpen ? (
-        <Animated.View
-          entering={FadeIn.duration(140)}
-          className="absolute gap-2 rounded-[22px] bg-sheet-solid p-2"
-          style={{ top: insets.top + EDGE, left: (windowWidth - gridWidth) / 2, width: gridWidth }}
-        >
-          <TextInput
-            ref={typedInput}
-            autoFocus
-            autoCorrect={false}
-            onChangeText={(text) => {
-              const emoji = firstEmoji(text);
-              if (emoji !== null) choose(emoji);
-              else typedInput.current?.clear();
-            }}
-            accessibilityLabel="Type any emoji"
-            placeholder="Type any emoji"
-            className="h-10 rounded-full bg-subtle-strong px-4 text-base text-foreground"
-          />
-          <View className="flex-row flex-wrap">
-            {MORE_REACTION_EMOJIS.map((emoji) => (
-              <ReactionButton
-                key={emoji}
-                emoji={emoji}
-                size={(gridWidth - 16) / GRID_COLUMNS}
-                selected={emoji === target.current}
-                accent={props.accent}
-                onPress={() => choose(emoji)}
-              />
-            ))}
-          </View>
-        </Animated.View>
-      ) : (
-        <>
-          <Animated.View
-            entering={ZoomIn.duration(160)}
-            className="absolute flex-row rounded-full bg-sheet-solid"
-            style={{
-              top: bubbleTop - GAP - PILL_HEIGHT,
-              left: sideLeft(PILL_WIDTH),
-              padding: PILL_PADDING,
-            }}
+        <View className="flex-row flex-wrap justify-center" style={{ gap: GRID_GAP }}>
+          {SHEET_REACTIONS.map((emoji) => (
+            <ReactionButton
+              key={emoji}
+              emoji={emoji}
+              size={size}
+              selected={emoji === target.current}
+              accent={props.accent}
+              onPress={() => choose(emoji)}
+            />
+          ))}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="More reactions"
+            accessibilityState={{ expanded: moreOpen }}
+            onPress={() => setMoreOpen((open) => !open)}
+            className="items-center justify-center rounded-full bg-foreground/10 active:opacity-70"
+            style={{ width: size, height: size }}
           >
-            {MESSAGE_QUICK_REACTIONS.map((emoji) => (
-              <ReactionButton
-                key={emoji}
-                emoji={emoji}
-                size={REACTION_SIZE}
-                selected={emoji === target.current}
-                accent={props.accent}
-                onPress={() => choose(emoji)}
-              />
-            ))}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="More reactions"
-              onPress={() => setMoreOpen(true)}
-              className="items-center justify-center rounded-full"
-              style={{ width: REACTION_SIZE, height: REACTION_SIZE }}
-            >
-              <SymbolView name="face.smiling" size={22} tintColor={props.iconColor} />
-            </Pressable>
-          </Animated.View>
+            <SymbolView
+              name={moreOpen ? "chevron.up" : "face.smiling"}
+              size={size * 0.42}
+              tintColor={props.iconColor}
+            />
+          </Pressable>
+        </View>
 
-          <View
-            pointerEvents="none"
-            className="absolute overflow-hidden"
-            style={{
-              top: bubbleTop,
-              left: target.rect.x,
-              width: target.rect.width,
-              height: bubbleHeight,
-            }}
-          >
-            {target.bubble}
-          </View>
-
-          {target.actions.length > 0 ? (
-            <Animated.View
-              entering={FadeIn.duration(160)}
-              className="absolute overflow-hidden rounded-[14px] bg-sheet-solid"
-              style={{
-                top: bubbleTop + bubbleHeight + GAP,
-                left: sideLeft(MENU_WIDTH),
-                width: MENU_WIDTH,
+        {moreOpen ? (
+          <View className="gap-3">
+            <TextInput
+              ref={typedInput}
+              autoFocus
+              autoCorrect={false}
+              onChangeText={(text) => {
+                const emoji = firstEmoji(text);
+                if (emoji !== null) choose(emoji);
+                else typedInput.current?.clear();
               }}
-            >
-              {target.actions.map((action, index) => (
-                <Pressable
-                  key={action.id}
-                  accessibilityRole="button"
-                  onPress={() => {
-                    onClose();
-                    action.onPress();
-                  }}
+              accessibilityLabel="Type any emoji"
+              placeholder="Type any emoji"
+              className="h-11 rounded-full bg-foreground/10 px-4 text-base text-foreground"
+            />
+            <View className="flex-row flex-wrap justify-between" style={{ rowGap: 4 }}>
+              {MORE_SHEET_REACTIONS.map((emoji) => (
+                <ReactionButton
+                  key={emoji}
+                  emoji={emoji}
+                  size={size * 0.8}
+                  selected={emoji === target.current}
+                  accent={props.accent}
+                  onPress={() => choose(emoji)}
+                />
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {target.actions.length > 0 ? (
+          <View className="overflow-hidden rounded-[18px] bg-foreground/[0.07]">
+            {target.actions.map((action, index) => (
+              <Pressable
+                key={action.id}
+                accessibilityRole="button"
+                onPress={() => {
+                  afterClose.current = action.onPress;
+                  props.onClose();
+                }}
+                className="flex-row items-center gap-4 px-4 active:bg-foreground/10"
+                style={{ height: ACTION_ROW_HEIGHT }}
+              >
+                <SymbolView name={action.icon} size={20} tintColor={props.iconColor} />
+                <View
                   className={
                     index === 0
-                      ? "flex-row items-center justify-between px-4 active:bg-subtle"
-                      : "flex-row items-center justify-between border-t border-separator px-4 active:bg-subtle"
+                      ? "h-full flex-1 justify-center"
+                      : "h-full flex-1 justify-center border-t border-foreground/10"
                   }
-                  style={{ height: MENU_ROW_HEIGHT }}
                 >
-                  <Text className="text-base text-foreground">{action.title}</Text>
-                  <SymbolView name={action.icon} size={17} tintColor={props.iconColor} />
-                </Pressable>
-              ))}
-            </Animated.View>
-          ) : null}
-        </>
-      )}
-    </Modal>
+                  <Text className="text-[17px] text-foreground">{action.title}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    </FormSheet>
   );
 }
 
@@ -398,12 +365,13 @@ function ReactionButton(props: {
       accessibilityLabel={props.selected ? `Remove ${props.emoji}` : `React with ${props.emoji}`}
       accessibilityState={{ selected: props.selected }}
       onPress={props.onPress}
-      className="items-center justify-center rounded-full"
-      style={{
-        width: props.size,
-        height: props.size,
-        backgroundColor: props.selected ? props.accent.background : undefined,
-      }}
+      className="items-center justify-center rounded-full bg-foreground/10 active:opacity-70"
+      // An inline `undefined` background would override the class's circle.
+      style={
+        props.selected
+          ? { width: props.size, height: props.size, backgroundColor: props.accent.background }
+          : { width: props.size, height: props.size }
+      }
     >
       <Text style={{ fontSize: props.size * 0.55, lineHeight: props.size * 0.7 }}>
         {props.emoji}
