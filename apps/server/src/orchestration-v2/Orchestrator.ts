@@ -144,6 +144,7 @@ import {
   type GuestShareCommand,
 } from "./GuestShareDecider.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
+import { reactionWakeText } from "../bots/botMessageHeader.ts";
 import { withCommandMetrics } from "../observability/Metrics.ts";
 import type { OrchestrationEffectRequestV2, PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -4553,6 +4554,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       { readonly type: "message.reaction.set" | "message.bot-reaction.set" }
     >,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
   ) {
     const refuse = (cause: string) =>
       new OrchestratorDispatchError({
@@ -4595,6 +4597,47 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
       },
     });
+    // A ❓ or 👎 on the agent's message asks for an answer, so it wakes the agent like a message.
+    const previous = message.reactions?.find((reaction) => reaction.by.kind === "user")?.emoji;
+    const wakeText =
+      command.type === "message.reaction.set" &&
+      command.emoji !== null &&
+      command.emoji !== previous &&
+      message.role === "assistant" &&
+      thread.archivedAt === null
+        ? reactionWakeText(command.emoji, message.text)
+        : undefined;
+    if (wakeText === undefined) return;
+    // A wake that cannot start, say with the provider gone, must not cost the user their reaction.
+    const [eventsBefore, effectsBefore] = [yield* Ref.get(events), yield* Ref.get(effects)];
+    yield* dispatchMessage(
+      {
+        type: "message.dispatch",
+        commandId: command.commandId,
+        threadId: command.threadId,
+        messageId: MessageId.make(`message:reaction:${command.commandId}`),
+        text: wakeText,
+        notification: {
+          source: { kind: "system" },
+          outcome: "updated",
+          summary: `Reacted ${command.emoji}`,
+        },
+        attachments: [],
+        dispatchMode: { type: "queue_after_active" },
+        createdBy: "agent",
+        creationSource: "server",
+      },
+      events,
+      effects,
+    ).pipe(
+      Effect.catch((cause) =>
+        Effect.gen(function* () {
+          yield* Ref.set(events, eventsBefore);
+          yield* Ref.set(effects, effectsBefore);
+          yield* Effect.logWarning("A reaction could not wake the agent.", cause);
+        }),
+      ),
+    );
   });
 
   /**
@@ -13832,7 +13875,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "message.reaction.set":
       case "message.bot-reaction.set":
-        yield* dispatchMessageReaction(command, events);
+        yield* dispatchMessageReaction(command, events, effects);
         break;
       case "thread.project.adopt-folder":
         yield* dispatchThreadProjectAdoptFolder(command, events);

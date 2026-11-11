@@ -53,20 +53,33 @@ const REACTION_EXCERPT_CHARS = 80;
 
 /**
  * The agent text of the user's next message after they reacted to the agent's messages, as a
- * tapback: which emoji, on which message. A reaction alone never starts a turn.
+ * tapback: which emoji, on which message.
  */
 export function withReactionsHeader(
   text: string,
   reactions: ReadonlyArray<{ readonly emoji: string; readonly text: string }>,
 ): string {
   if (reactions.length === 0) return text;
-  const excerpts = reactions.map(({ emoji, text: reacted }) => {
-    const line = reacted.replaceAll(/\s+/g, " ").trim();
-    const excerpt =
-      line.length > REACTION_EXCERPT_CHARS ? `${line.slice(0, REACTION_EXCERPT_CHARS)}…` : line;
-    return `${emoji} to "${excerpt}"`;
-  });
+  const excerpts = reactions.map(({ emoji, text: reacted }) => `${emoji} to "${excerpt(reacted)}"`);
   return `[Since your last turn, the user reacted ${excerpts.join(", ")}.]\n\n${text}`;
+}
+
+function excerpt(text: string): string {
+  const line = text.replaceAll(/\s+/g, " ").trim();
+  return line.length > REACTION_EXCERPT_CHARS ? `${line.slice(0, REACTION_EXCERPT_CHARS)}…` : line;
+}
+
+const REACTION_ASKS: Partial<Record<string, string>> = {
+  "❓": "They have a question about it: explain it or ask what is unclear.",
+  "👎": "They think it is wrong or unhelpful: fix it or ask what is off.",
+};
+
+/** The turn a reaction that asks for something starts, or undefined for one that needs nothing. */
+export function reactionWakeText(emoji: string, reacted: string): string | undefined {
+  const ask = REACTION_ASKS[emoji];
+  return ask === undefined
+    ? undefined
+    : `[The user reacted ${emoji} to your message "${excerpt(reacted)}". ${ask}]`;
 }
 
 // The bot instructions key on this prefix; a helper shares its bot's instructions and folder.
