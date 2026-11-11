@@ -175,6 +175,24 @@ class AgentNotificationsTest {
   }
 
   @Test
+  fun openingAThreadDismissesOnlyItsAlertsAndTheEmptiedSummary() {
+    AgentNotifications.receive(context, update("first", false) + ("alert_group" to "thread-group"))
+    AgentNotifications.receive(context, update("second", false) + ("alert_group" to "thread-group"))
+    AgentNotifications.receive(
+      context,
+      update("other", false) + mapOf(
+        "alert_group" to "other-group",
+        "alert_path" to "/threads/environment/other"
+      )
+    )
+
+    AgentNotifications.dismissThread(context, "/threads/environment/thread")
+
+    val remaining = manager.activeNotifications.filter { it.tag != "t3-agent-activity" }
+    assertEquals(listOf("other-group"), remaining.map { it.notification.group })
+  }
+
+  @Test
   fun groupedAlertDisplaysEveryThreadAndRetriesStaySilent() {
     val titles = (1..5).map { "Thread $it " + "x".repeat(111) }.joinToString(", ")
     val grouped = update("group-completion", false) + mapOf(

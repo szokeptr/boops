@@ -6,6 +6,7 @@ interface AndroidAgentNotifications {
   configure(deviceId: string, userId: string, scheme: string, ongoingEnabled: boolean): void;
   clear(): void;
   setThreadOnScreen?(path: string | null): void;
+  dismissThread?(path: string): void;
   openLiveUpdateSettings?(): boolean;
   showShowcaseActivity?(scheme: string, data: Record<string, string>): void;
 }
@@ -44,6 +45,10 @@ export function clearAndroidAgentNotifications(): void {
 
 export function setAndroidThreadOnScreen(path: string | null): void {
   native?.setThreadOnScreen?.(path);
+}
+
+export function dismissAndroidThreadNotifications(path: string): void {
+  native?.dismissThread?.(path);
 }
 
 export function supportsAndroidLiveUpdateSettings(): boolean {

@@ -1,16 +1,47 @@
 import * as Notifications from "expo-notifications";
+import { AppState } from "react-native";
 
-import { setAndroidThreadOnScreen } from "./androidNotifications";
+import {
+  dismissAndroidThreadNotifications,
+  setAndroidThreadOnScreen,
+} from "./androidNotifications";
 import { foregroundNotificationBehavior } from "./foregroundNotificationBehavior";
-import { routeAgentNotificationResponseOnce, threadDeepLinkOnScreen } from "./notificationPayload";
+import {
+  extractAgentNotificationDeepLink,
+  routeAgentNotificationResponseOnce,
+  threadDeepLinkOnScreen,
+} from "./notificationPayload";
 import { consumeLastAgentNotificationResponse } from "./notificationResponseConsumer";
 
 let deepLinkOnScreen: string | null = null;
 
 /** Called with the workspace pathname on every root navigation state change. */
 export function setAgentNotificationPathname(pathname: string): void {
+  const previous = deepLinkOnScreen;
   deepLinkOnScreen = threadDeepLinkOnScreen(pathname);
   setAndroidThreadOnScreen(deepLinkOnScreen);
+  if (deepLinkOnScreen !== previous && AppState.currentState === "active") {
+    dismissThreadNotifications(deepLinkOnScreen);
+  }
+}
+
+/** Opening a conversation reads it, so its delivered notifications leave the tray. */
+function dismissThreadNotifications(deepLink: string | null): void {
+  if (deepLink === null) return;
+  dismissAndroidThreadNotifications(deepLink);
+  void Notifications.getPresentedNotificationsAsync()
+    .then((presented) =>
+      Promise.all(
+        presented
+          .filter((notification) => extractAgentNotificationDeepLink({ notification }) === deepLink)
+          .map((notification) =>
+            Notifications.dismissNotificationAsync(notification.request.identifier),
+          ),
+      ),
+    )
+    .catch((cause: unknown) => {
+      console.warn("Could not dismiss the open thread's notifications", cause);
+    });
 }
 
 /**
@@ -29,6 +60,9 @@ export function installAgentNotificationNavigation(navigate: (href: string) => v
     routeAgentNotificationResponseOnce({ handledResponseIds, response, navigate });
   };
   const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
+  const appStateSubscription = AppState.addEventListener("change", (state) => {
+    if (state === "active") dismissThreadNotifications(deepLinkOnScreen);
+  });
   void consumeLastAgentNotificationResponse({
     getLastResponse: () => Notifications.getLastNotificationResponseAsync(),
     clearLastResponse: () => Notifications.clearLastNotificationResponseAsync(),
@@ -37,6 +71,7 @@ export function installAgentNotificationNavigation(navigate: (href: string) => v
 
   return () => {
     subscription.remove();
+    appStateSubscription.remove();
     Notifications.setNotificationHandler(null);
   };
 }

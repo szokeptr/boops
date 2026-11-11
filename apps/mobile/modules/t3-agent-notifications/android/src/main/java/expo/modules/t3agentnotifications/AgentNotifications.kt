@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
@@ -47,6 +48,7 @@ object AgentNotifications {
   private const val ALERT_CHANNEL = "agent-alerts"
   private const val ACTIVITY_TAG = "t3-agent-activity"
   private const val ALERT_TAG = "t3-agent-alert"
+  private const val EXTRA_ALERT_PATH = "t3_alert_path"
   private const val ACTIVITY_ID = 73001
   private const val MAX_MESSAGE_AGE_MS = 10 * 60 * 1000L
   private const val RUNNING_LIFETIME_MS = 2 * 60 * 60 * 1000L
@@ -95,6 +97,21 @@ object AgentNotifications {
 
   fun setThreadOnScreen(path: String?) {
     threadOnScreen = path
+  }
+
+  @Synchronized
+  fun dismissThread(context: Context, path: String) {
+    val manager = manager(context)
+    val read = manager.activeNotifications.filter {
+      it.tag == ALERT_TAG && it.notification.extras.getString(EXTRA_ALERT_PATH) == path
+    }
+    read.forEach { manager.cancel(it.tag, it.id) }
+    read.mapNotNull { it.notification.group }.distinct().forEach { group ->
+      val unread = manager.activeNotifications.any {
+        it.tag == ALERT_TAG && it.notification.group == group
+      }
+      if (!unread) manager.cancel("$ALERT_TAG-summary:$group", 0)
+    }
   }
 
   @Synchronized
@@ -177,6 +194,7 @@ object AgentNotifications {
       .setAutoCancel(true)
       .setGroup(group)
       .setContentIntent(contentIntent(context, scheme, data["alert_path"], id))
+      .addExtras(Bundle().apply { putString(EXTRA_ALERT_PATH, data["alert_path"]) })
       .build()
     manager(context).notify(ALERT_TAG, id, notification)
     val children = manager(context).activeNotifications.filter {

@@ -34,6 +34,10 @@ class T3AgentNotificationsModule : Module() {
       AgentNotifications.setThreadOnScreen(path)
     }
 
+    Function("dismissThread") { path: String ->
+      appContext.reactContext?.let { AgentNotifications.dismissThread(it, path) }
+    }
+
     Function("openLiveUpdateSettings") {
       val context = appContext.reactContext
       if (context == null || Build.VERSION.SDK_INT < 36) {
