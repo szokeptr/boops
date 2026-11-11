@@ -902,6 +902,7 @@ export function createThreadOutboxDelivery(): {
         interactionMode: sendSettings.interactionMode,
         createdAt: queuedMessage.createdAt,
         dispatchMode: queuedMessage.dispatchMode ?? "start",
+        resendAfterSocketLoss: false,
       },
     });
     if (AsyncResult.isFailure(deliveryResult) && !hasAccess()) return true;
