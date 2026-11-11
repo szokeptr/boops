@@ -74,12 +74,20 @@ const REACTION_ASKS: Partial<Record<string, string>> = {
   "👎": "They think it is wrong or unhelpful: fix it or ask what is off.",
 };
 
-/** The turn a reaction that asks for something starts, or undefined for one that needs nothing. */
-export function reactionWakeText(emoji: string, reacted: string): string | undefined {
-  const ask = REACTION_ASKS[emoji];
+const OWN_MESSAGE_REACTION_ASKS: Partial<Record<string, string>> = {
+  "❓": "They are still waiting on it: answer it.",
+  "‼️": "They want it to stand out: act on it now.",
+};
+
+/**
+ * The turn a reaction that asks for something starts, or undefined for one that needs nothing.
+ * `own` is the user reacting to a message they sent.
+ */
+export function reactionWakeText(emoji: string, reacted: string, own: boolean): string | undefined {
+  const ask = (own ? OWN_MESSAGE_REACTION_ASKS : REACTION_ASKS)[emoji];
   return ask === undefined
     ? undefined
-    : `[The user reacted ${emoji} to your message "${excerpt(reacted)}". ${ask}]`;
+    : `[The user reacted ${emoji} to ${own ? "their" : "your"} message "${excerpt(reacted)}". ${ask}]`;
 }
 
 // The bot instructions key on this prefix; a helper shares its bot's instructions and folder.

@@ -4597,15 +4597,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
       },
     });
-    // A ❓ or 👎 on the agent's message asks for an answer, so it wakes the agent like a message.
+    // Some reactions ask for an answer, so they wake the agent like a message would.
     const previous = message.reactions?.find((reaction) => reaction.by.kind === "user")?.emoji;
+    const own = message.role === "user" && message.createdBy === "user";
     const wakeText =
       command.type === "message.reaction.set" &&
       command.emoji !== null &&
       command.emoji !== previous &&
-      message.role === "assistant" &&
+      (message.role === "assistant" || own) &&
       thread.archivedAt === null
-        ? reactionWakeText(command.emoji, message.text)
+        ? reactionWakeText(command.emoji, message.text, own)
         : undefined;
     if (wakeText === undefined) return;
     // A wake that cannot start, say with the provider gone, must not cost the user their reaction.

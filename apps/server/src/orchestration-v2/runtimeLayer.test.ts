@@ -9258,64 +9258,90 @@ it.layer(layerBotsTest)("bot families", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("a ❓ on the agent's message wakes it, and an acknowledging reaction does not", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const orchestrator = yield* Orchestrator.OrchestratorV2;
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-reaction-wake-" });
-      const bot = yield* inHome(
-        home,
-        (yield* Bots.Bots).create({ name: "Wren", modelSelection, hatch: false }),
-      );
-      const threadId = bot.mainThreadId;
-      const messageId = MessageId.make("runtime-layer-reaction-wake:answer");
-      const at = DateTime.makeUnsafe("2026-07-24T10:00:00.000Z");
-      yield* (yield* EventSink.EventSinkV2).write({
-        commandId: CommandId.make(`${threadId}:seed`),
-        events: [
-          {
-            id: EventId.make(`${messageId}:event`),
-            type: "message.updated",
-            threadId,
-            occurredAt: at,
-            payload: {
-              id: messageId,
-              threadId,
-              runId: null,
-              nodeId: null,
-              role: "assistant",
-              text: "Use a monad transformer.",
-              attachments: [],
-              streaming: false,
-              createdBy: "agent",
-              creationSource: "provider",
-              createdAt: at,
-              updatedAt: at,
-            },
-          },
-        ],
-      });
-      const react = (key: string, emoji: string | null) =>
-        orchestrator.dispatch({
-          type: "message.reaction.set",
-          commandId: CommandId.make(`${threadId}:react-${key}`),
-          threadId,
-          messageId,
-          emoji,
-        });
-      const wakes = () =>
-        Effect.map(orchestrator.getThreadProjection(threadId), ({ messages }) =>
-          messages.flatMap((message) => (message.notification ? [message.text] : [])),
+  it.effect(
+    "a reaction that asks for an answer wakes the agent, and an acknowledging one does not",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "boops-reaction-wake-" });
+        const bot = yield* inHome(
+          home,
+          (yield* Bots.Bots).create({ name: "Wren", modelSelection, hatch: false }),
         );
+        const threadId = bot.mainThreadId;
+        const messageId = MessageId.make("runtime-layer-reaction-wake:answer");
+        const ownMessageId = MessageId.make("runtime-layer-reaction-wake:ask");
+        const at = DateTime.makeUnsafe("2026-07-24T10:00:00.000Z");
+        yield* (yield* EventSink.EventSinkV2).write({
+          commandId: CommandId.make(`${threadId}:seed`),
+          events: [
+            {
+              id: EventId.make(`${messageId}:event`),
+              type: "message.updated",
+              threadId,
+              occurredAt: at,
+              payload: {
+                id: messageId,
+                threadId,
+                runId: null,
+                nodeId: null,
+                role: "assistant",
+                text: "Use a monad transformer.",
+                attachments: [],
+                streaming: false,
+                createdBy: "agent",
+                creationSource: "provider",
+                createdAt: at,
+                updatedAt: at,
+              },
+            },
+            {
+              id: EventId.make(`${ownMessageId}:event`),
+              type: "message.updated",
+              threadId,
+              occurredAt: at,
+              payload: {
+                id: ownMessageId,
+                threadId,
+                runId: null,
+                nodeId: null,
+                role: "user",
+                text: "Book the dentist.",
+                attachments: [],
+                streaming: false,
+                createdBy: "user",
+                creationSource: "web",
+                createdAt: at,
+                updatedAt: at,
+              },
+            },
+          ],
+        });
+        const react = (key: string, emoji: string | null, target = messageId) =>
+          orchestrator.dispatch({
+            type: "message.reaction.set",
+            commandId: CommandId.make(`${threadId}:react-${key}`),
+            threadId,
+            messageId: target,
+            emoji,
+          });
+        const wakes = () =>
+          Effect.map(orchestrator.getThreadProjection(threadId), ({ messages }) =>
+            messages.flatMap((message) => (message.notification ? [message.text] : [])),
+          );
 
-      yield* react("thumbs-up", "👍");
-      assert.deepEqual(yield* wakes(), []);
-      yield* react("question", "❓");
-      yield* react("question-again", "❓");
-      assert.deepEqual(yield* wakes(), [
-        '[The user reacted ❓ to your message "Use a monad transformer.". They have a question about it: explain it or ask what is unclear.]',
-      ]);
-    }).pipe(Effect.scoped),
+        yield* react("thumbs-up", "👍");
+        assert.deepEqual(yield* wakes(), []);
+        yield* react("question", "❓");
+        yield* react("question-again", "❓");
+        yield* react("own-thumbs-up", "👍", ownMessageId);
+        yield* react("own-emphasis", "‼️", ownMessageId);
+        assert.sameMembers(yield* wakes(), [
+          '[The user reacted ❓ to your message "Use a monad transformer.". They have a question about it: explain it or ask what is unclear.]',
+          '[The user reacted ‼️ to their message "Book the dentist.". They want it to stand out: act on it now.]',
+        ]);
+      }).pipe(Effect.scoped),
   );
 
   // Approvals and secret cards record on the asking thread, so a top-level child keeps its own.
