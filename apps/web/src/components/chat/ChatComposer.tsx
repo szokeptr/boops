@@ -186,7 +186,14 @@ import { useThreadContextDrop, threadContextDropTargetProps } from "./threadCont
 import { readThreadShell } from "~/state/entities";
 import { useLinkedEnvironments } from "~/state/peerLinks";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
-import type { BotAutonomy, ComposerContextRecord, ThreadPullRequestLink } from "@t3tools/contracts";
+import type {
+  BotAutonomy,
+  ComposerContextRecord,
+  ProjectAvatar,
+  ThreadPullRequestLink,
+} from "@t3tools/contracts";
+import { botBubbleColors } from "@t3tools/client-runtime/bot-avatar";
+import { specFor } from "@t3tools/shared/botAvatar";
 import { botAccessLimitLabel } from "@t3tools/client-runtime/state/bot-list";
 import { threadContextAttachment } from "~/lib/threadContextAttachment";
 import {
@@ -349,6 +356,8 @@ export interface ChatComposerProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
   /** Set in a bot's conversation, which reads like a DM with it. */
   botName?: string | undefined;
+  /** The bot's look, whose colour the send button wears. Null falls back to the name's look. */
+  botAvatar?: ProjectAvatar | null | undefined;
   environmentId: EnvironmentId;
   canOperateThread: boolean;
   attachmentUploadsCapabilityKnown: boolean;
@@ -510,6 +519,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const {
     composerDraftTarget,
     botName,
+    botAvatar,
     environmentId,
     canOperateThread,
     attachmentUploadsCapabilityKnown,
@@ -1201,6 +1211,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
   // A bot's chat asks its questions in the timeline instead of above the composer.
   const questionsInComposer = botName === undefined && pendingUserInputs.length > 0;
+  const botAccent = botName === undefined ? null : botBubbleColors(botAvatar ?? specFor(botName));
   const showComposerTopDrawer =
     questionsInComposer ||
     (!isComposerCollapsedMobile && showPlanFollowUpPrompt && activeProposedPlan !== null);
@@ -3274,6 +3285,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   type="button"
                   data-chat-composer-transition-actions="true"
                   className="flex size-8 shrink-0 items-center justify-center rounded-full bg-message-action text-message-action-foreground hover:bg-message-action-hover disabled:opacity-64"
+                  style={
+                    botAccent
+                      ? { backgroundColor: botAccent.background, color: botAccent.foreground }
+                      : undefined
+                  }
                   disabled={collapsedComposerPrimaryActionDisabled}
                   aria-label={collapsedComposerPrimaryActionLabel}
                   onPointerDown={(event) => event.preventDefault()}
@@ -3557,6 +3573,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onResume={onResume}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryActionStable}
+                    accent={botAccent}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryActionStable}
                     compactBeforeSendTokens={props.resumeCompactionTokens}
                     keepFullHistory={props.keepFullHistory}

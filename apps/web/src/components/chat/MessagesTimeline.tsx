@@ -113,7 +113,12 @@ import {
   type WorkGroupViewState,
   type TimelineRow,
 } from "./timelineRowContext";
-import { TimelineRowTimestamp, ActivityShimmerOverlay } from "./TimelineRowParts";
+import {
+  TimelineRowTimestamp,
+  ActivityShimmerOverlay,
+  TimeMarkerTimelineRow,
+} from "./TimelineRowParts";
+import { BotAnsweredQuestionCard } from "./BotQuestionCard";
 import {
   WorkGroupSection,
   WorkingTimelineRow,
@@ -1048,6 +1053,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
     threadRef: citationThreadRef,
     assistantName,
     typingName,
+    typingBot:
+      directMessage && project && typingName === null
+        ? { name: project.title, avatar: project.avatar ?? null }
+        : null,
     markdownCwd,
     resolvedTheme,
     workspaceRoot,
@@ -1540,12 +1549,33 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "mcp-app" ? <McpAppTimelineRow row={row} /> : null}
       {row.kind === "bot-exchange" ? <BotExchangeTimelineRow row={row} /> : null}
       {row.kind === "routine-runs" ? <RoutineRunsTimelineRow row={row} /> : null}
+      {row.kind === "answered-question" ? <AnsweredQuestionTimelineRow row={row} /> : null}
+      {row.kind === "time-marker" ? <TimeMarkerRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
       {row.kind === "event" ? <V2EventTimelineRow row={row} /> : null}
     </div>
   );
 });
+
+function AnsweredQuestionTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "answered-question" }>;
+}) {
+  return (
+    <BotAnsweredQuestionCard answers={row.answers} accent={use(TimelineRowCtx).ownBubbleColors} />
+  );
+}
+
+function TimeMarkerRow({ row }: { row: Extract<TimelineRow, { kind: "time-marker" }> }) {
+  return (
+    <TimeMarkerTimelineRow
+      createdAt={row.createdAt}
+      timestampFormat={use(TimelineRowCtx).timestampFormat}
+    />
+  );
+}
 
 function WorktreeSetupTimelineRow({
   row,

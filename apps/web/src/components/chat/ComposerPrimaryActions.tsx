@@ -48,6 +48,8 @@ interface ComposerPrimaryActionsProps {
   onResume?: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
+  /** A bot's colour in its DM: send wears it, and stop steps back to neutral. */
+  accent?: { readonly background: string; readonly foreground: string } | null | undefined;
   /** Names what stop stops, such as one bot in a group chat. */
   interruptLabel?: string;
   /** Several things to stop: the stop control opens a menu of them instead of calling `onInterrupt`. */
@@ -107,6 +109,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onResume,
   onPreviousPendingQuestion,
   onInterrupt,
+  accent = null,
   interruptLabel,
   interruptChoices,
   onInterruptChoice,
@@ -130,7 +133,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     }) === "queue";
   const alternateAction = alternateComposerDispatchAction(followUpBehavior);
   const isSendDisabled = !canOperateThread || sendDisabledReason !== null;
-  const stageBackdropVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
+  const stageVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
+  // A bot's colour outranks the dev and nightly button art in its own DM.
+  const stageBackdropVariant = accent ? null : stageVariant;
 
   const stopIcon = (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
@@ -139,7 +144,10 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   );
   const stopButtonClassName = (insidePendingAction: boolean) =>
     cn(
-      "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-colors duration-150 hover:bg-destructive active:inset-shadow-control-pressed active:shadow-none disabled:cursor-default disabled:opacity-64 [&_svg]:pointer-events-none",
+      "flex shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 active:inset-shadow-control-pressed active:shadow-none disabled:cursor-default disabled:opacity-64 [&_svg]:pointer-events-none",
+      accent
+        ? "bg-foreground/16 text-foreground hover:bg-foreground/24"
+        : "bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight hover:bg-destructive",
       insidePendingAction ? "size-8 sm:size-7" : "size-8 sm:h-8 sm:w-8",
     );
   const renderStopGenerationButton = (insidePendingAction: boolean) =>
@@ -337,9 +345,19 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         ? `Click to ${followUpBehavior}, ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
         : submitLabel);
 
+  const sendDisabled =
+    isSendBusy ||
+    isSendDisabled ||
+    isEnvironmentUnavailable ||
+    (!hasSendableContent && !showResume);
   const sendButton = (
     <button
       type={showResume ? "button" : "submit"}
+      style={
+        accent && !sendDisabled
+          ? { backgroundColor: accent.background, color: accent.foreground }
+          : undefined
+      }
       className={cn(
         "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none",
         stageBackdropVariant
@@ -348,12 +366,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       )}
       {...pointerFocusProps}
       onClick={showResume ? onResume : onSubmitMessage}
-      disabled={
-        isSendBusy ||
-        isSendDisabled ||
-        isEnvironmentUnavailable ||
-        (!hasSendableContent && !showResume)
-      }
+      disabled={sendDisabled}
       aria-label={submitStatus ?? submitLabel}
     >
       {stageBackdropVariant ? (

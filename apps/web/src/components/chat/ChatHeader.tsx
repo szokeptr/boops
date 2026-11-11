@@ -5,7 +5,12 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { deriveBotConversations } from "@t3tools/client-runtime/state/bot-list";
+import { deriveBotActivity, deriveBotConversations } from "@t3tools/client-runtime/state/bot-list";
+import {
+  deriveLogicalProjectKeyFromSettings,
+  selectProjectGroupingSettings,
+} from "@t3tools/client-runtime/state/project-grouping";
+import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   isAtomCommandInterrupted,
@@ -22,6 +27,7 @@ import {
 } from "react";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
 import { Badge } from "../ui/badge";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
@@ -77,24 +83,61 @@ function resolveRenameCommit(input: {
   return { action: "commit", title: trimmed };
 }
 
-/** The bot heading its conversation wears that conversation's status. */
+/**
+ * The bot heading its conversation wears that conversation's status, and opens the way to its
+ * settings and activity.
+ */
 function BotConversationAvatar(props: {
   readonly project: EnvironmentProject;
   readonly threadId: ThreadId;
+  readonly onNewConversation: () => void;
 }) {
+  const { project } = props;
+  const navigate = useNavigate();
   const threads = useQuietThreadShells();
+  const grouping = useClientSettings(selectProjectGroupingSettings);
   const status =
-    deriveBotConversations({ project: props.project, threads }).find(
+    deriveBotConversations({ project, threads }).find(
       (conversation) => conversation.threadId === props.threadId,
     )?.status ?? "idle";
+  const activityCount = deriveBotActivity({ project, threads }).length;
   return (
-    <BotAvatar
-      avatar={props.project.avatar ?? null}
-      name={props.project.title}
-      status={status}
-      size={32}
-      className="me-2 shrink-0"
-    />
+    <Menu>
+      <MenuTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`${project.title} menu`}
+            className="me-2 shrink-0 cursor-pointer rounded-full outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          />
+        }
+      >
+        <BotAvatar avatar={project.avatar ?? null} name={project.title} status={status} size={32} />
+      </MenuTrigger>
+      <MenuPopup align="start">
+        <MenuItem
+          onClick={() =>
+            void navigate({
+              to: "/projects/$projectKey",
+              params: { projectKey: deriveLogicalProjectKeyFromSettings(project, grouping) },
+            })
+          }
+        >
+          Bot settings
+        </MenuItem>
+        <MenuItem
+          onClick={() =>
+            void navigate({
+              to: "/bots/$environmentId/$projectId/activity",
+              params: { environmentId: project.environmentId, projectId: project.id },
+            })
+          }
+        >
+          {activityCount > 0 ? `Activity (${activityCount})` : "Activity"}
+        </MenuItem>
+        <MenuItem onClick={props.onNewConversation}>New conversation</MenuItem>
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -459,7 +502,11 @@ export const ChatHeader = memo(function ChatHeader({
         ) : null}
         <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
           {isBotConversation && activeProject ? (
-            <BotConversationAvatar project={activeProject} threadId={activeThreadId} />
+            <BotConversationAvatar
+              project={activeProject}
+              threadId={activeThreadId}
+              onNewConversation={onNewThreadInProject}
+            />
           ) : null}
           {isBotConversation && activeProject ? (
             <BotConversationTabs

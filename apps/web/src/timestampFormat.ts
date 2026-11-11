@@ -200,6 +200,26 @@ export function formatDayAwareTimestamp(
   return `${formatNumericDate(date, messageDay.year === today.year, timeZone)} ${time}`;
 }
 
+const weekdayFormatter = new Intl.DateTimeFormat(timestampLocale, { weekday: "long" });
+
+/** Heads a stretch of a conversation: "Today 10:37 PM", "Monday 4:53 PM", then a date. */
+export function formatTimeMarker(
+  isoDate: string,
+  timestampFormat: TimestampFormat,
+  nowMs: number = Date.now(),
+): string {
+  const date = parseTimestampDate(isoDate);
+  if (!date) return "";
+  const time = getTimestampFormatter(timestampFormat, false).format(date);
+  const today = calendarDay(new Date(nowMs), undefined);
+  const day = calendarDay(date, undefined);
+  const dayDiff = today.index - day.index;
+  if (dayDiff <= 0) return `Today ${time}`;
+  if (dayDiff === 1) return `Yesterday ${time}`;
+  if (dayDiff < 7) return `${weekdayFormatter.format(date)} ${time}`;
+  return `${formatNumericDate(date, day.year === today.year, undefined)}, ${time}`;
+}
+
 /** `timeZone` overrides the zone the formatters cached when they were built. */
 export function formatUpcomingTimestamp(
   isoDate: string,

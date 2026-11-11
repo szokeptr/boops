@@ -2,7 +2,11 @@ import { type ReactNode } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
-import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
+import {
+  formatChatTimestampTooltip,
+  formatDayAwareTimestamp,
+  formatTimeMarker,
+} from "../../timestampFormat";
 
 export const MESSAGE_HEADING_LEVEL = 3;
 
@@ -51,5 +55,20 @@ export function ActivityShimmerOverlay({ children }: { children: ReactNode }) {
         <span className="live-activity-focus-aligned block text-foreground">{children}</span>
       </span>
     </span>
+  );
+}
+
+/** Marks where a bot's conversation picks up again. */
+export function TimeMarkerTimelineRow({
+  createdAt,
+  timestampFormat,
+}: {
+  createdAt: string;
+  timestampFormat: TimestampFormat;
+}) {
+  return (
+    <p className="pt-2 text-center font-medium text-muted-foreground text-xs tabular-nums">
+      <time dateTime={createdAt}>{formatTimeMarker(createdAt, timestampFormat)}</time>
+    </p>
   );
 }

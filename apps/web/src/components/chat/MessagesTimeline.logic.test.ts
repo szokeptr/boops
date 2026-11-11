@@ -2704,7 +2704,9 @@ describe("v2 run and attempt history", () => {
           ? [row.id, row.groupedWithPrevious, row.groupedWithNext]
           : [row.id, row.kind],
       );
+    // A time marker heads the conversation, and the typing row never gets one.
     expect(directMessage(false)).toEqual([
+      ["time-marker:user-entry", "time-marker"],
       ["user-entry", false, false],
       ["assistant-thought-entry", false, true],
       ["assistant-final-entry", true, false],
@@ -2729,17 +2731,18 @@ describe("v2 run and attempt history", () => {
       ["assistant-final-entry", false],
     ]);
 
-    // An answered question reads as the bot asking and you replying, where it was asked.
+    // An answered question stays a card of what was asked and picked, where it was asked. It
+    // came after an hour of quiet, so a time marker heads it.
     const answered = deriveMessagesTimelineRows({
       timelineEntries: [
         ...timelineEntries,
         {
           id: "question-entry",
           kind: "work" as const,
-          createdAt: "2026-01-01T00:00:12Z",
+          createdAt: "2026-01-01T02:00:00Z",
           entry: {
             id: "question",
-            createdAt: "2026-01-01T00:00:12Z",
+            createdAt: "2026-01-01T02:00:00Z",
             runId: "turn-1" as never,
             label: "Answered questions",
             tone: "info" as const,
@@ -2756,13 +2759,20 @@ describe("v2 run and attempt history", () => {
       turnDiffSummaries: [],
       supportsConversationRollback: false,
       directMessage: true,
-    }).flatMap((row) =>
-      row.kind === "message" ? [[row.id, row.message.role, row.message.text]] : [],
-    );
+    }).map((row) => (row.kind === "answered-question" ? [row.id, row.answers] : [row.id]));
     expect(answered.slice(-3)).toEqual([
-      ["question-entry:question", "assistant", "What should I take off your plate first?"],
-      ["question-entry:reply", "user", "Email and calendar"],
-      ["assistant-final-entry", "assistant", "Done"],
+      ["assistant-final-entry"],
+      ["time-marker:question-entry"],
+      [
+        "question-entry",
+        [
+          {
+            id: "purpose",
+            question: "What should I take off your plate first?",
+            answer: "Email and calendar",
+          },
+        ],
+      ],
     ]);
 
     // Talk with a parent or child bot folds into a pill; the bot's own text is always for the user.
@@ -2825,7 +2835,7 @@ describe("v2 run and attempt history", () => {
     });
     expect(
       exchangeRows
-        .slice(3)
+        .slice(4)
         .map((row) =>
           row.kind === "bot-exchange"
             ? [

@@ -81,6 +81,7 @@ import {
   IDLE_COMPACTION_TITLES,
   IDLE_COMPACTING_LABELS,
   foldRepeatedRoutineRuns,
+  picksUpConversation,
   isAgentSelfSentMessage,
   resolveUserMessagePresentation,
   type RoutineRunFold,
@@ -1780,8 +1781,6 @@ export function deriveDirectMessageFeed(
   );
 }
 
-/** Quiet time before a DM entry that earns it a time marker. */
-const TIME_MARKER_GAP_MS = 60 * 60 * 1000;
 const timeMarkers = new WeakMap<ThreadFeedEntry, ThreadFeedTimeMarker>();
 
 /**
@@ -1794,10 +1793,7 @@ export function withTimeMarkers(entries: ReadonlyArray<ThreadFeedEntry>): Thread
     if (entry.type === "thinking" || entry.type === "time-marker") return [entry];
     const at = new Date(entry.createdAt);
     if (Number.isNaN(at.getTime())) return [entry];
-    const quiet =
-      previous === null ||
-      at.getTime() - previous.getTime() >= TIME_MARKER_GAP_MS ||
-      at.toDateString() !== previous.toDateString();
+    const quiet = picksUpConversation(previous, at);
     previous = at;
     if (!quiet) return [entry];
     // Reusing the marker keeps the list from re-rendering a row that did not change.

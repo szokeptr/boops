@@ -32,7 +32,9 @@ import {
   WorkGroupViewCtx,
   type TimelineWorkEntry,
   type TimelineRow,
+  type TimelineRowSharedState,
 } from "./timelineRowContext";
+import { BotAvatar } from "../bots/BotAvatar";
 import { TimelineRowTimestamp, ActivityShimmerOverlay } from "./TimelineRowParts";
 import {
   failedToolIconClassName,
@@ -285,7 +287,15 @@ const TYPING_LABELS = [
 const TYPING_LABEL_HOLD_MS = 3200;
 
 /** A bot's working row reads like a friend typing, trying a new phrase every few seconds. */
-function TypingTimelineRow({ createdAt, name }: { createdAt: string | null; name: string | null }) {
+function TypingTimelineRow({
+  createdAt,
+  name,
+  bot,
+}: {
+  createdAt: string | null;
+  name: string | null;
+  bot: TimelineRowSharedState["typingBot"];
+}) {
   const seed = [...(createdAt ?? "")].reduce((sum, char) => sum + char.charCodeAt(0), 0);
   const [step, setStep] = useState(0);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rotates the label on a timer while the row is mounted
@@ -296,15 +306,19 @@ function TypingTimelineRow({ createdAt, name }: { createdAt: string | null; name
   const label = TYPING_LABELS[(seed + step) % TYPING_LABELS.length];
   return (
     <div className="flex h-8 items-center gap-2.5 px-1 text-sm text-muted-foreground">
-      <span ref={observeVisibleAnimation} aria-hidden className="flex items-center gap-1.25">
-        {[0, 160, 320].map((delay) => (
-          <span
-            key={delay}
-            className="typing-dot size-1.75 rounded-full bg-current"
-            style={{ animationDelay: `${delay}ms` }}
-          />
-        ))}
-      </span>
+      {bot ? (
+        <BotAvatar avatar={bot.avatar} name={bot.name} status="working" size={26} />
+      ) : (
+        <span ref={observeVisibleAnimation} aria-hidden className="flex items-center gap-1.25">
+          {[0, 160, 320].map((delay) => (
+            <span
+              key={delay}
+              className="typing-dot size-1.75 rounded-full bg-current"
+              style={{ animationDelay: `${delay}ms` }}
+            />
+          ))}
+        </span>
+      )}
       <span
         key={label}
         ref={observeVisibleAnimation}
@@ -322,10 +336,12 @@ function TypingTimelineRow({ createdAt, name }: { createdAt: string | null; name
 }
 
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
-  const { directMessage, typingName } = use(TimelineRowCtx);
+  const { directMessage, typingName, typingBot } = use(TimelineRowCtx);
   const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup } =
     use(TimelineRowActivityCtx);
-  if (directMessage) return <TypingTimelineRow createdAt={row.createdAt} name={typingName} />;
+  if (directMessage) {
+    return <TypingTimelineRow createdAt={row.createdAt} name={typingName} bot={typingBot} />;
+  }
   const compacting = row.compacting === true || isCompacting;
   const shimmer = isPreparingWorktree || compacting;
   const label = isPreparingWorktree ? (

@@ -2,10 +2,11 @@ import { type BotCallWorkEntry, foldBotCallMessages } from "@t3tools/client-runt
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import {
   foldRepeatedRoutineRuns,
+  picksUpConversation,
   resolveUserMessagePresentation,
   withoutSilentRoutineWakes,
 } from "@t3tools/client-runtime/user-message";
-import { getQuestionAnswerExchange } from "@t3tools/client-runtime/work-log/user-input";
+import { getQuestionAnswerPairs } from "@t3tools/client-runtime/work-log/user-input";
 import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
 import * as DateTime from "effect/DateTime";
 import * as Equal from "effect/Equal";
@@ -672,6 +673,19 @@ type MessagesTimelineRowContent =
         readonly wake: ChatMessage;
         readonly replies: ReadonlyArray<ChatMessage>;
       }>;
+    }
+  | {
+      /** A question the user answered in a bot's DM: what was asked beside what they picked. */
+      kind: "answered-question";
+      id: string;
+      createdAt: string;
+      answers: ReturnType<typeof getQuestionAnswerPairs>;
+    }
+  | {
+      /** Where a bot's DM picks up again: its start, an hour of quiet, or a new day. */
+      kind: "time-marker";
+      id: string;
+      createdAt: string;
     };
 
 export type BotExchangeEntry =
@@ -2318,40 +2332,19 @@ function foldBotExchanges(
   return result;
 }
 
-/**
- * A DM drops the work an answered question lives in, so it reads as the bot asking and you
- * replying, at the point it was asked. Neither bubble is a real message, so neither is editable.
- */
+/** A DM drops the work an answered question lives in and keeps it as a card where it was asked. */
 function insertAnsweredQuestions(
   rows: ReadonlyArray<MessagesTimelineRow>,
   timelineEntries: ReadonlyArray<TimelineEntry>,
 ): MessagesTimelineRow[] {
   const exchanges = timelineEntries.flatMap(
-    (entry): Array<Extract<MessagesTimelineRow, { kind: "message" }>> => {
+    (entry): Array<Extract<MessagesTimelineRow, { kind: "answered-question" }>> => {
       const answer = entry.kind === "work" ? entry.entry.questionAnswer : undefined;
       if (answer === undefined) return [];
-      const { question, reply } = getQuestionAnswerExchange(answer);
-      const bubble = (side: "question" | "reply", role: "assistant" | "user", text: string) => ({
-        kind: "message" as const,
-        id: `${entry.id}:${side}`,
-        createdAt: entry.createdAt,
-        message: {
-          id: `${side}:${answer.requestId}` as MessageId,
-          role,
-          text,
-          runId: null,
-          streaming: false,
-          createdAt: entry.createdAt,
-          updatedAt: entry.createdAt,
-        },
-        showAssistantMeta: false,
-        showAssistantCopyButton: false,
-        assistantCopyStreaming: false,
-      });
-      return [
-        ...(question ? [bubble("question", "assistant", question)] : []),
-        ...(reply ? [bubble("reply", "user", reply)] : []),
-      ];
+      const answers = getQuestionAnswerPairs(answer);
+      return answers.length === 0
+        ? []
+        : [{ kind: "answered-question", id: entry.id, createdAt: entry.createdAt, answers }];
     },
   );
   if (exchanges.length === 0) return [...rows];
@@ -2408,6 +2401,7 @@ function directMessageRows(
         case "proposed-plan":
         case "html-render":
         case "mcp-app":
+        case "answered-question":
           return true;
         default:
           return false;
@@ -2452,16 +2446,33 @@ function directMessageRows(
       ),
     }),
   });
-  return folded.map((row, index): MessagesTimelineRow => {
-    if (row.kind !== "message") return row;
-    const own = side(row);
-    return {
-      ...row,
-      showAssistantMeta: false,
-      groupedWithPrevious: own !== null && side(folded[index - 1]) === own,
-      groupedWithNext: own !== null && side(folded[index + 1]) === own,
-      continuesSteer: false,
-    };
+  return withTimeMarkers(
+    folded.map((row, index): MessagesTimelineRow => {
+      if (row.kind !== "message") return row;
+      const own = side(row);
+      return {
+        ...row,
+        showAssistantMeta: false,
+        groupedWithPrevious: own !== null && side(folded[index - 1]) === own,
+        groupedWithNext: own !== null && side(folded[index + 1]) === own,
+        continuesSteer: false,
+      };
+    }),
+  );
+}
+
+/** Marks where a conversation picks up again. The typing row never gets a marker. */
+function withTimeMarkers(rows: ReadonlyArray<MessagesTimelineRow>): MessagesTimelineRow[] {
+  let previous: Date | null = null;
+  return rows.flatMap((row): MessagesTimelineRow[] => {
+    if (row.kind === "working" || row.createdAt === null) return [row];
+    const at = new Date(row.createdAt);
+    if (Number.isNaN(at.getTime())) return [row];
+    const quiet = picksUpConversation(previous, at);
+    previous = at;
+    return quiet
+      ? [{ kind: "time-marker", id: `time-marker:${row.id}`, createdAt: row.createdAt }, row]
+      : [row];
   });
 }
 
@@ -2766,6 +2777,20 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         })
       );
     }
+
+    case "answered-question": {
+      const bq = b as typeof a;
+      return (
+        a.answers.length === bq.answers.length &&
+        a.answers.every((pair, index) => {
+          const other = bq.answers[index];
+          return other?.question === pair.question && other.answer === pair.answer;
+        })
+      );
+    }
+
+    case "time-marker":
+      return a.createdAt === (b as typeof a).createdAt;
 
     case "assistant-meta": {
       const bm = b as typeof a;

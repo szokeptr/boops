@@ -1,4 +1,6 @@
 import { BotQuestionCard } from "./chat/BotQuestionCard";
+import { botBubbleColors } from "@t3tools/client-runtime/bot-avatar";
+import { specFor } from "@t3tools/shared/botAvatar";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -2940,6 +2942,11 @@ export default function ChatView(props: ChatViewProps) {
             onAdvance={onAdvanceActivePendingUserInputStable}
             onDismiss={onDismissUserInputStable}
             onChangeCustomAnswer={onChangeActivePendingUserInputCustomAnswer}
+            accent={
+              activeProject
+                ? botBubbleColors(activeProject.avatar ?? specFor(activeProject.title))
+                : null
+            }
           />
         )}
         {pendingHandoff === null ? null : (
@@ -3402,6 +3409,7 @@ export default function ChatView(props: ChatViewProps) {
                           {!composerMounted ? null : (
                             <ChatComposer
                               botName={isBotConversation ? activeProject?.title : undefined}
+                              botAvatar={isBotConversation ? activeProject?.avatar : undefined}
                               canOperateThread={canOperateThread}
                               reportedModelSelection={reportedModelSelection}
                               multipleModelSelections={multipleModelSelections}

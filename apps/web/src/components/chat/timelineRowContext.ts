@@ -1,5 +1,6 @@
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import type {
+  ProjectAvatar,
   ProviderApprovalDecision,
   RuntimeRequestId,
   WorktreeSetupSnapshot,
@@ -62,6 +63,8 @@ export interface TimelineRowSharedState {
   assistantName: string;
   /** Who the typing row is for, where several bots share a timeline. */
   typingName: string | null;
+  /** In a bot's own DM, its working face stands in for the typing dots. */
+  typingBot: { readonly name: string; readonly avatar: ProjectAvatar | null } | null;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   workspaceRoot: string | undefined;

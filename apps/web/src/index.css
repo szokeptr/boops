@@ -583,6 +583,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   animation: typing-dot 1.5s cubic-bezier(0.37, 0, 0.63, 1) infinite;
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    will-change: auto;
+  }
 }
 
 @keyframes typing-label-in {

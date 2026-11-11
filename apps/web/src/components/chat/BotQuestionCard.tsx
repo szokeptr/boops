@@ -1,7 +1,7 @@
 import type { PendingUserInputDraftAnswer } from "@t3tools/client-runtime/state/pending-user-input";
 import { type RuntimeRequestId, type ScopedThreadRef } from "@t3tools/contracts";
 import { CheckIcon } from "lucide-react";
-import { memo, useState, type ReactNode } from "react";
+import { memo, useState, type CSSProperties, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { markdownProseDirection, textDirection } from "~/textDirection";
@@ -11,6 +11,22 @@ import { Button } from "../ui/button";
 import { usePendingQuestionAnswering } from "./usePendingQuestionAnswering";
 
 const NO_SHORTCUT = () => null;
+
+/** The bot's colour, which a picked option wears. */
+interface BotAccent {
+  readonly background: string;
+  readonly foreground: string;
+}
+
+function accentStyle(accent: BotAccent | null | undefined): CSSProperties | undefined {
+  return accent
+    ? {
+        backgroundColor: accent.background,
+        borderColor: accent.background,
+        color: accent.foreground,
+      }
+    : undefined;
+}
 
 /**
  * A bot's question as a card in its chat, which hides the composer while it is open. A
@@ -28,6 +44,7 @@ export const BotQuestionCard = memo(function BotQuestionCard({
   onAdvance,
   onDismiss,
   onChangeCustomAnswer,
+  accent,
 }: {
   prompt: PendingUserInput;
   cwd: string | undefined;
@@ -41,6 +58,7 @@ export const BotQuestionCard = memo(function BotQuestionCard({
   onAdvance: () => void;
   onDismiss: (requestId: RuntimeRequestId) => void;
   onChangeCustomAnswer: (questionId: string, value: string) => void;
+  accent?: BotAccent | null;
 }) {
   const { progress, activeQuestion, responseDisabled, selectOption, isOptionSelected } =
     usePendingQuestionAnswering({
@@ -103,6 +121,7 @@ export const BotQuestionCard = memo(function BotQuestionCard({
                   )
                 }
                 selected={selected}
+                accent={accent}
                 disabled={responseDisabled}
                 pressed={selected}
                 onClick={() => selectOption(activeQuestion.id, optionValue)}
@@ -126,6 +145,7 @@ export const BotQuestionCard = memo(function BotQuestionCard({
               <span
                 aria-hidden
                 className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-primary bg-primary font-medium text-primary-foreground text-xs"
+                style={accentStyle(accent)}
               >
                 {optionBadge(activeQuestion.options.length)}
               </span>
@@ -196,9 +216,57 @@ function optionBadge(index: number) {
   return index < 26 ? String.fromCharCode(65 + index) : String(index + 1);
 }
 
+/** An answered question settles into a quiet card: what was asked and what you picked. */
+export function BotAnsweredQuestionCard({
+  answers,
+  accent,
+}: {
+  answers: ReadonlyArray<{
+    readonly id: string;
+    readonly question: string;
+    readonly answer: string;
+  }>;
+  accent: BotAccent | null;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Answered question"
+      data-bot-answered-question="true"
+      data-thread-find-text="true"
+      className="flex w-full max-w-5/6 flex-col gap-3 rounded-3xl border border-border/60 px-4 py-3 text-muted-foreground text-sm sm:w-fit sm:min-w-sm"
+    >
+      {answers.map(({ id, question, answer }) => (
+        <div key={id} className="flex flex-col gap-2">
+          {question ? (
+            <p className="whitespace-pre-wrap" dir={textDirection(question)}>
+              {question}
+            </p>
+          ) : null}
+          {answer ? (
+            <div className="flex items-center gap-3">
+              <span
+                aria-hidden
+                className="flex size-6 shrink-0 items-center justify-center rounded-lg border border-primary bg-primary text-primary-foreground opacity-60"
+                style={accentStyle(accent)}
+              >
+                <CheckIcon className="size-3.5" />
+              </span>
+              <span className="min-w-0 flex-1 whitespace-pre-wrap" dir={textDirection(answer)}>
+                {answer}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function QuestionOptionRow({
   badge,
   selected,
+  accent,
   disabled,
   pressed,
   onClick,
@@ -206,6 +274,7 @@ function QuestionOptionRow({
 }: {
   badge: ReactNode;
   selected: boolean;
+  accent?: BotAccent | null | undefined;
   disabled: boolean;
   pressed?: boolean;
   onClick: () => void;
@@ -230,6 +299,7 @@ function QuestionOptionRow({
             ? "border-primary bg-primary text-primary-foreground"
             : "bg-background text-muted-foreground",
         )}
+        style={selected ? accentStyle(accent) : undefined}
       >
         {badge}
       </span>

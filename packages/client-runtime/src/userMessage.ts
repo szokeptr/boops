@@ -215,6 +215,17 @@ export function resolveUserMessagePresentation(message: {
   };
 }
 
+const TIME_MARKER_GAP_MS = 60 * 60 * 1000;
+
+/** A conversation picks up again at its first entry, after an hour of quiet, or on a new day. */
+export function picksUpConversation(previous: Date | null, at: Date): boolean {
+  return (
+    previous === null ||
+    at.getTime() - previous.getTime() >= TIME_MARKER_GAP_MS ||
+    at.toDateString() !== previous.toDateString()
+  );
+}
+
 /**
  * A routine that ran and had nothing to say leaves no trace in a bot's chat. Its wake stays while
  * something from the run (a reply, a card, the typing row) follows it.
