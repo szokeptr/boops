@@ -8,6 +8,7 @@ import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 import { queuedRunEditBlockedReason } from "@t3tools/client-runtime/queued-run-edit";
 import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./chat/TimelineOverlays";
 import { usePasteToFocusComposer } from "./chat/usePasteToFocusComposer";
+import { useFocusComposerOnThreadOpen } from "./chat/useFocusComposerOnThreadOpen";
 import { configuredHostedAppUrl } from "../hostedPairing";
 import { announcedRun, isDetailBehindShell } from "./chat/threadActivityAnnouncement";
 import {
@@ -201,7 +202,7 @@ import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations"
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { isPreviewFocused } from "../lib/previewFocus";
-import { focusTerminalOnThreadEnter, getTerminalFocusOwner } from "../lib/terminalFocus";
+import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
@@ -2052,16 +2053,13 @@ export default function ChatView(props: ChatViewProps) {
     setTimelineAnchor,
   });
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- schedules a frame to focus the composer DOM element when a thread opens with the terminal closed
-  useEffect(() => {
-    if (embedded || !activeThread?.id || terminalUiState.terminalOpen) return;
-    const frame = window.requestAnimationFrame(() => {
-      focusComposerStable();
-    });
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, [activeThread?.id, embedded, focusComposerStable, terminalUiState.terminalOpen]);
+  useFocusComposerOnThreadOpen(
+    activeThreadRef,
+    workspaceLayoutElement,
+    !embedded,
+    terminalUiState.terminalOpen,
+    focusComposerStable,
+  );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window focus listener that refocuses the composer after the window regains focus
   useEffect(() => {
@@ -2521,14 +2519,6 @@ export default function ChatView(props: ChatViewProps) {
   ) {
     setTerminalUiLaunchContext(null);
   }
-
-  // Entering a thread with its drawer open focuses the drawer terminal; opening
-  // it from a handler requests focus there. A closed drawer leaves focus to the
-  // composer effect above.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the open drawer terminal when entering a thread
-  useEffect(() => {
-    if (activeThreadRef && !embedded) return focusTerminalOnThreadEnter(activeThreadRef);
-  }, [activeThreadRef, embedded]);
 
   const getShortcutContext = (eventTarget: EventTarget | null = document.activeElement) => ({
     terminalFocus: getTerminalFocusOwner() !== null,
