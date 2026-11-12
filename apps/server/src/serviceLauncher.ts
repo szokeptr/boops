@@ -21,6 +21,7 @@ import {
   decodeServiceLauncherChildMessage,
   isExactServiceVersion,
   parseServiceState,
+  serviceUnitLogPathOf,
   SERVICE_ENV_FILE,
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_LAUNCHER_PROTOCOL,
@@ -63,6 +64,48 @@ const runtimeSpawnArguments = (paths: ReturnType<typeof runtimePaths>) => ({
   command: paths.entryPath,
   args: ["serve"],
 });
+
+const SERVICE_LOG_MAX_BYTES = 10 * 1024 * 1024;
+const SERVICE_LOG_CHECK_INTERVAL_MS = 10 * 60_000;
+
+/** The unit or launch agent `boops service install` wrote, from the manager's environment. */
+function serviceUnitPath(env: NodeJS.ProcessEnv): string | undefined {
+  const unitName = env.T3_BOOT_SERVICE_UNIT?.trim();
+  const home = env.HOME?.trim();
+  if (!unitName || !home) return undefined;
+  if (unitName.endsWith(".plist")) return NodePath.join(home, "Library", "LaunchAgents", unitName);
+  const xdgConfigHome = env.XDG_CONFIG_HOME?.trim();
+  const configHome =
+    xdgConfigHome && NodePath.isAbsolute(xdgConfigHome)
+      ? xdgConfigHome
+      : NodePath.join(home, ".config");
+  return NodePath.join(configHome, "systemd", "user", unitName);
+}
+
+/**
+ * The service manager holds the log open for appending, so it is copied aside and emptied in
+ * place rather than renamed. The copy is best effort: on a full disk the truncate frees space.
+ */
+async function boundServiceLog(logPath: string): Promise<void> {
+  const size = await NodeFSP.stat(logPath).then(
+    (stats) => stats.size,
+    () => 0,
+  );
+  if (size <= SERVICE_LOG_MAX_BYTES) return;
+  const archivePath = `${logPath}.1`;
+  const pendingArchivePath = `${archivePath}.tmp`;
+  await NodeFSP.copyFile(logPath, pendingArchivePath)
+    .then(() => NodeFSP.rename(pendingArchivePath, archivePath))
+    .catch(() => NodeFSP.rm(pendingArchivePath, { force: true }).catch(() => undefined));
+  await NodeFSP.truncate(logPath, 0).catch(() => undefined);
+}
+
+async function serviceLogPath(env: NodeJS.ProcessEnv): Promise<string | undefined> {
+  const unitPath = serviceUnitPath(env);
+  if (unitPath === undefined) return undefined;
+  const contents = await NodeFSP.readFile(unitPath, "utf8").catch(() => undefined);
+  return contents === undefined ? undefined : serviceUnitLogPathOf(contents);
+}
 
 const DB_FILE_SUFFIXES = ["", "-wal", "-shm"] as const;
 const RESTORE_MARKER = ".restore-pending";
@@ -837,5 +880,15 @@ export async function main(): Promise<void> {
   const environment = await readServiceEnvironment(baseDir);
   const statePath = NodePath.join(baseDir, "runtime", SERVICE_STATE_FILE);
   const state = await readServiceState(statePath);
-  await new Launcher(baseDir, state, { environment }).run();
+  const logPath = await serviceLogPath(process.env);
+  let logTimer: NodeJS.Timeout | undefined;
+  if (logPath !== undefined) {
+    await boundServiceLog(logPath);
+    logTimer = setInterval(() => void boundServiceLog(logPath), SERVICE_LOG_CHECK_INTERVAL_MS).unref();
+  }
+  try {
+    await new Launcher(baseDir, state, { environment }).run();
+  } finally {
+    clearInterval(logTimer);
+  }
 }

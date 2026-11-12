@@ -19,9 +19,10 @@ import {
   SERVICE_LAUNCHER_PROTOCOL,
   SERVICE_RESTART_PENDING_FILE,
   serviceStateHasPendingUpdate,
+  serviceUnitLogPathOf,
 } from "./serviceProtocol.ts";
 
-it("reads the served Boops home back out of a rendered unit or plist", () => {
+it("reads the served Boops home and log back out of a rendered unit or plist", () => {
   const plan = (baseDir: string) => ({
     program: [`${baseDir}/runtime/versions/1.2.3/t3`, "__service-launcher"],
     baseDir,
@@ -37,6 +38,17 @@ it("reads the served Boops home back out of a rendered unit or plist", () => {
       BootService.renderBootServiceUnit(plan("/home/theo/T3 Data/100%")),
     ),
   ).toBe("/home/theo/T3 Data/100%");
+  expect(
+    serviceUnitLogPathOf(BootService.renderBootServiceUnit(plan("/home/theo/T3 Data/100%"))),
+  ).toBe("/home/theo/T3 Data/100%/userdata/logs/boot-service.log");
+  expect(
+    serviceUnitLogPathOf(
+      BootService.renderBootServicePlist(plan("/Users/theo/a&b"), {
+        homeDir: "/Users/theo",
+        environmentPath: "/usr/bin",
+      }),
+    ),
+  ).toBe("/Users/theo/a&b/userdata/logs/boot-service.log");
   expect(
     BootService.bootServiceBaseDirOf(
       BootService.renderBootServicePlist(plan("/Users/theo/a&b"), {

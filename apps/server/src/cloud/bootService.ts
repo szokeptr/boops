@@ -31,6 +31,8 @@ import {
   parseServiceState,
   serviceStateActiveVersion,
   serviceStateHasPendingUpdate,
+  unescapeXmlText,
+  unquoteSystemdValue,
   type ServiceState,
 } from "./serviceProtocol.ts";
 
@@ -53,15 +55,6 @@ function quoteSystemdValue(value: string): string {
     ? `"${escaped.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`
     : escaped;
 }
-
-const unquoteSystemdValue = (raw: string) =>
-  (raw.startsWith('"') && raw.endsWith('"')
-    ? raw.slice(1, -1).replaceAll('\\"', '"').replaceAll("\\\\", "\\")
-    : raw
-  ).replaceAll("%%", "%");
-
-const unescapeXmlText = (value: string) =>
-  value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
 
 export function bootServiceBaseDirOf(contents: string): string | undefined {
   const systemd = /^Environment=T3CODE_HOME=(.*)$/m.exec(contents)?.[1];

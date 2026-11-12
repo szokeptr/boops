@@ -20,6 +20,7 @@ import {
   readServiceState,
   writeServiceState,
 } from "./serviceLauncher.ts";
+import { renderBootServicePlist } from "./cloud/bootService.ts";
 import {
   compareExactServiceVersions,
   decodeServiceState,
@@ -173,6 +174,55 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
           EMPTY: "",
         });
       }),
+  );
+
+  it.effect("keeps the service manager's append log bounded when it starts", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-log-" });
+      const home = path.join(root, "home");
+      const unitPath = path.join(home, "Library", "LaunchAgents", "boops.plist");
+      const logPath = path.join(root, "userdata", "logs", "boot-service.log");
+      yield* fs.makeDirectory(path.dirname(unitPath), { recursive: true });
+      yield* fs.writeFileString(
+        unitPath,
+        renderBootServicePlist(
+          {
+            program: [path.join(root, "runtime", "versions", "1.0.0", "t3"), "__service-launcher"],
+            baseDir: root,
+            logPath,
+            unitPath,
+          },
+          { homeDir: home, environmentPath: "" },
+        ),
+      );
+      const oversized = 64 * 1024 * 1024;
+      yield* fs.makeDirectory(path.dirname(logPath), { recursive: true });
+      yield* writeSparseFile(logPath, oversized);
+      yield* writeFakeRuntime(
+        fs,
+        path,
+        path.join(root, "runtime", "versions", "1.0.0"),
+        "process.exit(0);\n",
+      );
+      yield* Effect.promise(() =>
+        writeServiceState(path.join(root, "runtime", "service-state.json"), {
+          protocol: SERVICE_LAUNCHER_PROTOCOL,
+          activeVersion: "1.0.0",
+        }),
+      );
+      vi.stubEnv("T3CODE_HOME", root);
+      vi.stubEnv("HOME", home);
+      vi.stubEnv("T3_BOOT_SERVICE_UNIT", "boops.plist");
+      yield* Effect.addFinalizer(() => Effect.sync(() => vi.unstubAllEnvs()));
+
+      const failure = yield* Effect.promise(() => main().then(() => undefined, (cause) => cause));
+      assert.include(String(failure), "exited unexpectedly");
+
+      const { size } = yield* fs.stat(logPath);
+      assert.isBelow(Number(size), oversized);
+    }),
   );
 
   it.effect("a fresh launcher clears a restart deferred by boops update", () =>
