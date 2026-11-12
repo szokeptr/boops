@@ -81,7 +81,6 @@ import Migration0075 from "./Migrations/075_SubagentDeliveryState.ts";
 import Migration0076 from "./Migrations/076_ProjectionProjectsPinArchive.ts";
 import Migration0077 from "./Migrations/077_RepairBooleanSettledOverride.ts";
 import Migration0078 from "./Migrations/078_DropOrchestrationEventCorrelationIndex.ts";
-
 import Migration0079 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
 import Migration0080 from "./Migrations/080_ProjectionProjectsBotIdentity.ts";
 import Migration0081 from "./Migrations/081_ProjectionProjectsBotAutonomy.ts";
@@ -98,6 +97,7 @@ import Migration0091 from "./Migrations/091_Rooms.ts";
 import Migration0092 from "./Migrations/092_SidebarLayouts.ts";
 import Migration0093 from "./Migrations/093_RoomListening.ts";
 import Migration0094 from "./Migrations/094_TurnItemConversationIndex.ts";
+import Migration0095 from "./Migrations/095_CommandReadIndexes.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -195,6 +195,7 @@ const migrationEntries = [
   [92, "SidebarLayouts", Migration0092],
   [93, "RoomListening", Migration0093],
   [94, "TurnItemConversationIndex", Migration0094],
+  [95, "CommandReadIndexes", Migration0095],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
