@@ -7,8 +7,13 @@ import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/shell";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { resolvePendingHandoff } from "@t3tools/client-runtime/handoff";
 import {
+  announcedRun,
+  isDetailBehindShell,
+} from "@t3tools/client-runtime/state/thread-activity-announcement";
+import {
   deriveProviderSubagentStatus,
   deriveResumableRunId,
+  deriveLatestThreadRun,
   deriveRunlessWorkStartedAt,
   deriveThreadActivityRun,
   deriveThreadRuntime,
@@ -338,6 +343,14 @@ export function useThreadComposerState() {
   const selectedThreadActivityRun = selectedThreadProjection
     ? deriveThreadActivityRun(selectedThreadProjection.projection)
     : (selectedThreadShell?.latestRun ?? null);
+  const selectedThreadAnnouncedRun = announcedRun(
+    selectedThreadActivityRun,
+    selectedThreadProjection?.projection.runs ?? [],
+  );
+  const selectedThreadDetailBehindShell = isDetailBehindShell(
+    selectedThreadProjection ? deriveLatestThreadRun(selectedThreadProjection.projection) : null,
+    selectedThreadShell?.latestRun ?? null,
+  );
 
   const isCompacting = (() => {
     const queuedCompact = selectedThreadQueuedMessages.some(
@@ -762,6 +775,8 @@ export function useThreadComposerState() {
     dismissFeedback,
     selectedThreadFeed,
     selectedThreadActivityRun,
+    selectedThreadAnnouncedRun,
+    selectedThreadDetailBehindShell,
     selectedThreadQueueCount,
     selectedThreadQueuedMessages,
     dispatchingQueuedMessageId,

@@ -19,6 +19,7 @@ import {
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
   EnvironmentId,
+  isProviderNativeSubagentThread,
   MessageId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -88,6 +89,7 @@ import {
   ThreadInspectorPreview,
   type ThreadInspectorPresentation,
 } from "./thread-inspector-preview";
+import { useThreadStatusAnnouncements } from "./useThreadStatusAnnouncements";
 import type { ThreadInspectorMode, ThreadInspectorTarget } from "./thread-inspector-navigation";
 
 function firstRouteParam(value: string | string[] | undefined): string | null {
@@ -349,6 +351,24 @@ function ThreadRouteContent(
   const selectedThreadCwd = member ? null : worktreeCwd;
   const composer = useThreadComposerState();
   const requests = useSelectedThreadRequests();
+  useThreadStatusAnnouncements({
+    threadKey:
+      selectedThread === null || isProviderNativeSubagentThread(selectedThread.source)
+        ? null
+        : scopedThreadKey(selectedThread.environmentId, selectedThread.id),
+    // A preview beside its host names its thread, so the two threads' statuses can't be confused.
+    subject:
+      props.inspectorPresentation !== undefined && "onMaximize" in props.inspectorPresentation
+        ? (selectedThread?.title ?? null)
+        : null,
+    approvalRequestId: requests.activePendingApproval?.requestId ?? null,
+    userInputRequestId: requests.activePendingUserInput?.requestId ?? null,
+    shellRequestId: selectedThread?.source.pendingRuntimeRequest?.id ?? null,
+    shellPendingUserInput: selectedThread?.hasPendingUserInput === true,
+    working: composer.activeWorkStartedAt !== null || composer.isCompacting,
+    run: composer.selectedThreadAnnouncedRun,
+    detailBehind: composer.selectedThreadDetailBehindShell,
+  });
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, "thread interrupt");
   const resumeThreadQueue = useAtomCommand(threadEnvironment.resumeThreadQueue, {
     label: "resume queue",
