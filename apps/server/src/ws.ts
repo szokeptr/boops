@@ -2401,7 +2401,7 @@ export const layerWsRpc = (
           }).pipe(
             Effect.andThen(
               memberContext === undefined
-                ? Effect.succeed(undefined)
+                ? Effect.undefined
                 : authorizeMemberLaunch(memberContext, input),
             ),
             Effect.flatMap((member) =>

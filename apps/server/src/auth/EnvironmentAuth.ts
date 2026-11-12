@@ -847,7 +847,7 @@ export const make = Effect.gen(function* () {
   > => {
     const memberId = memberIdFromSessionSubject(subject);
     return memberId === undefined
-      ? Effect.succeed(undefined)
+      ? Effect.undefined
       : members.getById(memberId).pipe(
           Effect.map(Option.getOrNull),
           Effect.mapError((cause) => new ServerAuthMemberReadError({ cause })),
