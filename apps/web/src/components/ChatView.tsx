@@ -74,6 +74,7 @@ import {
   RuntimeMode,
 } from "@t3tools/contracts";
 import {
+  canResumeThread,
   deriveProviderSubagentStatus,
   deriveReportedModelSelection,
   deriveResumableRunId,
@@ -799,6 +800,9 @@ export default function ChatView(props: ChatViewProps) {
     !isServerThread || serverProjection === null
       ? null
       : deriveResumableRunId(serverProjection, serverRuntime);
+  const canResume =
+    serverProjection !== null &&
+    canResumeThread(serverProjection, resumableRunId, hasHeldQueuedRuns);
   const parentSubagentThreadId =
     activeThread?.lineage.relationshipToParent === "subagent"
       ? activeThread.lineage.parentThreadId
@@ -2698,6 +2702,7 @@ export default function ChatView(props: ChatViewProps) {
     activeThread,
     resumableRunId,
     hasHeldQueuedRuns,
+    canResume,
     isSendBusy,
     isRevertingCheckpoint,
     threadDetailLoading,
@@ -3484,7 +3489,7 @@ export default function ChatView(props: ChatViewProps) {
                                 queuedRunEdit.isSaving ||
                                 isResuming
                               }
-                              canResume={resumableRunId !== null || hasHeldQueuedRuns}
+                              canResume={canResume}
                               isRevertingCheckpoint={isRevertingCheckpoint}
                               sendDisabledReason={
                                 !canOperateThread
