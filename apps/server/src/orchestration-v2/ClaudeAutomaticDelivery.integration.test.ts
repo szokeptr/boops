@@ -529,6 +529,7 @@ it.effect("applies an effort change to the running Claude query without waiting 
               callMcpTool: () => Effect.die("unexpected MCP tool call"),
               listPermissionRules: Effect.die("unexpected permission rules read"),
               stopTask: () => Effect.void,
+              setMcpServers: () => Effect.die("unexpected MCP server change"),
               interrupt: Effect.die("an effort change must not interrupt the turn"),
               close: Effect.void,
             }),

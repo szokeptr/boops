@@ -12085,7 +12085,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             modelSelection,
           }) {
             const live = yield* Ref.get(queryContext);
-            const selection = compileClaudeModelSelection(modelSelection, modelCatalog);
+            const selection = compileClaudeModelSelection(modelSelection);
             // A model change still waits for the next turn, which checks it against the turn's permission mode.
             if (
               live === null ||
