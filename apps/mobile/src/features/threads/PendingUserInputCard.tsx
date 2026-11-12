@@ -249,6 +249,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                 markdown={question.question}
                 environmentId={props.environmentId}
                 setDirection={setDirection}
+                preserveSoftBreaks
               />
               <View className="gap-2">
                 {question.options.map((option) => {
