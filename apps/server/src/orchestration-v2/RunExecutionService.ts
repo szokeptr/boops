@@ -54,6 +54,7 @@ import {
   makeProviderFailureTurnItem,
 } from "@t3tools/provider-core/server/failure";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
+import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import { userFacingDatabaseErrorMessage } from "./UserFacingErrors.ts";
 
@@ -603,6 +604,7 @@ export const layer: Layer.Layer<
   | McpAppModelContext.McpAppModelContext
   | PreviewAgentActivity.PreviewAgentActivity
   | TurnItemPositionStore.TurnItemPositionStoreV2
+  | ThreadCommandExecutor.ThreadCommandExecutor
 > = Layer.effect(
   RunExecutionServiceV2,
   Effect.gen(function* () {
@@ -617,6 +619,7 @@ export const layer: Layer.Layer<
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
     const finalizationObserver = yield* RunFinalizationService.RunFinalizationObserver;
     const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
+    const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
 
     const writeFinalRunEvents = Effect.fn("RunExecutionService.writeFinalRunEvents")(
       function* (input: {
@@ -1073,6 +1076,7 @@ export const layer: Layer.Layer<
           ReadonlySet<OrchestrationV2TurnItem["id"]>
         >(new Set(inheritedBackgroundTurnItemsById.keys()));
         const openRunOwnedSubagents = yield* Ref.make(emptyOpenRunOwnedSubagentProjection());
+        let rootTurnOwnershipChecked = false;
         const finalizeRootRun = Effect.fn("RunExecutionService.finalizeRootRun")(function* (
           terminal: ProviderTerminalEvent,
         ) {
@@ -1419,63 +1423,107 @@ export const layer: Layer.Layer<
                 DateTime.toEpochMillis(yield* DateTime.now),
               );
               if (deliveredEvent) {
-                const rootTerminalAlreadySeen = yield* Ref.get(rootTerminalSeen);
-                const isRootProviderThreadUpdate =
-                  event.type === "provider_thread.updated" &&
-                  event.providerThread.id === input.providerThread.id;
-                const nativeChildTurn =
-                  event.type === "provider_turn.updated" &&
-                  event.providerTurn.providerThreadId !== input.providerThread.id;
-                if (event.type === "provider_turn.updated" && !nativeChildTurn) {
-                  firstRootProviderTurnId ??= event.providerTurn.id;
-                }
-                const storedEvents = yield* providerEventIngestor.ingestNormalized({
-                  analyticsContext: nativeChildTurn
-                    ? {
-                        ...analyticsContext,
-                        origin: NATIVE_SUBAGENT_TURN_ORIGIN,
-                        segment: "native_child",
-                      }
-                    : {
-                        ...analyticsContext,
-                        segment:
-                          event.type === "provider_turn.updated" &&
-                          event.providerTurn.id !== firstRootProviderTurnId
-                            ? "continuation"
-                            : input.attempt.reason,
-                      },
-                  providerSessionId: input.providerSessionId,
-                  providerInstanceId: input.run.providerInstanceId,
-                  threadId: input.run.threadId,
-                  runId: input.run.id,
-                  nodeId: input.rootNode.id,
-                  event: deliveredEvent,
-                  ...(isRootProviderThreadUpdate
-                    ? rootTerminalAlreadySeen
+                const ingestDelivered = Effect.gen(function* () {
+                  const rootTerminalAlreadySeen = yield* Ref.get(rootTerminalSeen);
+                  const isRootProviderThreadUpdate =
+                    event.type === "provider_thread.updated" &&
+                    event.providerThread.id === input.providerThread.id;
+                  const nativeChildTurn =
+                    event.type === "provider_turn.updated" &&
+                    event.providerTurn.providerThreadId !== input.providerThread.id;
+                  if (event.type === "provider_turn.updated" && !nativeChildTurn) {
+                    firstRootProviderTurnId ??= event.providerTurn.id;
+                  }
+                  const storedEvents = yield* providerEventIngestor.ingestNormalized({
+                    analyticsContext: nativeChildTurn
                       ? {
-                          writeIfProviderThreadOwner: {
-                            providerThreadId: input.providerThread.id,
-                            runId: input.run.id,
-                            activeAttemptId: input.attempt.id,
-                            expectedLastRunOrdinal: input.run.ordinal,
-                          },
+                          ...analyticsContext,
+                          origin: NATIVE_SUBAGENT_TURN_ORIGIN,
+                          segment: "native_child",
                         }
                       : {
-                          writeIfRunCurrent: {
-                            runId: input.run.id,
-                            activeAttemptId: input.attempt.id,
-                            expectedStatus: "running" as const,
-                          },
-                        }
-                    : {}),
+                          ...analyticsContext,
+                          segment:
+                            event.type === "provider_turn.updated" &&
+                            event.providerTurn.id !== firstRootProviderTurnId
+                              ? "continuation"
+                              : input.attempt.reason,
+                        },
+                    providerSessionId: input.providerSessionId,
+                    providerInstanceId: input.run.providerInstanceId,
+                    threadId: input.run.threadId,
+                    runId: input.run.id,
+                    nodeId: input.rootNode.id,
+                    event: deliveredEvent,
+                    ...(isRootProviderThreadUpdate
+                      ? rootTerminalAlreadySeen
+                        ? {
+                            writeIfProviderThreadOwner: {
+                              providerThreadId: input.providerThread.id,
+                              runId: input.run.id,
+                              activeAttemptId: input.attempt.id,
+                              expectedLastRunOrdinal: input.run.ordinal,
+                            },
+                          }
+                        : {
+                            writeIfRunCurrent: {
+                              runId: input.run.id,
+                              activeAttemptId: input.attempt.id,
+                              expectedStatus: "running" as const,
+                            },
+                          }
+                      : {}),
+                  });
+                  storedEventCount = storedEvents.length;
+                  if (
+                    isRootProviderThreadUpdate &&
+                    rootTerminalAlreadySeen &&
+                    storedEventCount === 0
+                  ) {
+                    yield* Ref.set(providerThreadOwnerLost, true);
+                  }
                 });
-                storedEventCount = storedEvents.length;
-                if (
-                  isRootProviderThreadUpdate &&
-                  rootTerminalAlreadySeen &&
-                  storedEventCount === 0
-                ) {
-                  yield* Ref.set(providerThreadOwnerLost, true);
+                const startedRootTurn =
+                  event.type === "provider_turn.updated" &&
+                  event.providerTurn.runAttemptId === input.attempt.id &&
+                  event.providerTurn.providerThreadId === input.providerThread.id &&
+                  !isTerminalProviderTurnStatus(event.providerTurn.status) &&
+                  !rootTurnOwnershipChecked
+                    ? event.providerTurn
+                    : undefined;
+                const shouldStartProviderTurn = input.shouldStartProviderTurn;
+                if (startedRootTurn !== undefined && shouldStartProviderTurn) {
+                  rootTurnOwnershipChecked = true;
+                  // Stop plans under this lock from stored turns. Storing the first turn and rechecking
+                  // the attempt under it means Stop either saw the turn or already settled the run.
+                  const [, owned] = yield* threadCommands.withLock(
+                    input.run.threadId,
+                    Effect.all([
+                      ingestDelivered,
+                      shouldStartProviderTurn().pipe(Effect.orElseSucceed(() => true)),
+                    ]),
+                  );
+                  if (!owned) {
+                    yield* Ref.get(latestProviderThread).pipe(
+                      Effect.flatMap((providerThread) =>
+                        input.session.interruptTurn({
+                          providerThread,
+                          providerTurnId: startedRootTurn.id,
+                        }),
+                      ),
+                      Effect.catchCauseIf(
+                        (cause) => !Cause.hasInterruptsOnly(cause),
+                        (cause) =>
+                          Effect.logWarning(
+                            "orchestration V2 failed to interrupt a provider turn that started after Stop",
+                            { runId: input.run.id, cause },
+                          ),
+                      ),
+                      Effect.forkIn(scope),
+                    );
+                  }
+                } else {
+                  yield* ingestDelivered;
                 }
               } else if (
                 event.type === "turn_item.updated" &&
