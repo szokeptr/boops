@@ -1,5 +1,4 @@
 import {
-  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   ProviderDriverKind,
   type ModelSelection,
   type ServerProvider,
@@ -453,6 +452,11 @@ it.effect.each([false, true])("text generation preflight: exhausted=%s", (exhaus
       model: "chat-model",
       options: [{ id: "effort", value: "high" }],
     };
+    const threadDefault = {
+      instanceId: fallback,
+      model: "z-ai/glm-5.3-flash",
+      options: [{ id: "thinking", value: false }],
+    };
     const calls: ModelSelection[] = [];
     const instances: ProviderInstance[] = [primary, fallback].map((instanceId) => {
       const driver = ProviderDriverKind.make(instanceId === primary ? "codex" : "claudeAgent");
@@ -508,8 +512,12 @@ it.effect.each([false, true])("text generation preflight: exhausted=%s", (exhaus
           }),
           ServerSettings.layerTest({
             providerInstances: {
-              [fallback]: { driver: ProviderDriverKind.make("claudeAgent"), config: {} },
+              [fallback]: {
+                driver: ProviderDriverKind.make("claudeAgent"),
+                config: { customModels: [threadDefault.model] },
+              },
             },
+            defaultModelSelection: threadDefault,
           }),
           Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
             resolveLink: () => Effect.die("unused"),
@@ -526,13 +534,7 @@ it.effect.each([false, true])("text generation preflight: exhausted=%s", (exhaus
       }),
     ).toEqual({ title: "Generated title" });
     expect(calls).toEqual([
-      exhausted
-        ? {
-            instanceId: fallback,
-            model:
-              DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[ProviderDriverKind.make("claudeAgent")],
-          }
-        : selection,
+      exhausted ? threadDefault : selection,
     ]);
   }),
 );
