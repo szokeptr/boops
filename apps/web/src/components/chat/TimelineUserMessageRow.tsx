@@ -1447,7 +1447,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       threadRef={ctx.threadRef ?? undefined}
       skills={props.skills}
       mentionNames={ctx.mentionNames}
-      className="text-foreground"
+      className="text-message-foreground user-message-markdown"
       lineBreaks
       parseRawHtml={false}
       renderContextReference={props.renderContextReference}
