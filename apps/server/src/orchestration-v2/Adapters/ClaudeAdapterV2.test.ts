@@ -4994,6 +4994,20 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
+  // regression: #29750 Claude sets a goal only from a prompt that opens with /goal
+  it("keeps a /goal that mentions a skill as one native goal command", () => {
+    const message = ClaudeAdapterV2.makeClaudeUserMessage({
+      text: "/goal fix all the gaps.\ndecompile target.ipa into ./target/\n$review",
+      skills: new Map([["review", { path: "/home/me/.claude/skills/review/SKILL.md" }]]),
+    });
+    const content = message.message.content;
+    assert.isString(content);
+    assert.match(
+      content as string,
+      /^\/goal fix all the gaps\.\ndecompile target\.ipa into \.\/target\/\n/,
+    );
+  });
+
   // regression: #15475 MCP title arriving after the tool starts must survive to completion
   it.effect.each([
     { isError: false, title: "Check weather" },
