@@ -71,6 +71,11 @@ send and caps the decoded bytes and rows of the bounded snapshot and one older p
 agent turn, and of the cold-connect shell for a sidebar of settled threads and idle subagents. When
 clients gain an opt-in, add it to the test's client queries and give a fixture the data it saves.
 
+The server config has its own budget in `apps/server/src/ws.test.ts`. A client that asks for
+catalog digests and status deltas gets the provider list of its first config in under 1 KiB, for a
+provider with 250 slash commands and 200 skills. The lists load with the first cwd snapshot, and a
+machine refresh sends back an empty provider list.
+
 ## Event store and startup
 
 Sequence cursors must seek an index rather than scan retained history. The application sequence
