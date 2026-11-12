@@ -95,6 +95,10 @@ import { WorktreeToolkit } from "../../mcp/toolkits/worktree/tools.ts";
 import { ThreadToolkit } from "../../mcp/toolkits/thread/tools.ts";
 import { OrchestratorToolkit } from "../../mcp/toolkits/orchestrator/tools.ts";
 import { ClaudeExecutableFileCheck } from "../../provider/Drivers/ClaudeExecutable.ts";
+import {
+  BUNDLED_CLAUDE_MODEL_CATALOG,
+  scopeClaudeModelCatalog,
+} from "../../provider/ClaudeModelCatalog.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import type * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
@@ -367,6 +371,30 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
       OTHER: "kept",
       ENABLE_TOOL_SEARCH: "true",
     });
+  });
+
+  it("sends a custom model named like a Claude Code alias to the API unchanged", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: { instanceId: CLAUDE_TEST_MODEL_SELECTION.instanceId, model: "opus" },
+      modelCatalog: scopeClaudeModelCatalog(
+        BUNDLED_CLAUDE_MODEL_CATALOG,
+        CUSTOM_MODEL_CLAUDE_SETTINGS.customModels,
+      ),
+      nativeThreadId: "native-custom-alias",
+      resume: false,
+      cwd: "/workspace",
+      settings: CUSTOM_MODEL_CLAUDE_SETTINGS,
+    });
+    // Claude Code expands a bare alias to its own model unless ANTHROPIC_DEFAULT_<ALIAS>_MODEL overrides it.
+    const settingsEnv =
+      typeof options.settings === "object" && options.settings !== null
+        ? (options.settings as { env?: Record<string, string> }).env
+        : undefined;
+    const aliasOverride =
+      settingsEnv?.ANTHROPIC_DEFAULT_OPUS_MODEL ?? options.env?.ANTHROPIC_DEFAULT_OPUS_MODEL;
+    const requestedModel =
+      options.model === "opus" ? (aliasOverride ?? "claude-opus-5-5") : options.model;
+    assert.equal(requestedModel, "opus");
   });
 
   it("projects AskUserQuestion input with question text as the answer key", () => {
