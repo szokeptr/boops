@@ -9,7 +9,7 @@ import * as Schema from "effect/Schema";
 import { CLAUDE_SYNTHETIC_MODEL } from "../provider/Drivers/claudeUsage.ts";
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
 
-const USAGE_SCAN_CACHE_VERSION = 13 as const;
+const USAGE_SCAN_CACHE_VERSION = 14 as const;
 const SPEED_COMPATIBLE_SINCE_VERSION = 4;
 
 /**
@@ -17,8 +17,9 @@ const SPEED_COMPATIBLE_SINCE_VERSION = 4;
  * replace it, dropping saved usage for deleted transcripts. Separate files keep
  * the newer one; older files are removed once it is saved.
  */
-export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v13.json";
+export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v14.json";
 export const LEGACY_SCAN_CACHE_FILE_NAMES = [
+  "usage-scan-cache-v13.json",
   "usage-scan-cache-v12.json",
   "usage-scan-cache-v11.json",
   "usage-scan-cache-v10.json",
@@ -295,17 +296,19 @@ export function decodeScanCache(
       continue;
     }
     // Keep history for deleted rollouts, but re-parse incompatible reducer state.
-    // v13 uses Codex request ledgers, including compaction spending omitted by context snapshots.
-    // v10 adds Claude advisor calls; v12 adds Claude 1-hour cache writes.
+    // v12 adds Claude 1-hour cache writes; v13 uses Codex request ledgers.
+    // v14 repairs skipped Codex requests whose counters rewound; clean v13 entries stay served.
     const legacy =
       (entry.p === "claude" && version < 12) ||
-      (format.state !== undefined && (version < 6 || (entry.p === "codex" && version < 13)));
+      (format.state !== undefined &&
+        (version < 6 ||
+          (entry.p === "codex" && (version < 13 || (version < 14 && malformedRecords > 0)))));
     // A corrupt state disqualifies the entry: resuming with it would attach
     // appended usage to the wrong model or replay fork-copied history.
     if (!legacy && !isValidState.get(entry.p)?.(entry.cs)) continue;
-    // Before v11 a clean scan could end past an interrupted request whose usage its state dropped,
-    // so a grown file re-parses whole instead of resuming.
-    const resumable = !legacy && !(entry.p === "codex" && version < 11);
+    // Before v14 the state lacks the latest snapshot time that keeps a re-emitted older snapshot
+    // from billing twice, so a grown file re-parses whole instead of resuming.
+    const resumable = !legacy && !(entry.p === "codex" && version < 14);
 
     const provider = entry.p;
     const records = decodeRecords(entry.r, provider);
