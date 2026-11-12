@@ -159,6 +159,7 @@ describe("command permissions", () => {
   // Connections hold third-party credentials and decide what bots reach, as settings do.
   it.effect.each([
     WS_METHODS.serverCheckOtlpEndpoint,
+    WS_METHODS.serverCheckSecretSource,
     WS_METHODS.connectorsStartOAuth,
     WS_METHODS.connectorsAddConnection,
     WS_METHODS.connectorsRename,
