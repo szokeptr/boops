@@ -157,7 +157,8 @@ describe("mobile composer context", () => {
     expect(restore("deleted", initial)).toBeUndefined();
     expect(restore(source)?.records).toEqual(initial.records);
     expect(restore("deleted")?.records ?? []).toEqual([]);
-    expect(createComposerContextHistory()(source)?.records).toEqual([]);
+    // Typing with no context must leave none, or plain answers read as "added context".
+    expect(createComposerContextHistory()(source)).toBeUndefined();
   });
   it("keeps exact source positions and repeated references alongside existing native tokens", () => {
     const reference = formatComposerContextReference(terminal);
@@ -254,6 +255,7 @@ describe("mobile composer context", () => {
       referencedComposerContext(formatComposerContextReference(annotation), context)?.records,
     ).toEqual([annotation, image]);
     expect(referencedComposerContext("plain text", context)).toBeUndefined();
+    expect(referencedComposerContext("plain text", { version: 1, records: [] })).toBeUndefined();
   });
 
   it("reidentifies pasted records and their screenshot binding without changing repeated-reference identity", () => {
