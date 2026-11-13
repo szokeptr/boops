@@ -319,6 +319,10 @@ interface ServerTab {
   /** A read queued behind `desktopViewportRead`, shared by every caller that waits for it. */
   desktopViewportNext: Promise<ServerTab["desktopViewport"]> | null;
   loading: boolean;
+  /** The renderer crash this page died of, or the one the page it replaced died of. */
+  crash: { readonly url: string; readonly code: number; readonly description: string } | undefined;
+  /** What Reload loads after a crash; the reported URL is shortened and drops data payloads. */
+  crashedUrl: string | undefined;
   closing: boolean;
   recording: Recording | null;
   initialNavigation: Promise<void> | null;
@@ -523,6 +527,51 @@ const make = Effect.gen(function* () {
     },
   });
 
+  // Playwright cannot reload a crashed page, so a fresh page takes over its tab.
+  const reopenCrashedTab = async (tab: ServerTab) => {
+    if (tab.desktop) return dropTab(tab, true);
+    const key = tabKey(tab.threadId, tab.tabId);
+    if (tabs.get(key) !== tab) return;
+    const crash = {
+      url: ServerBrowserPage.withoutDataPayload(tab.page.url()).slice(0, 2048),
+      code: -2,
+      description: "Page crashed",
+    };
+    tab.crash = crash;
+    const reopening = (async () => {
+      // The session must name the crash before a new page reads it, or it would load the URL again.
+      await runPromise(
+        manager
+          .reportStatus({
+            threadId: tab.threadId,
+            tabId: tab.tabId,
+            serverControlled: true,
+            navStatus: { _tag: "LoadFailed", title: "", ...crash },
+            canGoBack: false,
+            canGoForward: false,
+          })
+          .pipe(Effect.ignore),
+      );
+      dropTab(tab, false, true);
+      // A context that is still closing would take the new page down with it.
+      if (tab.isolatedContext) await tab.page.context().close().catch(constVoid);
+      const { sessions } = await runPromise(manager.list({ threadId: tab.threadId }));
+      const snapshot = sessions.find(
+        (session) => session.tabId === tab.tabId && session.runtime === "server",
+      );
+      if (!snapshot) {
+        throw new ServerBrowserTabNotFoundError({ threadId: tab.threadId, tabId: tab.tabId });
+      }
+      return createTab(snapshot, tab.page.url());
+    })().finally(() => {
+      pendingTabs.delete(key);
+      closedPendingTabs.delete(key);
+    });
+    // Reserved before the dead page leaves, so a lookup in between waits for its replacement.
+    pendingTabs.set(key, { agentId: tab.control.agentId, promise: reopening });
+    await reopening.catch(constVoid);
+  };
+
   const dialogStatus = (tab: ServerTab) =>
     tab.dialog
       ? {
@@ -575,6 +624,8 @@ const make = Effect.gen(function* () {
       .send("Page.getNavigationHistory")
       .catch(() => null)
       .then((history) => {
+        // A status the dead page still had in flight must not replace the crash.
+        if (tab.crash) return;
         const index = history?.currentIndex ?? 0;
         const count = history?.entries.length ?? 0;
         runFork(
@@ -732,14 +783,15 @@ const make = Effect.gen(function* () {
 
   const sessionOpen = (tab: ServerTab) => !closedSessions.has(tabKey(tab.threadId, tab.tabId));
 
-  const dropTab = (tab: ServerTab, closeSession: boolean) => {
+  const dropTab = (tab: ServerTab, closeSession: boolean, reopening = false) => {
     const key = tabKey(tab.threadId, tab.tabId);
     if (tabs.get(key) !== tab) return;
     tabs.delete(key);
     tab.closing = true;
     clearAbortedNavigation(tab);
     // A desktop page outlives the connection unless its session closed with it.
-    const end = tab.desktop && !closeSession && sessionOpen(tab) ? "reconnect" : "gone";
+    const end =
+      (tab.desktop || reopening) && !closeSession && sessionOpen(tab) ? "reconnect" : "gone";
     for (const viewer of tab.viewers) viewer.push({ _tag: end });
     void tab.control.close().catch(constVoid);
     if (tab.desktop) void tab.desktop.close().catch(constVoid);
@@ -785,10 +837,13 @@ const make = Effect.gen(function* () {
     }
   };
 
-  const createTab = async (snapshot: PreviewSessionSnapshot): Promise<ServerTab> => {
+  const createTab = async (
+    snapshot: PreviewSessionSnapshot,
+    crashedUrl?: string,
+  ): Promise<ServerTab> => {
     const opened: Array<() => Promise<void>> = [];
     try {
-      return await setUpTab(snapshot, opened);
+      return await setUpTab(snapshot, opened, crashedUrl);
     } catch (cause) {
       // An unpublished tab is in no list, so nothing else would ever close it.
       for (const close of opened.reverse()) await close().catch(constVoid);
@@ -799,6 +854,7 @@ const make = Effect.gen(function* () {
   const setUpTab = async (
     snapshot: PreviewSessionSnapshot,
     opened: Array<() => Promise<void>>,
+    crashedUrl: string | undefined,
   ): Promise<ServerTab> => {
     const adopted = adoptedPages.get(tabKey(snapshot.threadId, snapshot.tabId));
     adoptedPages.delete(tabKey(snapshot.threadId, snapshot.tabId));
@@ -878,6 +934,16 @@ const make = Effect.gen(function* () {
       desktopViewportRead: Promise.resolve(null),
       desktopViewportNext: null,
       loading: false,
+      // The page a crash left behind is blank; the session still names what crashed.
+      crash:
+        !desktop && !adopted && snapshot.navStatus._tag === "LoadFailed"
+          ? {
+              url: snapshot.navStatus.url,
+              code: snapshot.navStatus.code,
+              description: snapshot.navStatus.description,
+            }
+          : undefined,
+      crashedUrl,
       closing: false,
       recording: null,
       recordingStart: null,
@@ -914,6 +980,8 @@ const make = Effect.gen(function* () {
       navigationGenerations.set(request, ++tab.navigationGeneration);
       clearAbortedNavigation(tab);
       tab.loading = true;
+      tab.crash = undefined;
+      tab.crashedUrl = undefined;
       report(tab, {
         _tag: "Loading",
         url: ServerBrowserPage.withoutDataPayload(request.url()).slice(0, 2048),
@@ -1001,14 +1069,13 @@ const make = Effect.gen(function* () {
     updateFileChooserInterception(tab);
     // Popups become tabs and keep `window.opener`, so sign-in popups can report back.
     page.on("popup", (popup) => void adoptPopup(tab, popup));
-    // Playwright cannot reload a crashed page, so it must leave the tab list.
     const key = tabKey(tab.threadId, tab.tabId);
     if (closedPendingTabs.delete(key)) {
       await control.close().catch(constVoid);
       throw new ServerBrowserTabNotFoundError({ threadId: tab.threadId, tabId: tab.tabId });
     }
     page.on("close", () => dropTab(tab, true));
-    page.on("crash", () => dropTab(tab, true));
+    page.on("crash", () => reopenCrashedTab(tab));
     tabs.set(key, tab);
     reportLiveTabs();
     // A desktop page navigates on its own and can finish loading before these listeners attach.
@@ -2454,6 +2521,12 @@ const make = Effect.gen(function* () {
         );
         return;
       case "reload":
+        if (tab.crash) {
+          tab.control.trackUntilHandoff(
+            tab.page.goto(tab.crashedUrl ?? tab.crash.url, VIEWER_NAVIGATION_OPTIONS),
+          );
+          return;
+        }
         if (message.ignoreCache === true) {
           await session.send("Page.reload", { ignoreCache: true });
           return;
