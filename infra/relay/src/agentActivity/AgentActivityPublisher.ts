@@ -80,16 +80,6 @@ const make = Effect.gen(function* () {
         })
       : null;
     const messageState = input.deliveryUser.notificationsEnabled ? input.messageState : null;
-    const notificationOnlyAggregate =
-      input.deliveryUser.notificationsEnabled &&
-      !input.deliveryUser.liveActivitiesEnabled &&
-      input.state !== null
-        ? makeAggregateState({
-            activeStates: isTerminalPhase(input.state) ? [] : [input.state],
-            terminalState: isTerminalPhase(input.state) ? input.state : null,
-            nowMs: input.nowMs,
-          })
-        : null;
     const targets = yield* liveActivities.listTargets({ userId: input.deliveryUser.userId });
     const deliveriesByTarget = yield* Effect.forEach(
       targets,
@@ -102,14 +92,9 @@ const make = Effect.gen(function* () {
             apnsDeliveries.sendForTarget({
               target,
               aggregate: liveActivityAggregate,
+              state: input.deliveryUser.notificationsEnabled ? input.state : null,
               nowMs: input.nowMs,
             }),
-            notificationOnlyAggregate === null
-              ? Effect.succeed(null)
-              : apnsDeliveries.sendPushNotificationForTarget({
-                  target,
-                  aggregate: notificationOnlyAggregate,
-                }),
             messageState === null
               ? Effect.succeed(null)
               : apnsDeliveries.sendMessageForTarget({
@@ -118,7 +103,7 @@ const make = Effect.gen(function* () {
                   nowMs: input.nowMs,
                 }),
           ],
-          { concurrency: 3 },
+          { concurrency: 2 },
         );
       }),
       { concurrency: 4 },

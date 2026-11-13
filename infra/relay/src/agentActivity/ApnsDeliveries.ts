@@ -20,13 +20,14 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import {
+  isExpiredAgentActivityState,
   messageNotificationForState,
   notificationForActivity,
   ringsAsMessage,
   sanitizeAgentActivityAggregateState,
   sanitizeApnsNotificationPayload,
 } from "./agentActivityPayloads.ts";
-import { makeAggregateState } from "./agentActivityAggregate.ts";
+import { aggregateRowForState, makeAggregateState } from "./agentActivityAggregate.ts";
 import * as Apns from "./ApnsClient.ts";
 import {
   ApnsDeliveryJobLiveActivityAggregateMissing,
@@ -195,25 +196,25 @@ function withoutMessageRows(
   return { ...aggregate, activities: aggregate.activities.filter((row) => !ringsAsMessage(row)) };
 }
 
-// Restart replays of old completions must not ring again.
-
-function notificationForAggregate(input: {
+// Aggregate rows may belong to unrelated threads; fallback pushes use the published state.
+function notificationForState(input: {
   readonly target: LiveActivities.TargetRow;
-  readonly aggregate: RelayAgentActivityAggregateState | null;
+  readonly state?: RelayAgentActivityState | null;
   readonly nowMs: number;
 }): ApnsNotificationPayload | null {
-  if (!input.target.push_token || input.aggregate === null) {
+  const state = input.state;
+  if (!input.target.push_token || !state || isExpiredAgentActivityState(state, input.nowMs)) {
     return null;
   }
   const preferences = parsePreferences(input.target.preferences_json);
   if (!preferences?.notificationsEnabled) {
     return null;
   }
-  const activity = input.aggregate.activities[0];
-  if (!activity || ringsAsMessage(activity)) {
+  const activity = aggregateRowForState(state);
+  if (ringsAsMessage(activity)) {
     return null;
   }
-  if (!shouldAlertForActivity({ ...activity, preferences, nowMs: input.nowMs })) return null;
+  if (!shouldAlertForActivity({ ...state, preferences, nowMs: input.nowMs })) return null;
   return notificationForActivity(activity);
 }
 
@@ -289,6 +290,7 @@ function chooseLiveActivityDelivery(input: {
 function chooseDelivery(input: {
   readonly target: LiveActivities.TargetRow;
   readonly aggregate: RelayAgentActivityAggregateState | null;
+  readonly state?: RelayAgentActivityState | null;
   readonly nowMs: number;
   readonly replay?: boolean;
 }): ChosenDelivery | null {
@@ -299,7 +301,7 @@ function chooseDelivery(input: {
   if (liveActivityDelivery) {
     return liveActivityDelivery;
   }
-  const notification = input.replay ? null : notificationForAggregate(input);
+  const notification = input.replay ? null : notificationForState(input);
   return notification && input.target.push_token
     ? {
         kind: "push_notification",
@@ -494,12 +496,9 @@ export class ApnsDeliveries extends Context.Service<
     readonly sendForTarget: (input: {
       readonly target: LiveActivities.TargetRow;
       readonly aggregate: RelayAgentActivityAggregateState | null;
+      readonly state?: RelayAgentActivityState | null;
       readonly nowMs: number;
       readonly replay?: boolean;
-    }) => Effect.Effect<RelayDeliveryResult | null, ApnsDeliveryError>;
-    readonly sendPushNotificationForTarget: (input: {
-      readonly target: LiveActivities.TargetRow;
-      readonly aggregate: RelayAgentActivityAggregateState | null;
     }) => Effect.Effect<RelayDeliveryResult | null, ApnsDeliveryError>;
     /** A bot reply as a plain alert push, whatever the device's Live Activity is doing. */
     readonly sendMessageForTarget: (input: {
@@ -1031,26 +1030,6 @@ const make = Effect.gen(function* () {
     sendLiveActivity,
     sendPushNotification,
     processSignedJob,
-    sendPushNotificationForTarget: Effect.fnUntraced(function* (input) {
-      if (!config.apns) return null;
-      const now = yield* DateTime.now;
-      const notification = notificationForAggregate({
-        target: input.target,
-        aggregate: input.aggregate,
-        nowMs: now.epochMilliseconds,
-      });
-      const token = input.target.push_token;
-      return yield* notification && token
-        ? deliveryQueue.enqueuePushNotification({
-            userId: input.target.user_id,
-            deviceId: input.target.device_id,
-            token,
-            bundleId: input.target.bundle_id,
-            apsEnvironment: input.target.aps_environment,
-            notification,
-          })
-        : Effect.succeed(null);
-    }),
     sendMessageForTarget: Effect.fnUntraced(function* (input) {
       const token = input.target.push_token;
       if (!config.apns || !token) return null;
@@ -1078,12 +1057,7 @@ const make = Effect.gen(function* () {
     }),
     sendForTarget: Effect.fnUntraced(function* (input) {
       if (!config.apns) return null;
-      const delivery = chooseDelivery({
-        target: input.target,
-        aggregate: input.aggregate,
-        nowMs: input.nowMs,
-        replay: input.replay ?? false,
-      });
+      const delivery = chooseDelivery(input);
       if (!delivery) {
         return null;
       }
@@ -1098,13 +1072,7 @@ const make = Effect.gen(function* () {
         });
         return result;
       }
-      const notification = input.replay
-        ? null
-        : notificationForAggregate({
-            target: input.target,
-            aggregate: input.aggregate,
-            nowMs: input.nowMs,
-          });
+      const notification = input.replay ? null : notificationForState(input);
       const heroRow = delivery.aggregate?.activities[0];
       // Use the end alert only when no companion notification will ring, preserving feedback for Live-Activity-only users.
       const alert = input.replay
