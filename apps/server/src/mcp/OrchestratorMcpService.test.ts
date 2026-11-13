@@ -3592,18 +3592,26 @@ describe("OrchestratorMcpService thread list", () => {
     shell("thread:a-awake", "project:a", false),
     shell("thread:b-snoozed", "project:b", true),
   ];
+  const shellRequests: Array<ReadonlyArray<ThreadId>> = [];
   const service = layerOrchestratorService.pipe(
     Layer.provide(
       Layer.mergeAll(
         NodeServices.layer,
         NodeCrypto.layer,
         Layer.mock(ThreadManagementService.ThreadManagementService)({
-          listProjectThreads: (input) =>
+          listProjectThreadEntries: (input) =>
             Effect.succeed(
               shells.filter(
                 (thread) => input.projectId === undefined || thread.projectId === input.projectId,
               ),
             ),
+          getShellSnapshot: (options) => {
+            const threadIds = options?.threadIds ?? shells.map((thread) => thread.id);
+            shellRequests.push(threadIds);
+            return Effect.succeed({
+              threads: shells.filter((thread) => threadIds.includes(thread.id)),
+            } as never);
+          },
         }),
         ServerSettings.layerTest(),
         Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
@@ -3637,6 +3645,22 @@ describe("OrchestratorMcpService thread list", () => {
           ["thread:b-snoozed", "project:b"],
         ],
       );
+    }).pipe(Effect.provide(service)),
+  );
+
+  it.effect("builds shells only for the threads on the page", () =>
+    Effect.gen(function* () {
+      const mcp = yield* OrchestratorMcpService.OrchestratorMcpService;
+      shellRequests.length = 0;
+      const listed = yield* mcp.listThreads(client, {
+        projectId: ProjectId.make("project:a"),
+        limit: 1,
+      });
+      assert.deepStrictEqual(
+        [listed.threads.map((thread) => thread.threadId), listed.total, listed.nextCursor],
+        [["thread:a-snoozed"], 2, 1],
+      );
+      assert.deepStrictEqual(shellRequests, [[ThreadId.make("thread:a-snoozed")]]);
     }).pipe(Effect.provide(service)),
   );
 });

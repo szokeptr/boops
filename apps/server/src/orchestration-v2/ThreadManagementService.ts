@@ -3,6 +3,7 @@ import type {
   OrchestrationV2SearchThreadResult,
 } from "@t3tools/contracts";
 import type {
+  ActiveThreadListEntry,
   ProjectionRecordField,
   ProjectionRecordFilter,
   ProjectionRecords,
@@ -436,6 +437,11 @@ export interface ThreadManagementServiceShape {
     readonly projectId?: ProjectId | undefined;
     readonly includeSubagents: boolean;
   }) => Effect.Effect<ReadonlyArray<OrchestrationV2ThreadShell>, ThreadManagementError>;
+  /** Like `listProjectThreads`, without building shells: what listings filter and order by. */
+  readonly listProjectThreadEntries: (input: {
+    readonly projectId?: ProjectId | undefined;
+    readonly includeSubagents: boolean;
+  }) => Effect.Effect<ReadonlyArray<ActiveThreadListEntry>, ThreadManagementError>;
   readonly sendToThread: (
     input: ThreadManagementSendInput,
   ) => Effect.Effect<ThreadManagementSendResult, ThreadManagementFailure>;
@@ -831,6 +837,30 @@ const make = Effect.gen(function* () {
             ),
         ),
       );
+
+  const listProjectThreadEntries: ThreadManagementServiceShape["listProjectThreadEntries"] = (input) =>
+    orchestrator.listActiveThreads(input.projectId).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ThreadManagementProjectThreadsListError({
+            projectId: input.projectId,
+            cause,
+          }),
+      ),
+      Effect.map((threads) =>
+        threads
+          .filter((thread) =>
+            input.includeSubagents
+              ? thread.lineage.sideChat !== true
+              : isListedThreadLineage(thread.lineage),
+          )
+          .toSorted(
+            (left, right) =>
+              DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt) ||
+              right.id.localeCompare(left.id),
+          ),
+      ),
+    );
 
   const sendToThread: ThreadManagementServiceShape["sendToThread"] = Effect.fn(
     "ThreadManagementService.sendToThread",
@@ -1607,6 +1637,7 @@ const make = Effect.gen(function* () {
       },
     ),
     listProjectThreads,
+    listProjectThreadEntries,
     sendToThread,
     assertProviderInstanceEnabled,
     isProviderInstanceEnabledForProject,
