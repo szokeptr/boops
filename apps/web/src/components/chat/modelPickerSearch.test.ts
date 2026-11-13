@@ -73,6 +73,7 @@ const catalog: CatalogModel[] = [
   ...instanceModels("claudeAgent", "Claude", [
     "Claude Opus 5.5",
     "Claude Sonnet 5.5",
+    "Claude Fable 5.2",
     "Claude Fable 5.1",
     "Claude Fable 5",
     "Claude Opus 5",
