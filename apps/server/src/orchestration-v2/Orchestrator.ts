@@ -708,7 +708,10 @@ function mayStartSubagentFollowup(
 ): boolean {
   if (command.routine !== undefined || command.restartContinuationOfRunId !== undefined)
     return false;
-  if (command.notification !== undefined) return command.notification.source.kind !== "monitor";
+  if (command.notification !== undefined)
+    return (
+      command.notification.source.kind !== "monitor" || command.notification.outcome !== "updated"
+    );
   return (
     command.createdBy === "user" ||
     command.creationSource === "mcp" ||
