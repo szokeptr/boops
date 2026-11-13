@@ -880,7 +880,11 @@ function ThreadDetailBody(
       props.activeWorkStartedAt !== null &&
       contentPresentationKind === "ready"
     ) {
-      return { kind: "working", startedAt: props.activeWorkStartedAt };
+      return {
+        kind: "working",
+        environmentId: props.environmentId,
+        startedAt: props.activeWorkStartedAt,
+      };
     }
     if (!directMessage && pendingBackgroundWork !== null && contentPresentationKind === "ready") {
       return {
