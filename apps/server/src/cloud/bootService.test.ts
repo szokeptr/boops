@@ -131,11 +131,14 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     linger: string;
     enabled: boolean;
     active: boolean;
+    /** systemd refuses starts until `reset-failed`, as after `StartLimitBurst` trips. */
+    startLimitHit: boolean;
   } = {
     failCommand: undefined,
     linger: "yes",
     enabled: true,
     active: true,
+    startLimitHit: false,
   };
   const runner = ProcessRunner.ProcessRunner.of({
     run: Effect.fn("test.run_boot_service_command")(function* (
@@ -145,11 +148,17 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
       commands.push(command);
       invocations.push(input);
       timeouts.set(command, input.timeout);
-      const failed = command === control.failCommand;
+      if (command === "systemctl --user reset-failed boops.service") control.startLimitHit = false;
+      const refusedStart = control.startLimitHit && command.startsWith("systemctl --user restart ");
+      // `--no-block` only queues the job, so systemd reports success even when it refuses it.
+      const failed =
+        command === control.failCommand ||
+        (refusedStart && command === "systemctl --user restart boops.service");
       if (!failed && command === "loginctl enable-linger --no-ask-password 501")
         control.linger = "yes";
       if (!failed && command === "systemctl --user enable boops.service") control.enabled = true;
-      if (!failed && command === "systemctl --user restart boops.service") control.active = true;
+      if (!refusedStart && !failed && command.startsWith("systemctl --user restart "))
+        control.active = true;
       // A timed-out stop may still stop the service.
       if (command === "systemctl --user stop boops.service") control.active = false;
       if (
@@ -504,7 +513,11 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
           ),
         ).toEqual(
           platform === "linux"
-            ? ["systemctl --user stop boops.service", "systemctl --user restart boops.service"]
+            ? [
+                "systemctl --user stop boops.service",
+                "systemctl --user reset-failed boops.service",
+                "systemctl --user restart boops.service",
+              ]
             : [
                 "launchctl bootout --wait gui/501/me.szokeptr.boops.service",
                 `launchctl bootstrap gui/501 ${plan.unitPath}`,
@@ -666,6 +679,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
         "systemctl --user is-active boops.service",
         "systemctl --user stop boops.service",
         "repair",
+        "systemctl --user reset-failed boops.service",
         "systemctl --user restart boops.service",
       ]);
       expect(control.active).toBe(true);
@@ -778,12 +792,32 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
         expect(commands).toEqual([
           "systemctl --user daemon-reload",
           "systemctl --user enable boops.service",
+          "systemctl --user reset-failed boops.service",
           "systemctl --user restart --no-block boops.service",
         ]);
         expect(outcome).toBe("queued");
         expect(yield* fs.readFileString(statePath)).toBe(state);
         expect(yield* fs.readFileString(marker)).toBe("1.2.3\n");
       }),
+  );
+
+  // regression: #36319
+  it.effect("starts a service whose systemd start limit tripped after repairing it", () =>
+    Effect.gen(function* () {
+      const { service, control, makeService } = yield* makeHarness();
+      yield* service.install();
+      control.active = false;
+      control.startLimitHit = true;
+
+      yield* service.install();
+      expect(control.active).toBe(true);
+
+      control.active = false;
+      control.startLimitHit = true;
+      const inside = yield* makeService(undefined, "1.2.3", undefined, true);
+      expect(yield* inside.restart).toBe("queued");
+      expect(control.active).toBe(true);
+    }),
   );
 
   it.effect("restarts an installed service when repair fails", () =>
@@ -802,6 +836,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       ).toEqual([
         "systemctl --user stop boops.service",
         "systemctl --user daemon-reload",
+        "systemctl --user reset-failed boops.service",
         "systemctl --user restart boops.service",
       ]);
     }),
@@ -835,6 +870,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
           ),
         ).toEqual([
           "systemctl --user stop boops.service",
+          "systemctl --user reset-failed boops.service",
           "systemctl --user restart boops.service",
         ]);
       }
