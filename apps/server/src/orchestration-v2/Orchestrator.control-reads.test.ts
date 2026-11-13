@@ -2184,6 +2184,19 @@ it.effect("queued-message commands read a long thread's history without walking 
       }),
     );
     walks.push(...(yield* historyWalks("queued-message.promote-to-steer")));
+    yield* dispatch("cancelled");
+    const cancelledRun = (yield* projections.getThreadProjection(threadId)).runs.at(-1)!;
+    assert.equal(cancelledRun.status, "queued");
+    statements.splice(0);
+    yield* observed(
+      orchestrator.dispatch({
+        type: "queued-run.cancel",
+        commandId: CommandId.make("cancel:long-history-reads"),
+        threadId,
+        runId: cancelledRun.id,
+      }),
+    );
+    walks.push(...(yield* historyWalks("queued-run.cancel")));
     yield* observed(
       orchestrator.dispatch({
         type: "run.interrupt",
@@ -2197,7 +2210,14 @@ it.effect("queued-message commands read a long thread's history without walking 
     const after = yield* projections.getThreadProjection(threadId);
     assert.deepEqual(
       after.messages.filter((message) => message.role === "user").map((message) => message.text),
-      ["Request 1", "Request 2", "Request 3", "/compact", "Request queued, edited"],
+      [
+        "Request 1",
+        "Request 2",
+        "Request 3",
+        "/compact",
+        "Request cancelled",
+        "Request queued, edited",
+      ],
     );
     assert.deepEqual(
       after.providerThreads.map((providerThread) => providerThread.id),
