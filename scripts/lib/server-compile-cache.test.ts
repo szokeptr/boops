@@ -25,6 +25,25 @@ it.each(["x64", "arm64"])("skips prepared bytecode generation on Linux %s", asyn
   expect(result.stdout).toContain("Skipping unsupported target linux");
 });
 
+it("skips cache generation for an untrusted bundle", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const hook = NodeURL.fileURLToPath(
+    new URL("../prepare-server-compile-cache.cjs", import.meta.url),
+  );
+  const result = spawnSync(
+    process.execPath,
+    [
+      "-e",
+      `Object.defineProperty(process, "platform", { value: "darwin" });
+       Object.defineProperty(process, "arch", { value: "arm64" });
+       require(${JSON.stringify(hook)})({ electronPlatformName: "darwin", arch: 3 }).catch(error => { console.error(error); process.exitCode = 1; });`,
+    ],
+    { encoding: "utf8", env: { ...process.env, T3CODE_DESKTOP_UNTRUSTED_BUNDLE: "true" } },
+  );
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.stdout).toContain("Skipping untrusted bundle");
+});
+
 it("prepares macOS x64 cache on an ARM64 build host", async () => {
   const { spawnSync } = await import("node:child_process");
   const root = NodeFS.realpathSync(
