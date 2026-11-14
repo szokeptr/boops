@@ -627,6 +627,7 @@ export interface ClaudeAgentSdkQuerySession {
   readonly setPermissionMode: (
     mode: PermissionMode,
   ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  readonly renameSession: (title: string) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly stopTask: (taskId: string) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   /** Replaces the dynamic MCP server set; succeeds with the names that failed to connect. */
   readonly setMcpServers: (
@@ -801,7 +802,7 @@ function closeClaudeQuery(queryRuntime: ClaudeQuery) {
 async function sendClaudeControlRequest(
   queryRuntime: ClaudeQuery,
   request: {
-    readonly subtype: "mcp_call" | "list_permission_rules";
+    readonly subtype: "mcp_call" | "list_permission_rules" | "rename_session";
     readonly [key: string]: unknown;
   },
 ): Promise<unknown> {
@@ -1020,6 +1021,14 @@ export type ClaudeAgentSdkProtocolLogEvent =
       readonly payload: {
         readonly type: "query.set_permission_mode";
         readonly mode: PermissionMode;
+      };
+    }
+  | {
+      readonly direction: "outgoing";
+      readonly stage: "decoded";
+      readonly payload: {
+        readonly type: "query.rename_session";
+        readonly title: string;
       };
     }
   | {
@@ -1594,6 +1603,28 @@ export const layerQueryRunner: Layer.Layer<
                     payload: {
                       type: "query.set_permission_mode",
                       mode,
+                    },
+                  }),
+                ),
+              ),
+            renameSession: (title) =>
+              Effect.tryPromise({
+                try: () =>
+                  sendClaudeControlRequest(queryRuntime, {
+                    subtype: "rename_session",
+                    title,
+                    source: "host",
+                  }),
+                catch: (cause) => queryRunnerError(cause, "renameSession"),
+              }).pipe(
+                Effect.asVoid,
+                Effect.tap(() =>
+                  logProtocolEvent({
+                    direction: "outgoing",
+                    stage: "decoded",
+                    payload: {
+                      type: "query.rename_session",
+                      title,
                     },
                   }),
                 ),
@@ -2384,6 +2415,12 @@ function resultTextFromSdkMessage(
     nativeItemId: message.uuid,
     text: message.result,
   };
+}
+
+function normalizeClaudeSessionTitle(title: string | null | undefined): string | null {
+  if (title === null || title === undefined) return null;
+  const trimmed = title.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function makeProviderThread(input: {
@@ -5595,6 +5632,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           new Map<string, OrchestrationV2ProviderThread>(),
         );
         const goalsByNativeThread = new Map<string, OrchestrationV2ProviderGoal | null>();
+        // The title T3 last applied to each native session, so a turn renames it only when the
+        // thread title changed. A native `/rename` T3 never applied survives later turns.
+        const appliedSessionTitles = new Map<string, string>();
         const goalCheckedTurns = new Set<string>();
         // Background subagents can finish after root settlement; retain their registry for wake evidence and hydration.
         const sessionSubagentsByTaskId = yield* Ref.make(new Map<string, ActiveClaudeSubagent>());
@@ -5809,27 +5849,47 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const runtimeContext = yield* Effect.context<never>();
         const runPromise = Effect.runPromiseWith(runtimeContext);
 
-        const emitProviderEvent = (event: ProviderAdapter.ProviderAdapterV2Event) => {
-          if (event.type === "provider_thread.updated") {
-            const budget = pdfBudgets.get(event.providerThread.nativeThreadRef?.nativeId ?? "");
-            if (budget !== undefined) {
-              event = {
-                ...event,
-                providerThread: {
-                  ...event.providerThread,
-                  nativeMetadata: {
-                    ...event.providerThread.nativeMetadata,
+        // Overlays state the adapter owns per native session onto persisted provider metadata.
+        const withAdapterNativeMetadata = (
+          providerThread: OrchestrationV2ProviderThread,
+          nativeThreadId: string,
+        ): OrchestrationV2ProviderThread => {
+          const budget = pdfBudgets.get(nativeThreadId);
+          const hasAppliedTitle = appliedSessionTitles.has(nativeThreadId);
+          const recordedTitle = providerThread.nativeMetadata?.title;
+          if (budget === undefined && !hasAppliedTitle && recordedTitle === undefined) {
+            return providerThread;
+          }
+          return {
+            ...providerThread,
+            nativeMetadata: {
+              ...providerThread.nativeMetadata,
+              ...(budget === undefined
+                ? {}
+                : {
                     claudeAttachmentBudget: {
                       bytesUsed: budget.committed.bytes,
                       pagesUsed: budget.committed.pages,
                     },
-                  },
-                },
-              };
-            }
-            const nativeSessionId = clearedNativeSessions.get(
-              event.providerThread.nativeThreadRef?.nativeId ?? "",
-            );
+                  }),
+              // A cleared title makes the next turn after a restart retry a rename that failed.
+              ...(hasAppliedTitle
+                ? { title: normalizeClaudeSessionTitle(appliedSessionTitles.get(nativeThreadId)) }
+                : recordedTitle === undefined
+                  ? {}
+                  : { title: null }),
+            },
+          };
+        };
+
+        const emitProviderEvent = (event: ProviderAdapter.ProviderAdapterV2Event) => {
+          if (event.type === "provider_thread.updated") {
+            const nativeThreadId = event.providerThread.nativeThreadRef?.nativeId ?? "";
+            event = {
+              ...event,
+              providerThread: withAdapterNativeMetadata(event.providerThread, nativeThreadId),
+            };
+            const nativeSessionId = clearedNativeSessions.get(nativeThreadId);
             if (nativeSessionId !== undefined) {
               event = {
                 ...event,
@@ -6008,8 +6068,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (nativeThreadId === undefined || nativeThreadId === null) {
               return;
             }
+            const enriched = withAdapterNativeMetadata(providerThread, nativeThreadId);
             yield* Ref.update(lastProviderThreadByNativeThread, (current) =>
-              new Map(current).set(nativeThreadId, providerThread),
+              new Map(current).set(nativeThreadId, enriched),
             );
           });
 
@@ -11959,6 +12020,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             updated.add(nativeThreadId);
             return updated;
           });
+          // A new session's spawn applied this turn's title. A resume keeps the session's stored
+          // title, so the last applied one stays authoritative until a turn compares again.
+          if (!shouldResume) {
+            appliedSessionTitles.set(nativeThreadId, turnInput.appThread.title);
+          }
           yield* resetBackgroundTaskStateForNativeThreadProcess(nativeThreadId, {
             status: "active",
           });
@@ -12139,6 +12205,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const used = turnInput.providerThread.nativeMetadata?.claudeAttachmentBudget;
               pdfBudgets.set(nativeThreadId, makeClaudeAttachmentBudget(used));
             }
+            if (!appliedSessionTitles.has(nativeThreadId)) {
+              const recordedTitle = turnInput.providerThread.nativeMetadata?.title;
+              if (recordedTitle !== undefined && recordedTitle !== null) {
+                appliedSessionTitles.set(nativeThreadId, recordedTitle);
+              }
+            }
             const pdfReservation = yield* reserveClaudePdfBudget(
               pdfBudgets.get(nativeThreadId)!,
               persistAttachmentBudget(nativeThreadId),
@@ -12162,6 +12234,24 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     Effect.provideService(Path.Path, path),
                   );
             const querySession = yield* openQuery(turnInput, nativeThreadId);
+            // `claude --resume` shows the native title. A failed or timed-out rename forgets the
+            // applied title so the next turn, even after a restart, sends it again.
+            if (appliedSessionTitles.get(nativeThreadId) !== turnInput.appThread.title) {
+              const renamed = yield* querySession.query
+                .renameSession(turnInput.appThread.title)
+                .pipe(Effect.timeout("10 seconds"), Effect.isSuccess);
+              if (renamed) {
+                appliedSessionTitles.set(nativeThreadId, turnInput.appThread.title);
+              } else {
+                appliedSessionTitles.delete(nativeThreadId);
+              }
+              const remembered = (yield* Ref.get(lastProviderThreadByNativeThread)).get(
+                nativeThreadId,
+              );
+              if (remembered !== undefined) {
+                yield* rememberProviderThread(remembered);
+              }
+            }
             const autoCompactWindow = yield* resolveAutoCompactWindow(
               querySession.settingsCwd,
               turnInput.modelSelection,
@@ -12853,14 +12943,22 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             function* (threadInput: ProviderAdapter.ProviderAdapterV2EnsureThreadInput) {
               const createdAt = yield* DateTime.now;
               const nativeThreadId = yield* queryRunner.allocateSessionId;
-              return makeProviderThread({
+              if (threadInput.title !== undefined) {
+                appliedSessionTitles.set(nativeThreadId, threadInput.title);
+              }
+              const providerThread = makeProviderThread({
                 idAllocator,
                 providerInstanceId: adapterOptions.instanceId,
                 appThreadId: threadInput.threadId,
                 providerSessionId: input.providerSessionId,
                 nativeThreadId,
+                ...(threadInput.title !== undefined
+                  ? { nativeMetadata: { title: normalizeClaudeSessionTitle(threadInput.title) } }
+                  : {}),
                 now: createdAt,
               });
+              yield* rememberProviderThread(providerThread);
+              return providerThread;
             },
             (effect, threadInput) =>
               effect.pipe(
@@ -12877,6 +12975,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           resumeThread: Effect.fn("ClaudeAdapterV2.resumeThread")(
             function* (threadInput: { readonly providerThread: OrchestrationV2ProviderThread }) {
               const nativeThreadId = threadInput.providerThread.nativeThreadRef?.nativeId;
+              if (nativeThreadId !== undefined && nativeThreadId !== null) {
+                const recordedTitle = threadInput.providerThread.nativeMetadata?.title;
+                if (recordedTitle !== undefined && recordedTitle !== null) {
+                  appliedSessionTitles.set(nativeThreadId, recordedTitle);
+                }
+              }
               if (
                 nativeThreadId !== undefined &&
                 nativeThreadId !== null &&
@@ -12902,12 +13006,26 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 }
               }
               const updatedAt = yield* DateTime.now;
-              return {
+              const appliedTitle =
+                nativeThreadId !== undefined && nativeThreadId !== null
+                  ? appliedSessionTitles.get(nativeThreadId)
+                  : undefined;
+              const providerThread: OrchestrationV2ProviderThread = {
                 ...threadInput.providerThread,
                 providerSessionId: input.providerSessionId,
                 status: "idle" as const,
+                ...(appliedTitle !== undefined
+                  ? {
+                      nativeMetadata: {
+                        ...threadInput.providerThread.nativeMetadata,
+                        title: normalizeClaudeSessionTitle(appliedTitle),
+                      },
+                    }
+                  : {}),
                 updatedAt,
               };
+              yield* rememberProviderThread(providerThread);
+              return providerThread;
             },
             (effect, threadInput) =>
               effect.pipe(
