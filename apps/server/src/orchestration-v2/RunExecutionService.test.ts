@@ -32,10 +32,12 @@ import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { CodexAppServerRequestError } from "effect-codex-app-server/errors";
 import { SqlError, classifySqliteError } from "effect/sql/SqlError";
 
@@ -1226,6 +1228,98 @@ it.effect("starts the provider when checkpoint baseline capture fails", () =>
       (event) => event.type === "turn-item.updated" && event.payload.type === "error",
     );
     assert.isUndefined(errorItem);
+  }),
+);
+
+it.effect("prompts the provider only after a forked baseline capture finishes", () =>
+  Effect.gen(function* () {
+    const threadId = ThreadId.make("thread:run-execution-forked-baseline");
+    const runId = RunId.make("run:run-execution-forked-baseline");
+    const attemptId = RunAttemptId.make("attempt:run-execution-forked-baseline");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const checkpointScope = {
+      id: CheckpointScopeId.make("checkpoint-scope:run-execution-forked-baseline"),
+    } as OrchestrationV2CheckpointScope;
+    const run = { id: runId, threadId, ordinal: 1, providerInstanceId } as OrchestrationV2Run;
+    const order = yield* Ref.make<ReadonlyArray<string>>([]);
+    const layerTest = RunExecutionService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          McpAppModelContext.layerEmpty,
+          PreviewAgentActivity.layer,
+          Layer.mock(CheckpointService.CheckpointServiceV2)({
+            captureBaseline: () =>
+              Effect.sleep("1 second").pipe(
+                Effect.andThen(Ref.update(order, (current) => [...current, "baseline"])),
+              ),
+          }),
+          layerTurnItemPositionsTest,
+          Layer.mock(EventSink.EventSinkV2)({}),
+          IdAllocator.layer,
+          ThreadCommandExecutor.layer,
+          Layer.mock(ProviderEventIngestor.ProviderEventIngestorV2)({
+            ingestNormalized: () => Effect.succeed([]),
+          }),
+          ServerSettings.layerTest(),
+        ),
+      ),
+    );
+
+    yield* Effect.gen(function* () {
+      const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
+      const baseline = yield* runExecution.forkBaseline({
+        appThread: rootAppThread(threadId),
+        run,
+        checkpointScope,
+      });
+      const started = yield* runExecution
+        .startRootRun({
+          commandId: CommandId.make("command:run-execution-forked-baseline"),
+          appThread: rootAppThread(threadId),
+          providerSessionId: ProviderSessionId.make("session:run-execution-forked-baseline"),
+          session: {
+            events: Stream.never,
+            startTurn: () => Ref.update(order, (current) => [...current, "prompt"]),
+          } as unknown as ProviderAdapter.ProviderAdapterV2SessionRuntime,
+          run,
+          rootNode: {
+            id: NodeId.make("node:run-execution-forked-baseline"),
+          } as OrchestrationV2ExecutionNode,
+          checkpointScope,
+          providerThread: {
+            id: ProviderThreadId.make("provider-thread:run-execution-forked-baseline"),
+            driver,
+          } as OrchestrationV2ProviderThread,
+          attempt: { id: attemptId, providerTurnId: null } as OrchestrationV2RunAttempt,
+          attemptId,
+          baseline,
+          providerTurnOrdinal: 1,
+          message: {
+            messageId: MessageId.make("message:run-execution-forked-baseline"),
+            text: "Wait for the baseline.",
+            attachments: [],
+            createdBy: "user",
+            creationSource: "web",
+          },
+          modelSelection: { instanceId: providerInstanceId, model: "gpt-5.4" },
+          runtimePolicy: {
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            cwd: process.cwd(),
+            approvalPolicy: "never",
+            sandboxPolicy: {
+              type: "readOnly",
+              access: { type: "fullAccess" },
+              networkAccess: false,
+            },
+          },
+        })
+        .pipe(Effect.forkChild);
+      yield* TestClock.adjust("1 second");
+      yield* Fiber.join(started);
+    }).pipe(Effect.provide(layerTest));
+
+    assert.deepEqual(yield* Ref.get(order), ["baseline", "prompt"]);
   }),
 );
 
