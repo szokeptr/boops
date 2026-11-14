@@ -2241,7 +2241,7 @@ export const CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__boops__html_render",
 ];
 
-// T3 waits can block for an hour; exceed Claude's default 60 s timeout.
+// request_secret can wait an hour; exceed Claude's default 60 s timeout.
 export const CLAUDE_T3_MCP_TOOL_TIMEOUT_MS = 65 * 60 * 1_000;
 
 // Connector tools are third-party API calls; allow slow searches without holding a turn for an hour.

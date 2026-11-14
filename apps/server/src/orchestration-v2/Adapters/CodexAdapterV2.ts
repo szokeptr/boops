@@ -1400,7 +1400,7 @@ export const CODEX_THREAD_CONFIG = {
   mcp_optional_startup_grace_ms: 10_000,
 } as const;
 
-// T3 waits can block for an hour; keep Codex's MCP timeout above that.
+// request_secret can wait an hour; keep Codex's MCP timeout above that.
 const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 // Connector tools are third-party API calls; allow slow searches without holding a turn for an hour.
 const CODEX_CONNECTOR_MCP_TOOL_TIMEOUT_SEC = 5 * 60;
