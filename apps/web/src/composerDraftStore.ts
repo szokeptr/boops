@@ -1206,6 +1206,26 @@ function legacyToModelSelectionByProvider(
   return result;
 }
 
+// Static aliases are shared across instances; exact custom slugs and catalog aliases are not.
+function composerModelIdentity(
+  input: {
+    providers: ReadonlyArray<ServerProvider>;
+    settings: UnifiedSettings;
+    selectedProvider: ProviderDriverKind;
+  },
+  instanceId: ProviderInstanceId,
+  model: string | undefined,
+) {
+  const isCustom =
+    input.providers
+      .find((provider) => provider.instanceId === instanceId)
+      ?.models.some((entry) => entry.slug === model && entry.isCustom) ||
+    readInstanceCustomModels(input.settings, instanceId, input.selectedProvider).some(
+      (entry) => entry.slug === model,
+    );
+  return isCustom ? model : normalizeModelSlug(model, input.selectedProvider);
+}
+
 export function deriveEffectiveComposerModelState(input: {
   draft:
     | Pick<ComposerThreadDraftState, "modelSelectionByProvider" | "activeProvider">
@@ -1220,8 +1240,8 @@ export function deriveEffectiveComposerModelState(input: {
   projectModelSelection: ModelSelection | null | undefined;
   settings: UnifiedSettings;
 }): EffectiveComposerModelState {
-  const baseModelCandidate =
-    input.threadModelSelection?.model ?? input.projectModelSelection?.model ?? null;
+  const baseSelection = input.threadModelSelection ?? input.projectModelSelection;
+  const baseModelCandidate = baseSelection?.model ?? null;
   const preserveThreadModel =
     input.selectedInstanceId !== null &&
     input.selectedInstanceId !== undefined &&
@@ -1275,13 +1295,22 @@ export function deriveEffectiveComposerModelState(input: {
         activeSelection.model,
       ))
     : baseModel;
+  // Base options belong to the base model, so a draft pick of another model gets none of them.
+  const draftPicksOtherModel =
+    !!activeSelection?.model &&
+    composerModelIdentity(input, activeSelectionInstanceId, activeSelection.model) !==
+      composerModelIdentity(
+        input,
+        baseSelection?.instanceId ?? activeSelectionInstanceId,
+        baseSelection?.model,
+      );
   // Options come from the first of the draft, thread and project that has any. Their selections
   // stay with them, so a fallback instance can check which model the options belong to.
   const optionSelections =
     [
       input.draft?.modelSelectionByProvider,
-      selectionsByInstance(input.threadModelSelection),
-      selectionsByInstance(input.projectModelSelection),
+      draftPicksOtherModel ? null : selectionsByInstance(input.threadModelSelection),
+      draftPicksOtherModel ? null : selectionsByInstance(input.projectModelSelection),
     ].find((selections) => modelSelectionByProviderToOptions(selections) !== null) ?? null;
   const modelOptions = modelSelectionByProviderToOptions(optionSelections);
 
@@ -1326,21 +1355,10 @@ function withFallbackInstanceOptions(input: {
     (provider) => provider.instanceId === requestedInstanceId,
   );
   const requestedModel = input.optionSelections?.[requestedInstanceId]?.model;
-  // Static aliases are shared across instances; exact custom slugs and catalog aliases are not.
-  const modelIdentity = (instanceId: ProviderInstanceId, model: string | undefined) => {
-    const isCustom =
-      input.providers
-        .find((provider) => provider.instanceId === instanceId)
-        ?.models.some((entry) => entry.slug === model && entry.isCustom) ||
-      readInstanceCustomModels(input.settings, instanceId, input.selectedProvider).some(
-        (entry) => entry.slug === model,
-      );
-    return isCustom ? model : normalizeModelSlug(model, input.selectedProvider);
-  };
   const sameModel =
     requestedModel === input.selectedModel ||
-    modelIdentity(requestedInstanceId, requestedModel) ===
-      modelIdentity(selectedInstanceId, input.selectedModel);
+    composerModelIdentity(input, requestedInstanceId, requestedModel) ===
+      composerModelIdentity(input, selectedInstanceId, input.selectedModel);
   if (!requestedOptions || requestedProvider?.driver !== input.selectedProvider || !sameModel) {
     return modelOptions;
   }
