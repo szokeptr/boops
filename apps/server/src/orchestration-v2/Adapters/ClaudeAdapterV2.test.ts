@@ -3627,6 +3627,55 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     });
   const makeWakeHarness = makeWakeHarnessWithOptions();
 
+  it.effect("a native /rename retitles the thread", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarnessWithOptions();
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-native-rename-1"),
+          text: "/rename Native title",
+          attachments: [],
+        }),
+      );
+      yield* harness.offerAndWait(
+        claudeSdkFrame({
+          type: "system",
+          subtype: "session_title_changed",
+          title: "Native title",
+          uuid: "title-changed-1",
+          session_id: WAKE_NATIVE_SESSION,
+        }),
+      );
+      yield* harness.offerAndWait({
+        ...makeResultFrame({
+          uuid: "title-result-1",
+          result: "Session renamed to: Native title",
+          numTurns: 0,
+        }),
+        local_command: "rename",
+      } as SDKMessage);
+      yield* Queue.take(harness.terminalReceipts);
+      assert.deepEqual(
+        harness.events.flatMap((event) =>
+          event.type === "app_thread.created" ? [event.appThread.title] : [],
+        ),
+        ["Native title"],
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   it.effect("resumes the session a /clear selected after the Claude process is replaced", () =>
     Effect.gen(function* () {
       const harness = yield* makeWakeHarnessWithOptions({
