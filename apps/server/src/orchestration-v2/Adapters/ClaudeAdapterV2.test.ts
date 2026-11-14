@@ -10192,87 +10192,210 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   );
 
   it.effect("resolves API retries on resumed assistant activity", () =>
-    Effect.scoped(
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      const now = yield* DateTime.now;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now,
+          attemptId: RunAttemptId.make("attempt-claude-api-retry"),
+          text: "Open github.com.",
+          attachments: [],
+        }),
+      );
+
+      yield* Queue.offer(
+        harness.sdkMessages,
+        claudeSdkFrame({
+          type: "system",
+          subtype: "api_retry",
+          attempt: 2,
+          max_retries: 10,
+          retry_delay_ms: 1_500,
+          error_status: 529,
+          error: "overloaded",
+          uuid: "00000000-0000-4000-8000-000000000201",
+          session_id: WAKE_NATIVE_SESSION,
+        }),
+      );
+      const retryItems = () =>
+        harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "error" &&
+          event.turnItem.retry !== undefined
+            ? [event.turnItem]
+            : [],
+        );
+      yield* harness.until(() => retryItems().length === 1);
+      const runningRetry = retryItems()[0];
+      assert.equal(runningRetry?.status, "running");
+      assert.equal(runningRetry?.failure.code, "api_error_529");
+      assert.deepEqual(runningRetry?.retry, {
+        attempt: 2,
+        maxAttempts: 10,
+        retryDelayMs: 1_500,
+      });
+
+      // The stream starting again settles the retry before any assistant message completes.
+      yield* Queue.offer(
+        harness.sdkMessages,
+        claudeSdkFrame({
+          type: "stream_event",
+          event: { type: "message_start", message: { id: "api-retry-recovered-message" } },
+          parent_tool_use_id: null,
+          session_id: WAKE_NATIVE_SESSION,
+          uuid: "00000000-0000-4000-8000-000000000204",
+        }),
+      );
+      yield* harness.until(() => retryItems().length === 2);
+      assert.lengthOf(harness.terminalEvents(), 0);
+      const recoveredRetry = retryItems()[1];
+      assert.equal(recoveredRetry?.id, runningRetry?.id);
+      assert.equal(recoveredRetry?.status, "completed");
+      assert.equal(recoveredRetry?.title, "Provider recovered");
+      yield* Queue.offer(
+        harness.sdkMessages,
+        makeAssistantTextFrame({
+          uuid: "00000000-0000-4000-8000-000000000202",
+          text: "Opening GitHub.",
+        }),
+      );
+
+      yield* Queue.offer(
+        harness.sdkMessages,
+        makeResultFrame({
+          uuid: "00000000-0000-4000-8000-000000000203",
+          result: "Opened GitHub.",
+        }),
+      );
+      yield* harness.awaitTerminal(1);
+      // A recovered retry must not fire its budget later.
+      yield* TestClock.adjust("10 minutes");
+      assert.lengthOf(harness.terminalEvents(), 1);
+      assert.equal(harness.terminalEvents()[0]?.status, "completed");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  const offerApiRetry = (harness: Effect.Success<typeof makeWakeHarness>, uuid: string) =>
+    Effect.gen(function* () {
+      yield* Queue.offer(
+        harness.sdkMessages,
+        claudeSdkFrame({
+          type: "system",
+          subtype: "api_retry",
+          attempt: 1,
+          max_retries: 10,
+          retry_delay_ms: 600,
+          error_status: 503,
+          error: "server_error",
+          uuid,
+          session_id: WAKE_NATIVE_SESSION,
+        }),
+      );
+      yield* harness.until(() =>
+        harness.events.some(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "error" &&
+            event.turnItem.status === "running",
+        ),
+      );
+    });
+
+  it.effect.each(["closed", "interrupt-hangs", "unconfirmed", "close-hangs", "synthetic"] as const)(
+    "fails a turn whose API retries outlast the retry budget: %s",
+    (response) =>
       Effect.gen(function* () {
-        const harness = yield* makeWakeHarness;
-        const now = yield* DateTime.now;
+        const interruptSent = yield* Deferred.make<void>();
+        const closeRequested = yield* Deferred.make<void>();
+        const releaseClose = yield* Deferred.make<void>();
+        const harness = yield* makeWakeHarnessWithOptions({
+          interrupt: Deferred.succeed(interruptSent, undefined).pipe(
+            Effect.andThen(response === "interrupt-hangs" ? Effect.never : Effect.void),
+          ),
+          close: (sdkMessages) =>
+            Deferred.succeed(closeRequested, undefined).pipe(
+              Effect.andThen(
+                response === "close-hangs"
+                  ? Deferred.await(releaseClose).pipe(Effect.andThen(Queue.shutdown(sdkMessages)))
+                  : response === "unconfirmed"
+                    ? Effect.void
+                    : Queue.shutdown(sdkMessages),
+              ),
+            ),
+        });
+        yield* Effect.addFinalizer(() => Deferred.succeed(releaseClose, undefined));
         yield* harness.runtime.startTurn(
           makeClaudeTestTurnInput({
             threadId: harness.threadId,
             providerThread: harness.providerThread,
-            now,
-            attemptId: RunAttemptId.make("attempt-claude-api-retry"),
-            text: "Open github.com.",
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-claude-retry-budget"),
+            text: "Summarize the repo.",
             attachments: [],
           }),
         );
-
-        yield* Queue.offer(
-          harness.sdkMessages,
-          claudeSdkFrame({
-            type: "system",
-            subtype: "api_retry",
-            attempt: 2,
-            max_retries: 10,
-            retry_delay_ms: 1_500,
-            error_status: 529,
-            error: "overloaded",
-            uuid: "00000000-0000-4000-8000-000000000201",
-            session_id: WAKE_NATIVE_SESSION,
-          }),
-        );
-        const retryItems = () =>
-          harness.events.flatMap((event) =>
-            event.type === "turn_item.updated" &&
-            event.turnItem.type === "error" &&
-            event.turnItem.retry !== undefined
-              ? [event.turnItem]
-              : [],
+        yield* offerApiRetry(harness, "00000000-0000-4000-8000-000000000211");
+        if (response === "synthetic") {
+          // The CLI reports the API error as a <synthetic> assistant frame; that is not recovery.
+          yield* Queue.offer(
+            harness.sdkMessages,
+            claudeSdkFrame({
+              type: "assistant",
+              message: {
+                model: "<synthetic>",
+                id: "retry-notice",
+                type: "message",
+                role: "assistant",
+                content: [{ type: "text", text: "API Error: 503" }],
+                stop_reason: "end_turn",
+                stop_sequence: null,
+                usage: {
+                  input_tokens: 0,
+                  output_tokens: 0,
+                  cache_creation_input_tokens: 0,
+                  cache_read_input_tokens: 0,
+                },
+              },
+              parent_tool_use_id: null,
+              uuid: "retry-notice",
+              session_id: WAKE_NATIVE_SESSION,
+            }),
           );
-        yield* harness.until(() => retryItems().length === 1);
-        const runningRetry = retryItems()[0];
-        assert.equal(runningRetry?.status, "running");
-        assert.equal(runningRetry?.failure.code, "api_error_529");
-        assert.deepEqual(runningRetry?.retry, {
-          attempt: 2,
-          maxAttempts: 10,
-          retryDelayMs: 1_500,
-        });
-
-        // The stream starting again settles the retry before any assistant message completes.
-        yield* Queue.offer(
-          harness.sdkMessages,
-          claudeSdkFrame({
-            type: "stream_event",
-            event: { type: "message_start", message: { id: "api-retry-recovered-message" } },
-            parent_tool_use_id: null,
-            session_id: WAKE_NATIVE_SESSION,
-            uuid: "00000000-0000-4000-8000-000000000204",
-          }),
-        );
-        yield* harness.until(() => retryItems().length === 2);
+          yield* harness.until(() =>
+            harness.events.some(
+              (event) =>
+                event.type === "turn_item.updated" && event.turnItem.type === "assistant_message",
+            ),
+          );
+        }
+        yield* TestClock.adjust("9 minutes");
         assert.lengthOf(harness.terminalEvents(), 0);
-        const recoveredRetry = retryItems()[1];
-        assert.equal(recoveredRetry?.id, runningRetry?.id);
-        assert.equal(recoveredRetry?.status, "completed");
-        assert.equal(recoveredRetry?.title, "Provider recovered");
-        yield* Queue.offer(
-          harness.sdkMessages,
-          makeAssistantTextFrame({
-            uuid: "00000000-0000-4000-8000-000000000202",
-            text: "Opening GitHub.",
-          }),
-        );
-
-        yield* Queue.offer(
-          harness.sdkMessages,
-          makeResultFrame({
-            uuid: "00000000-0000-4000-8000-000000000203",
-            result: "Opened GitHub.",
-          }),
-        );
-        yield* harness.awaitTerminal(1);
+        yield* TestClock.adjust("1 minute");
+        yield* Deferred.await(interruptSent);
+        if (response !== "closed" && response !== "synthetic") {
+          yield* TestClock.adjust("20 seconds");
+        }
+        const terminal = yield* Queue.take(harness.terminalReceipts);
+        assert.equal(terminal.status, "failed");
+        if (terminal.status !== "failed") return;
+        assert.equal(terminal.failure.code, "api_error_503");
+        assert.equal(terminal.retry?.attempt, 1);
+        assert.lengthOf(harness.terminalEvents(), 1);
+        assert.isTrue(yield* Deferred.isDone(closeRequested), "the query must be closed");
       }).pipe(
+        Effect.scoped,
         Effect.provide(
           Layer.mergeAll(
             IdAllocator.layer,
@@ -10280,6 +10403,49 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             NodeServices.layer,
             NodeCrypto.layer,
           ),
+        ),
+      ),
+  );
+
+  it.effect("keeps a user Stop interrupted when the retry budget passes before it settles", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-claude-retry-budget-user-stop"),
+          text: "Summarize the repo.",
+          attachments: [],
+        }),
+      );
+      yield* offerApiRetry(harness, "00000000-0000-4000-8000-000000000212");
+      const active = harness.events.find(
+        (event) =>
+          event.type === "provider_turn.updated" && event.providerTurn.status === "running",
+      );
+      if (active?.type !== "provider_turn.updated")
+        return yield* Effect.die("Missing running native turn");
+      // The CLI has not confirmed the Stop when the budget passes.
+      yield* harness.runtime
+        .interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId: active.providerTurn.id,
+        })
+        .pipe(Effect.ignore, Effect.forkScoped);
+      yield* TestClock.adjust("10 minutes");
+      yield* Queue.shutdown(harness.sdkMessages);
+      assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "interrupted");
+      assert.lengthOf(harness.terminalEvents(), 1);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
         ),
       ),
     ),
