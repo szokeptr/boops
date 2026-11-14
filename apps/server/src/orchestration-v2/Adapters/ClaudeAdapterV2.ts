@@ -2032,6 +2032,7 @@ export const CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__boops__boops_preview_list",
   "mcp__boops__boops_environment_read",
   "mcp__boops__boops_environment_links",
+  "mcp__boops__boops_theme_read",
   "mcp__boops__html_preview",
   "mcp__boops__html_render",
 ];

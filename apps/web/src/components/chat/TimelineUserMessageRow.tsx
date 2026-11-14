@@ -1088,10 +1088,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 color: ctx.ownBubbleColors.foreground,
                 // Markdown inside sets text-foreground; the bot's ink must win on its colour.
                 "--contrast-foreground": ctx.ownBubbleColors.foreground,
+                "--contrast-message-foreground": ctx.ownBubbleColors.foreground,
                 "--contrast-muted-foreground": ctx.ownBubbleColors.foreground,
               } as CSSProperties)
             : undefined
         }
+        data-user-message-bubble=""
       >
         <MessageReactionBadges controller={reaction} corner="start" />
         {/* Outside the fold so a collapsed message still has a heading to navigate to. */}
