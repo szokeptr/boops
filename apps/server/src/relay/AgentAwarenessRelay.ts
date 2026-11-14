@@ -50,6 +50,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as NotificationDeviceKeys from "../notifications/NotificationDeviceKeys.ts";
 import { sealNotificationPreview } from "../notifications/notificationPreviewSeal.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
 
@@ -432,13 +433,14 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
       reason: "project-not-found",
     };
   }
-  const state = sanitizeRelayAgentActivityState(
+  const awareness = sanitizeRelayAgentActivityState(
     notifiableAwarenessState({
       environmentId: input.environmentId,
       project: input.project.value,
       thread: input.thread.value,
     }),
   );
+  const state = snoozedCompletion(input.thread.value, awareness) ? null : awareness;
   // The relay tells only that member's devices about a member's thread, and only owners otherwise.
   const memberId = input.thread.value.linkOrigin?.memberId;
   return {
@@ -447,6 +449,19 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
     reply: resolveBotReply(state, input.project.value, input.thread.value),
     reason: "snapshot",
   };
+}
+
+// Checked at completion time, so a completion processed after the wake stays silent too.
+function snoozedCompletion(
+  thread: AgentAwarenessThread,
+  state: { readonly phase: string } | null,
+): boolean {
+  if (state?.phase !== "completed" || thread.latestRunCompletedAt == null) return false;
+  const completedAt = DateTime.toEpochMillis(thread.latestRunCompletedAt);
+  if (thread.snoozedAt != null && completedAt < DateTime.toEpochMillis(thread.snoozedAt)) {
+    return false;
+  }
+  return isSnoozed(thread, completedAt);
 }
 
 function terminalWorkSinceStart(thread: AgentAwarenessThread, startedAt: number): boolean {
