@@ -1,8 +1,14 @@
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import {
+  EnvironmentContextRecord,
+  type OrchestrationMessageContext,
+  ThreadContextRecord,
+} from "@t3tools/contracts";
+import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
   collectComposerContextReferences,
 } from "@t3tools/shared/composerContextReferences";
+import * as Schema from "effect/Schema";
 import { PLAN_IMPLEMENTATION_PROMPT_PREFIX } from "../../proposedPlan";
 
 const CLAUDE_ULTRATHINK_PREFIX = "Ultrathink:\n";
@@ -10,9 +16,19 @@ const REVIEW_COMMENT_BLOCK_PATTERN = /<review_comment\b[^>]*>[\s\S]*?<\/review_c
 const TRAILING_LEGACY_CONTEXT =
   /\n*<(terminal_context|element_context|preview_annotation)>\n([\s\S]*?)\n<\/\1>\s*$/;
 
+const isThreadContextRecord = Schema.is(ThreadContextRecord);
+const isEnvironmentContextRecord = Schema.is(EnvironmentContextRecord);
+
 type ComposerPromptHistoryMessage = Parameters<typeof resolveUserMessagePresentation>[0] & {
   readonly id: string;
+  readonly context?: OrchestrationMessageContext | undefined;
 };
+
+/** Thread and machine mentions; the draft holds these records, so recall can restore their chips. */
+interface ComposerPromptHistoryMentions {
+  readonly threadContexts: ReadonlyArray<ThreadContextRecord>;
+  readonly environmentContexts: ReadonlyArray<EnvironmentContextRecord>;
+}
 
 interface ComposerPromptHistoryEntry {
   readonly id: string;
@@ -70,7 +86,10 @@ function stripInlineTerminalLabels(prompt: string, headers: ReadonlyArray<string
   return result;
 }
 
-export function recallableComposerPrompt(messageText: string): string {
+export function recallableComposerPrompt(
+  messageText: string,
+  keptContextIds: ReadonlySet<string> = new Set(),
+): string {
   let prompt = messageText.trim();
   if (prompt.startsWith(CLAUDE_ULTRATHINK_PREFIX)) {
     prompt = prompt.slice(CLAUDE_ULTRATHINK_PREFIX.length);
@@ -99,8 +118,9 @@ export function recallableComposerPrompt(messageText: string): string {
     break;
   }
 
-  // Recall strips chips because their backing records are absent.
+  // Chips without a record the draft can hold would render as unavailable.
   for (const reference of collectComposerContextReferences(prompt).toReversed()) {
+    if (keptContextIds.has(reference.contextId)) continue;
     let { start, end } = reference;
     if (prompt[end] === " ") end += 1;
     else if (prompt[start - 1] === " ") start -= 1;
@@ -115,6 +135,30 @@ export function recallableComposerPrompt(messageText: string): string {
     return "";
   }
   return trimmed;
+}
+
+/** A sent message's text as the composer can hold it, with the mention records its chips need. */
+export function recallComposerMessage(
+  message: Pick<ComposerPromptHistoryMessage, "text" | "context">,
+): { readonly prompt: string; readonly mentions: ComposerPromptHistoryMentions } {
+  const records = message.context?.records ?? [];
+  const threadRecords = records.filter(isThreadContextRecord);
+  const environmentRecords = records.filter(isEnvironmentContextRecord);
+  const prompt = recallableComposerPrompt(
+    message.text,
+    new Set([...threadRecords, ...environmentRecords].map((record) => record.contextId)),
+  );
+  // A record whose chip is gone from the text would put the chip back when written to the draft.
+  const referenced = new Set<string>(
+    collectComposerContextReferences(prompt).map((reference) => reference.contextId),
+  );
+  return {
+    prompt,
+    mentions: {
+      threadContexts: threadRecords.filter((record) => referenced.has(record.contextId)),
+      environmentContexts: environmentRecords.filter((record) => referenced.has(record.contextId)),
+    },
+  };
 }
 
 export function buildComposerPromptHistoryEntries(
