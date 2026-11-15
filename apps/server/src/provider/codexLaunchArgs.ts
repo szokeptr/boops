@@ -17,6 +17,9 @@ export const codexAppServerArgs = (launchArgs?: string) => [
   ...codexLaunchArgv(launchArgs),
 ];
 
+const HOOK_FEATURES = new Set(["hooks", "codex_hooks"]);
+
+// Feature toggles beat config overrides, so a launch arg's hook enable would undo ours.
 export const codexExecLaunchArgs = (launchArgs?: string) => {
   const args = codexLaunchArgv(launchArgs);
   const execArgs: Array<string> = [];
@@ -30,10 +33,12 @@ export const codexExecLaunchArgs = (launchArgs?: string) => {
     } else if (arg === "--config" || arg === "-c" || arg === "--enable" || arg === "--disable") {
       const value = args[index + 1];
       if (value !== undefined && !value.startsWith("-")) {
-        execArgs.push(arg, value);
+        if (arg !== "--enable" || !HOOK_FEATURES.has(value)) execArgs.push(arg, value);
         index++;
       }
-    } else if (arg.startsWith("--enable=") || arg.startsWith("--disable=")) {
+    } else if (arg.startsWith("--enable=")) {
+      if (!HOOK_FEATURES.has(arg.slice("--enable=".length))) execArgs.push(arg);
+    } else if (arg.startsWith("--disable=")) {
       execArgs.push(arg);
     }
   }
