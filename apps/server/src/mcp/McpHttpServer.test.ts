@@ -41,6 +41,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import * as PreviewManager from "../preview/Manager.ts";
 
 import * as DeviceService from "../device/DeviceService.ts";
 import * as PullRequestReviewGuideService from "../pullRequest/PullRequestReviewGuideService.ts";
@@ -56,7 +57,9 @@ import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
 import { PreviewToolkit } from "./toolkits/preview/tools.ts";
+import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
+import { ThreadToolkit } from "./toolkits/thread/tools.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -243,9 +246,13 @@ it.effect.each([
 const layerRecordingTools = (calls: Array<unknown>) => {
   const RecordingToolkit = Toolkit.make(
     OrchestratorToolkit.tools.delegate_task,
+    OrchestratorToolkit.tools.boops_thread_list,
     OrchestratorToolkit.tools.boops_thread_read,
     OrchestratorToolkit.tools.boops_thread_wait,
+    ProjectToolkit.tools.boops_project_list,
     ProjectToolkit.tools.boops_project_update,
+    ThreadToolkit.tools.boops_queue,
+    PreviewControlsToolkit.tools.boops_preview_list,
     ProjectToolkit.tools.boops_thread_launch,
   );
   const record = McpToolAccess.reads((params: unknown) =>
@@ -259,9 +266,13 @@ const layerRecordingTools = (calls: Array<unknown>) => {
     RecordingToolkit,
     McpToolAccess.toLayer(RecordingToolkit, {
       delegate_task: record,
+      boops_thread_list: record,
       boops_thread_read: record,
       boops_thread_wait: record,
+      boops_project_list: record,
       boops_project_update: record,
+      boops_queue: record,
+      boops_preview_list: record,
       boops_thread_launch: record,
     }),
   ).pipe(
@@ -271,6 +282,8 @@ const layerRecordingTools = (calls: Array<unknown>) => {
         McpToolAccessTestkit.liveThreadsLayer,
         Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({}),
         Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(PreviewManager.PreviewManager)({}),
+        Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
         Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
         Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
           namedProjectsRoot: process.cwd(),
@@ -624,6 +637,29 @@ it.effect.each(["limit", "runLimit", "maxCharsPerItem"])(
 
       expect(String(rejected)).toContain("greater than or equal to 1");
       expect(calls).toEqual([]);
+    }).pipe(Effect.provide(layerRecordingTools(calls)));
+  },
+);
+
+const clampedListLimits = [
+  { tool: "boops_thread_list", input: { allProjects: true }, maximum: 100 },
+  { tool: "boops_project_list", input: {}, maximum: 100 },
+  { tool: "boops_queue", input: { action: "list" }, maximum: 100 },
+  { tool: "boops_preview_list", input: {}, maximum: 50 },
+];
+
+it.effect.each(clampedListLimits)(
+  "clamps a $tool limit above its maximum instead of rejecting the call",
+  ({ tool, input, maximum }) => {
+    const calls: Array<unknown> = [];
+    return Effect.gen(function* () {
+      yield* callTool(tool, { ...input, limit: maximum * 2 });
+      yield* callTool(tool, { ...input, limit: 7 });
+
+      expect(calls).toEqual([
+        { ...input, limit: maximum },
+        { ...input, limit: 7 },
+      ]);
     }).pipe(Effect.provide(layerRecordingTools(calls)));
   },
 );
