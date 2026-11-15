@@ -4,6 +4,7 @@ import * as NodeUtil from "node:util";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it, vi } from "@effect/vitest";
 import {
+  CommandId,
   type OrchestrationV2ServerCommand,
   ProjectId,
   ProviderInstanceId,
@@ -28,6 +29,7 @@ import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import { OrchestratorDispatchError } from "../orchestration-v2/Orchestrator.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -196,6 +198,8 @@ it.effect(
               Layer.mergeAll(
                 ManagedPolicy.layerTest(),
                 Layer.mock(ThreadManagementService.ThreadManagementService)({
+                  // No earlier occurrence is queued.
+                  getThreadRecords: () => Effect.succeed({ runs: [] } as never),
                   sendToThread: () =>
                     Ref.updateAndGet(dispatched, (n) => n + 1).pipe(
                       Effect.andThen((n) =>
@@ -289,6 +293,8 @@ it.effect(
               Layer.mergeAll(
                 ManagedPolicy.layerTest(),
                 Layer.mock(ThreadManagementService.ThreadManagementService)({
+                  // No earlier occurrence is queued.
+                  getThreadRecords: () => Effect.succeed({ runs: [] } as never),
                   sendToThread: () =>
                     Ref.updateAndGet(dispatched, (n) => n + 1).pipe(
                       Effect.andThen((n) =>
@@ -424,10 +430,9 @@ it.effect.each([
       Layer.provide(
         Layer.mergeAll(
           ManagedPolicy.layerTest(),
-          Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             sendToThread: (input) => Ref.set(sent, input.messageId).pipe(Effect.as({} as never)),
-            getThreadShell: () => Effect.succeed(threadShell(projectId)),
+            getThreadShell: () => Effect.succeed({ projectId, deletedAt: null } as never),
             getProjectThreadRecords: () =>
               Effect.map(
                 Ref.get(sent),
@@ -572,6 +577,66 @@ it.effect("a bound run follows its thread when promotion moves it mid-send", () 
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
+it.effect("a refused dispatch records its refusal, and opaque causes stay generic", () =>
+  Effect.gen(function* () {
+    const refusal = "Thread thread:refused was stopped.";
+    const refused = (cause: unknown) =>
+      new OrchestratorDispatchError({
+        commandId: CommandId.make("command:refused"),
+        commandType: "message.dispatch",
+        cause,
+      });
+    const generic = refused(undefined).message;
+    const cases = [
+      [refusal, refusal],
+      ["   ", generic],
+      [new Error("private-nested-secret"), generic],
+    ] as const;
+    const failure = yield* Ref.make<unknown>(undefined);
+    const layer = ScheduledTaskService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          ManagedPolicy.layerTest(),
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            getThreadShell: () => Effect.succeed({ projectId: ProjectId.make("project:test"), deletedAt: null } as never),
+            sendToThread: () =>
+              Ref.get(failure).pipe(Effect.flatMap((cause) => Effect.fail(refused(cause)))),
+          }),
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+            namedProjectsRoot: "/projects",
+            isScratchProject: () => Effect.succeed(false),
+          }),
+          NodeCrypto.layer,
+          Layer.succeed(Scheduler.Scheduler, { register: () => Effect.void }),
+        ),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const { task } = yield* service.upsert({
+        id: ScheduledTaskId.make("task:refused"),
+        title: "Refused dispatch",
+        prompt: "Check progress",
+        enabled: true,
+        schedule: { type: "interval", everyMs: 60_000 },
+        projectId: ProjectId.make("project:test"),
+        threadId: ThreadId.make("thread:refused"),
+        workspaceStrategy: { type: "root" },
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+      });
+      for (const [cause, expected] of cases) {
+        yield* Ref.set(failure, cause);
+        const result = yield* service.runNow({ id: task.id });
+        assert.equal(result.task.lastRunStatus, "failed");
+        assert.equal(result.task.lastRunError, expected);
+      }
+    }).pipe(Effect.provide(layer));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
 it.effect("a run interrupted right after it reserves the task does not block the next run", () =>
   Effect.gen(function* () {
     const sends = yield* Ref.make(0);
@@ -643,7 +708,10 @@ const routineDependencies = (
 ) =>
   Layer.mergeAll(
     ManagedPolicy.layerTest(),
-    Layer.mock(ThreadManagementService.ThreadManagementService)(threadManagement),
+    Layer.mock(ThreadManagementService.ThreadManagementService)({
+      getThreadRecords: () => Effect.succeed({ runs: [] } as never),
+      ...threadManagement,
+    }),
     Layer.mock(SecretRequests.SecretRequests)({}),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
       namedProjectsRoot: "/projects",

@@ -208,7 +208,6 @@ it.effect("keeps one queued occurrence of a recurring task while its bound threa
                 ),
               ),
       }),
-      Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         namedProjectsRoot: "/projects",
         isScratchProject: () => Effect.succeed(false),
@@ -227,9 +226,7 @@ it.effect("keeps one queued occurrence of a recurring task while its bound threa
               runId: run.id,
               role: "user",
               text: input.text,
-              ...(input.scheduledTaskId === undefined
-                ? {}
-                : { scheduledTaskId: input.scheduledTaskId }),
+              ...(input.routine === undefined ? {} : { routine: input.routine }),
             } as OrchestrationV2ConversationMessage;
             return [
               {
@@ -280,7 +277,7 @@ it.effect("keeps one queued occurrence of a recurring task while its bound threa
               runs
                 .filter((run) => run.status === "queued")
                 .map((run) => messages.find((message) => message.id === run.userMessageId))
-                .filter((message) => message?.scheduledTaskId === taskId).length,
+                .filter((message) => message?.routine?.taskId === taskId).length,
           ),
         );
       const queuedOccurrences = queuedOccurrencesOf(task.id);
@@ -341,6 +338,7 @@ it.effect(
         Scheduler.layer,
         ManagedPolicy.layerTest(),
         Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadRecords: () => Effect.succeed({ runs: [] } as never),
           sendToThread: (input) =>
             Deferred.succeed(launched, input.routine?.name ?? "").pipe(Effect.as({} as never)),
         }),
@@ -404,17 +402,16 @@ it.effect("a fixed-time slot missed while the server was off shows on the task",
       NodeCrypto.layer,
       Scheduler.layer,
       ManagedPolicy.layerTest(),
-      Layer.mock(ThreadLaunchService.ThreadLaunchService)({
-        launch: () =>
-          Ref.update(launches, (count) => count + 1).pipe(
-            Effect.as({ threadId: "thread-missed-slot", resumed: false } as never),
-          ),
-      }),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         namedProjectsRoot: "/projects",
         isScratchProject: () => Effect.succeed(false),
       }),
-      Layer.mock(ThreadManagementService.ThreadManagementService)({}),
+      Layer.mock(ThreadManagementService.ThreadManagementService)({
+        getThreadShell: () =>
+          Effect.succeed({ projectId: "project-missed-slot", deletedAt: null } as never),
+        sendToThread: () =>
+          Ref.update(launches, (count) => count + 1).pipe(Effect.as({} as never)),
+      }),
       Layer.mock(SecretRequests.SecretRequests)({}),
     );
     const withServer = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -432,6 +429,7 @@ it.effect("a fixed-time slot missed while the server was off shows on the task",
             enabled: true,
             schedule: { type: "fixed_time", timeOfDay: "09:00" },
             projectId: "project-missed-slot",
+            threadId: "thread-missed-slot",
             workspaceStrategy: { type: "root" },
             modelSelection: { instanceId: "codex", model: "gpt-5.4" },
             runtimeMode: "full-access",
@@ -481,22 +479,24 @@ it.effect(
         NodeCrypto.layer,
         Scheduler.layer,
         ManagedPolicy.layerTest(),
-        Layer.mock(ThreadLaunchService.ThreadLaunchService)({
-          launch: (input) =>
-            (input.title === "Slow"
-              ? Deferred.succeed(slowStarted, undefined).pipe(
-                  Effect.andThen(Deferred.await(releaseSlow)),
-                )
-              : input.title === "Last"
-                ? Deferred.succeed(lastProcessed, undefined)
-                : Effect.void
-            ).pipe(Effect.as({ threadId: `thread-${input.title}`, resumed: false } as never)),
-        }),
         Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
           namedProjectsRoot: "/projects",
           isScratchProject: () => Effect.succeed(false),
         }),
-        Layer.mock(ThreadManagementService.ThreadManagementService)({}),
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadShell: () =>
+            Effect.succeed({ projectId: "project-stale-slot", deletedAt: null } as never),
+          getThreadRecords: () => Effect.succeed({ runs: [] } as never),
+          sendToThread: (input) =>
+            (input.routine?.name === "Slow"
+              ? Deferred.succeed(slowStarted, undefined).pipe(
+                  Effect.andThen(Deferred.await(releaseSlow)),
+                )
+              : input.routine?.name === "Last"
+                ? Deferred.succeed(lastProcessed, undefined)
+                : Effect.void
+            ).pipe(Effect.as({} as never)),
+        }),
         Layer.mock(SecretRequests.SecretRequests)({}),
       );
       const withServer = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -516,6 +516,7 @@ it.effect(
               enabled: true,
               schedule,
               projectId: "project-stale-slot",
+              threadId: `thread-${title}`,
               workspaceStrategy: { type: "root" },
               modelSelection: { instanceId: "codex", model: "gpt-5.4" },
               runtimeMode: "full-access",
