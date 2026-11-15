@@ -38,12 +38,12 @@ private enum ComposerEnterBehavior: String {
 }
 
 private final class ComposerTextAttachment: NSTextAttachment {
-  let source: String
-  let label: String
+  let token: ComposerTokenPayload
+  var source: String { token.source }
+  var label: String { token.label }
 
-  init(source: String, label: String, image: UIImage, size: CGSize, baselineOffset: CGFloat) {
-    self.source = source
-    self.label = label
+  init(token: ComposerTokenPayload, image: UIImage, size: CGSize, baselineOffset: CGFloat) {
+    self.token = token
     super.init(data: nil, ofType: nil)
     self.image = image
     bounds = CGRect(x: 0, y: baselineOffset, width: size.width, height: size.height)
@@ -80,7 +80,6 @@ private final class ComposerTextView: UITextView {
   var onPasteContext: (([String: String]) -> Void)?
   var onPasteText: ((String, NSRange) -> Void)?
   var clipboardFragment = ""
-  var onAttributedMutation: (() -> Void)?
   var onSubmit: ((Bool) -> Void)?
   var isReadOnly = false
   var textPasteThresholdBytes = 0
@@ -334,9 +333,7 @@ private final class ComposerTextView: UITextView {
       return super.cut(sender)
     }
     copy(sender)
-    textStorage.replaceCharacters(in: selectedRange, with: "")
-    selectedRange = NSRange(location: selectedRange.location, length: 0)
-    onAttributedMutation?()
+    replaceDisplayRange(selectedRange)
   }
 
   func serializedText() -> String {
@@ -516,9 +513,6 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
         "text": text,
         "selection": ["start": selection.start, "end": selection.end],
       ])
-    }
-    textView.onAttributedMutation = { [weak self] in
-      self?.emitTextChange()
     }
     textView.onSubmit = { [weak self] alternate in
       self?.onComposerSubmit(["alternate": alternate])
@@ -966,8 +960,7 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
       font: chipFont
     )
     let attachment = ComposerTextAttachment(
-      source: token.source,
-      label: token.label,
+      token: token,
       image: image,
       size: image.size,
       baselineOffset: chipFont.ascender - image.size.height
