@@ -2,7 +2,11 @@ import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useWorkspaceSettledContentWidth } from "../layout/workspace-content-width";
-import { ThreadMarkdownVideo, ThreadMediaVisibleContext } from "./ThreadMarkdownVideo";
+import {
+  ThreadMarkdownVideo,
+  ThreadMediaRetainContext,
+  ThreadMediaVisibleContext,
+} from "./ThreadMarkdownVideo";
 import { rememberedFeedViewport, rememberFeedViewport } from "./feedViewportMemory";
 import { useMarkdownImageSource } from "../../native/useMarkdownImageSource";
 import {
@@ -121,7 +125,7 @@ import { imageMimeType } from "@t3tools/shared/image";
 import { videoMimeType } from "@t3tools/shared/video";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { HeaderHeightContext } from "@react-navigation/elements";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused, useNavigation } from "@react-navigation/native";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useDeviceType } from "../../native/native-layout-metrics";
 import { isDuoDevice } from "../../lib/device-type";
@@ -141,9 +145,11 @@ import {
   useId,
   type ComponentPropsWithRef,
   type ComponentRef,
+  type Dispatch,
   type ReactNode,
   type Ref,
   type RefObject,
+  type SetStateAction,
 } from "react";
 import {
   Image,
@@ -1294,17 +1300,33 @@ function ThreadFeedScrollView(props: ComponentPropsWithRef<typeof Animated.Scrol
 // The opening tail draws rows that can't be touched; they skip per-row gestures and visibility.
 const ThreadFeedStaticRowContext = createContext(false);
 
-function ThreadMediaVisibility(props: { readonly children: ReactNode }) {
-  if (useContext(ThreadFeedStaticRowContext)) return props.children;
-  return <ThreadMediaVisibilityTracker>{props.children}</ThreadMediaVisibilityTracker>;
+interface ThreadMediaVisibilityProps {
+  readonly rowId: string;
+  readonly setRetainedRowId: Dispatch<SetStateAction<string | null>>;
+  readonly children: ReactNode;
 }
 
-function ThreadMediaVisibilityTracker(props: { readonly children: ReactNode }) {
+function ThreadMediaVisibility(props: ThreadMediaVisibilityProps) {
+  if (useContext(ThreadFeedStaticRowContext)) return props.children;
+  return <ThreadMediaVisibilityTracker {...props} />;
+}
+
+function ThreadMediaVisibilityTracker(props: ThreadMediaVisibilityProps) {
+  const { rowId, setRetainedRowId } = props;
   const [visible, setVisible] = useState(false);
   useViewabilityAmount<ThreadFeedEntry>(
     useCallback((token) => setVisible(token.sizeVisible > 0), []),
   );
-  return <ThreadMediaVisibleContext value={visible}>{props.children}</ThreadMediaVisibleContext>;
+  const retain = useCallback(
+    (retained: boolean) =>
+      setRetainedRowId((current) => (retained ? rowId : current === rowId ? null : current)),
+    [rowId, setRetainedRowId],
+  );
+  return (
+    <ThreadMediaRetainContext value={retain}>
+      <ThreadMediaVisibleContext value={visible}>{props.children}</ThreadMediaVisibleContext>
+    </ThreadMediaRetainContext>
+  );
 }
 
 interface MarkdownLinkHandlers {
@@ -3363,6 +3385,10 @@ export const ThreadFeed = memo(function ThreadFeed({
   const duoColumns = useNativeWorkspaceColumnsSupported() && isDuoDevice(deviceType);
   const navigation = useNavigation();
   const openLinkedThread = useOpenLinkedThread();
+  // Recycling a row disposes its native audio player, so a started clip's row stays rendered.
+  const [retainedMediaRowId, setRetainedMediaRowId] = useState<string | null>(null);
+  const focused = useIsFocused();
+  if (!focused && retainedMediaRowId !== null) setRetainedMediaRowId(null);
   const { themeAppearance } = useAppearancePreferences();
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disclosureSettleFrameRef = useRef<number | null>(null);
@@ -4536,7 +4562,7 @@ export const ThreadFeed = memo(function ThreadFeed({
         threadId={props.threadId}
         workspaceRoot={props.workspaceRoot}
       >
-        <ThreadMediaVisibility>
+        <ThreadMediaVisibility rowId={info.item.id} setRetainedRowId={setRetainedMediaRowId}>
           {!props.directMessage &&
           info.item.type === "message" &&
           !isCompactionCommandFeedEntry(info.item) &&
@@ -4727,6 +4753,7 @@ export const ThreadFeed = memo(function ThreadFeed({
                 // Native layout transitions retain stale row positions during sync, even at duration zero.
                 onItemSizeChanged={handleItemSizeChanged}
                 drawDistance={500}
+                {...(retainedMediaRowId ? { alwaysRender: { keys: [retainedMediaRowId] } } : {})}
                 keyboardShouldPersistTaps="always"
                 keyboardDismissMode="none"
                 keyboardLiftBehavior={props.sendingWithKeyboard ? "persistent" : "whenAtEnd"}
