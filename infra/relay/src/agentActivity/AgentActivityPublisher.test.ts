@@ -116,6 +116,7 @@ function makeApnsDeliveries(
   overrides: Partial<ApnsDeliveries.ApnsDeliveries["Service"]> = {},
 ): ApnsDeliveries.ApnsDeliveries["Service"] {
   return {
+    processBatch: () => Effect.void,
     sendForTarget: () => Effect.succeed(null),
     sendMessageForTarget: () => Effect.succeed(null),
     sendLiveActivity: () =>
