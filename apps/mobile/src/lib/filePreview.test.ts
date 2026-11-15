@@ -268,6 +268,7 @@ vi.mock("../components/ui/Menu", () => ({
 }));
 vi.mock("../components/FilePreviewGallery", () => ({
   FilePreviewGallery: ({ children }: { children?: ReactNode }) => children,
+  useFilePreviewGallery: () => (source: unknown) => source,
 }));
 vi.mock("../components/FilePreviewModal", () => ({
   FilePreviewModal: (props: { source: { name: string } | null }) =>
