@@ -418,11 +418,17 @@ gets the link Copy thread copies, `https://app.t3.codes/threads/<environmentId>/
 on the server's `T3CODE_HOSTED_APP_URL`, for threads in this environment. The
 hosted app offers the desktop app, the mobile app, or itself.
 
-List and read results report `snoozed` and `snoozedUntil`, and
+List and read results report `snoozed`, `snoozedUntil`, and `pinned`, and
 `boops_thread_list` filters on `snoozed`. The server's `isSnoozed` follows the
 client's `effectiveSnoozed`, so agents and the sidebar agree: a snoozed thread
 wakes early only when it has a pending request or fails after snoozing. Completed
 runs, background wakes, and delegated completions keep it snoozed.
+
+They also report `blockedOnThreadWait` and `pendingBackgroundTasks`, the shell
+fields behind the sidebar's Waiting label, so an agent can see what a thread
+still waits on after its run completed. A subagent or `background_task` holds
+the thread. A command or monitor holds it only with `awaited: true`, since agents
+often leave a dev server running.
 
 ### `boops_thread_update`
 

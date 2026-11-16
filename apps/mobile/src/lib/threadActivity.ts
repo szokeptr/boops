@@ -76,6 +76,7 @@ import type { McpAppReference } from "@t3tools/shared/mcpApp";
 import {
   compactDynamicToolOutput,
   htmlRenderFromToolItem,
+  sentMessageFromToolItem,
   mcpAppFromToolItem,
 } from "@t3tools/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
@@ -205,6 +206,13 @@ type RawThreadFeedEntry =
       readonly render: HtmlRenderReference;
     }
   | {
+      readonly type: "sent-message";
+      readonly id: string;
+      readonly createdAt: string;
+      readonly runId: RunId | null;
+      readonly text: string;
+    }
+  | {
       readonly type: "mcp-app";
       readonly id: string;
       readonly createdAt: string;
@@ -222,7 +230,7 @@ export type ThreadFeedEntry = ThreadFeedEntryContent & {
 };
 
 type ThreadFeedEntryContent =
-  | Extract<RawThreadFeedEntry, { type: "message" | "html-render" | "mcp-app" }>
+  | Extract<RawThreadFeedEntry, { type: "message" | "html-render" | "sent-message" | "mcp-app" }>
   | {
       readonly type: "activity-group";
       readonly id: string;
@@ -1206,6 +1214,7 @@ function deriveThreadFeedRunFolds(
         ? (entry.message.runId ?? runlessKey)
         : entry.type === "activity-group" ||
             entry.type === "html-render" ||
+            entry.type === "sent-message" ||
             entry.type === "mcp-app"
           ? (entry.runId ?? runlessKey)
           : null;
@@ -1259,6 +1268,7 @@ function deriveThreadFeedRunFolds(
           (entry) =>
             entry.id !== terminalAssistantId &&
             entry.type !== "html-render" &&
+            entry.type !== "sent-message" &&
             entry.type !== "mcp-app" &&
             !(entry.type === "activity-group" && isContextCompactionActivityGroup(entry)) &&
             !(
@@ -1760,6 +1770,7 @@ export function deriveDirectMessageFeed(
           ? [entry]
           : entry.activities.flatMap(answeredQuestionMessages);
       case "html-render":
+      case "sent-message":
       case "mcp-app":
         return [entry];
       default:
@@ -2571,6 +2582,23 @@ export function buildThreadFeed(
         render,
       };
       projectedEntriesCache.set(row, { attemptId, entries: [entry] });
+      entries.push(entry);
+      entryRows.push(index);
+      continue;
+    }
+    const sentMessage =
+      item.type === "dynamic_tool" && item.status === "completed"
+        ? sentMessageFromToolItem(item)
+        : undefined;
+    if (sentMessage !== undefined) {
+      const entry: RawThreadFeedEntry = {
+        type: "sent-message",
+        id: `sent-message:${row.visibility}:${row.sourceThreadId}:${row.sourceItemId}`,
+        createdAt,
+        runId: item.runId,
+        text: sentMessage,
+      };
+      projectedEntriesCache.set(row, { attemptId, entry });
       entries.push(entry);
       entryRows.push(index);
       continue;

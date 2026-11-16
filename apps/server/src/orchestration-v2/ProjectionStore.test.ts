@@ -4319,6 +4319,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       for (const inline of [
         { toolName: "boops.delegate_task" },
         { toolName: "mcp__boops__delegate_task" },
+        { toolName: "mcp__boops__send_to_user" },
         { toolName: "mcp__docs__search", output: { next: "Delegate-Task" } },
         { toolName: "view_image", viewedImagePath: "/repo/screenshot.png" },
         { toolName: "mcp__docs__chart", output: { [MCP_APP_OUTPUT_KEY]: { uri: "ui://chart" } } },
@@ -4368,7 +4369,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       }
       // Until its run is scanned, a cursor on inline output is hidden inside a work group.
       yield* sql`UPDATE orchestration_v2_projection_turn_items SET type = 'dynamic_tool',
-        payload_json = json_set(payload_json, '$.type', 'dynamic_tool', '$.toolName', 't3-code.delegate_task'),
+        payload_json = json_set(payload_json, '$.type', 'dynamic_tool', '$.toolName', 'boops.delegate_task'),
         inline_work_output = 1 WHERE thread_id = ${threadId} AND ordinal = 4`;
       const sharedRunId = "run:bounded-sql-history:1";
       // A work page of rows that have no run leaves their inline output out too.
@@ -4430,7 +4431,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             '$.runId', CASE WHEN ordinal <= 700 THEN 'run:bounded-sql-history:300' ELSE ${sharedRunId} END)
         WHERE thread_id = ${threadId} AND ordinal >= 100`;
       yield* sql`UPDATE orchestration_v2_projection_turn_items SET type = 'dynamic_tool',
-        payload_json = json_set(payload_json, '$.type', 'dynamic_tool', '$.toolName', 't3-code.delegate_task'),
+        payload_json = json_set(payload_json, '$.type', 'dynamic_tool', '$.toolName', 'boops.delegate_task'),
         inline_work_output = 1 WHERE thread_id = ${threadId} AND ordinal = 720`;
       const beforeMissingCursor = yield* historyPage(
         threadId,

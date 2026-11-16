@@ -82,6 +82,8 @@ import {
   DeviceStandardToolkit,
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
+import { MessageToolkit } from "./toolkits/message/tools.ts";
+import * as MessageHandlers from "./toolkits/message/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 import { MCP_HTTP_PATH } from "../httpCors.ts";
 import { requestUrl } from "../requestUrl.ts";
@@ -242,10 +244,12 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     const limited = McpInvocationContext.withRuntimeModeCeiling(asked, runtimeModeCeiling);
     const linkedEnvironments = yield* linksEnabled;
     if (limited.client?.linked === true && !linkedEnvironments) return linkedEnvironmentsOff;
+    const origin = Option.getOrUndefined(Option.map(requestUrl(request), (url) => url.origin));
     return yield* httpEffect.pipe(
       Effect.provideService(McpInvocationContext.McpInvocationContext, {
         ...limited,
         linkedEnvironments,
+        origin,
       }),
       Effect.map(normalizeMcpHttpResponse),
     );
@@ -953,20 +957,16 @@ const withToolAnalytics =
     const scheduledRunOf = (threadId: string, runId: RunId | null) =>
       Option.isNone(threads) || runId === null
         ? Effect.succeed(false)
-        : threads.value
-            .getThreadRecords(ThreadId.make(threadId), ["runs", "messages"], {
+        : Effect.gen(function* () {
+            const id = ThreadId.make(threadId);
+            const { runs } = yield* threads.value.getThreadRecords(id, ["runs"], {
               runIds: [runId],
-              messageRoles: ["user"],
-            })
-            .pipe(
-              Effect.map((records) => {
-                const run = records.runs.find((candidate) => candidate.id === runId);
-                return records.messages.some(
-                  (message) => message.id === run?.userMessageId && message.routine !== undefined,
-                );
-              }),
-              Effect.orElseSucceed(() => false),
-            );
+            });
+            const run = runs.find((candidate) => candidate.id === runId);
+            if (run === undefined) return false;
+            const messages = yield* threads.value.getMessagesById(id, [run.userMessageId]);
+            return messages.get(run.userMessageId)?.routine !== undefined;
+          }).pipe(Effect.orElseSucceed(() => false));
     const record =
       /* Request instrumentation already owns the span; keep this helper in that context. */
       Effect.fnUntraced(
@@ -1159,6 +1159,8 @@ export const layerOrchestratorToolkit = toolkitRegistration(
 
 export const layerThreadToolkit = toolkitRegistration(ThreadToolkit, ThreadHandlers.layer);
 
+const layerMessageToolkit = toolkitRegistration(MessageToolkit, MessageHandlers.layer);
+
 const layerWorktreeToolkitRegistration = toolkitRegistration(
   WorktreeToolkit,
   WorktreeHandlers.layer,
@@ -1231,7 +1233,8 @@ export const layerMcpTransport = <RA, RE, RR>(registrations: Layer.Layer<RA, RE,
     name: "Boops",
     version: packageJson.version,
     path: MCP_HTTP_PATH,
-    protocols: [McpProtocol.v2025_06_18],
+    // The first protocol is the fallback for clients that offer an unknown version.
+    protocols: [McpProtocol.v2025_06_18, McpProtocol.v2026_07_28],
     allowSessionTermination: true,
     registrations,
   }).pipe(Layer.provide(layerMcpAuthMiddleware));
@@ -1251,6 +1254,7 @@ export const layerTools = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+  layerMessageToolkit,
 );
 
 export const layer = layerMcpTransport(layerTools);

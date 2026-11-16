@@ -14,6 +14,7 @@ layer("104_TurnItemInlineWorkOutput", (it) => {
       yield* runMigrations({ toMigrationInclusive: 103 });
       const rows: ReadonlyArray<readonly [string, string, object, number]> = [
         ["delegate", "dynamic_tool", { toolName: "mcp__boops__delegate_task" }, 1],
+        ["send", "dynamic_tool", { toolName: "mcp__boops__send_to_user" }, 1],
         ["html", "dynamic_tool", { toolName: "x", output: { htmlRender: {} } }, 1],
         ["mcp-app", "dynamic_tool", { toolName: "x", output: { t3McpApp: {} } }, 1],
         ["image", "dynamic_tool", { toolName: "view_image", viewedImagePath: "/a.png" }, 1],
