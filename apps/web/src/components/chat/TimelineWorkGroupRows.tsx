@@ -430,7 +430,12 @@ export function ThinkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind:
   // A failed group keeps this disclosure while an approval waits, but nothing is thinking then.
   const live = ctx.pendingApprovals.size === 0;
   const activity = (
-    <LiveActivityRow label={providerStartingLabel ?? "Thinking"} iconName="brain" active={live} shimmer={live} />
+    <LiveActivityRow
+      label={providerStartingLabel ?? "Thinking"}
+      iconName="brain"
+      active={live}
+      shimmer={live}
+    />
   );
   const { groupId } = row;
   if (groupId === undefined) return activity;

@@ -1826,9 +1826,10 @@ describe("composerDraftStore modelSelection", () => {
           explicit: true,
           replaceOptions: true,
         });
-      expect(
-        effective(modelSelection(CODEX_DRIVER, "5.4", { reasoningEffort: "low" })),
-      ).toEqual({ model: "gpt-5.4", options: toSelections({ reasoningEffort: "low" }) });
+      expect(effective(modelSelection(CODEX_DRIVER, "5.4", { reasoningEffort: "low" }))).toEqual({
+        model: "gpt-5.4",
+        options: toSelections({ reasoningEffort: "low" }),
+      });
     });
   });
 

@@ -1,5 +1,5 @@
 import { AVAILABLE_CONNECTION_STATE } from "@t3tools/client-runtime/connection";
-import { EnvironmentId, type ServerConfig } from "@t3tools/contracts";
+import { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 

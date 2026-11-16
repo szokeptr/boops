@@ -350,11 +350,7 @@ export function useQueuedRunEdit(input: {
     if (!projection) return;
     const workflow = deriveThreadQueueWorkflowState(projection);
     const queued = workflow.queuedRuns.find(({ run }) => run.id === edited.runId);
-    if (
-      queued === undefined ||
-      workflow.activeRun === null ||
-      !workflow.canPromoteToSteer
-    ) {
+    if (queued === undefined || workflow.activeRun === null || !workflow.canPromoteToSteer) {
       return;
     }
     await promoteQueuedRun({

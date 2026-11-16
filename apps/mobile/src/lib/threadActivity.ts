@@ -1777,7 +1777,9 @@ export function deriveDirectMessageFeed(
     entry.type === "message" && entry.message.role === "user" ? entry.message : null;
   return foldRepeatedRoutineRuns(
     withoutSilentRoutineWakes(
-      typingSince === null || replying ? folded : [...folded, thinkingRow(typingSince, null, undefined)],
+      typingSince === null || replying
+        ? folded
+        : [...folded, thinkingRow(typingSince, null, undefined)],
       userMessageOf,
     ),
     {
