@@ -15,3 +15,20 @@ describe("normalizeCliError", () => {
     expect(result.message).not.toContain("secret-token");
   });
 });
+
+describe("buildThreadTitlePrompt", () => {
+  it("puts the user's instructions above the limits", () => {
+    for (const previousTitle of [undefined, "Hyperdrive Config Crash"]) {
+      const { prompt } = buildThreadTitlePrompt({
+        message: "hyperdrive init crashes without a config",
+        previousTitle,
+        instructions: "Prefix every title with the team name.",
+      });
+      expect(prompt).not.toContain("fewer than 40 characters");
+      expect(prompt).toContain("Title instructions from the user:\nPrefix every title");
+    }
+    expect(buildThreadTitlePrompt({ message: "Fix login", instructions: " " }).prompt).toContain(
+      "3-8 words, fewer than 40 characters.",
+    );
+  });
+});
