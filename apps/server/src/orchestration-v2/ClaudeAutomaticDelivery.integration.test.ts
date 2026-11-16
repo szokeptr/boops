@@ -650,6 +650,7 @@ const renamedClaudeSessionTitles = (options: { readonly renameDuringStartup: boo
             mcpServerStatus: Effect.succeed([]),
             readMcpResource: () => Effect.die("unexpected MCP resource read"),
             callMcpTool: () => Effect.die("unexpected MCP tool call"),
+            setMcpServers: () => Effect.die("unexpected MCP server change"),
             listPermissionRules: Effect.die("unexpected permission rules read"),
             stopTask: () => Effect.void,
             interrupt: Effect.die("a rename must not interrupt the turn"),
@@ -657,7 +658,6 @@ const renamedClaudeSessionTitles = (options: { readonly renameDuringStartup: boo
           }),
         forkSession: () => Effect.die("unused"),
         subagentLaunchToolUseId: () => Effect.succeed(null),
-        subagentModel: () => Effect.succeed(null),
         assertComplete: Effect.void,
       },
     });
