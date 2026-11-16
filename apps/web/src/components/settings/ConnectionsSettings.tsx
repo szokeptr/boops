@@ -341,7 +341,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     ? desktopServerExposureState?.mode === "network-accessible"
     : isServerNetworkAccessible({
         authPolicy: currentAuthPolicy,
-        directEndpoints: accessEnvironment?.serverConfig?.directEndpoints,
+        directEndpoints: primaryServerConfig?.directEndpoints,
       });
   const trimmedTailscaleServePortInput = tailscaleServePortInput.trim();
   const parsedTailscaleServePort = Number(trimmedTailscaleServePortInput);

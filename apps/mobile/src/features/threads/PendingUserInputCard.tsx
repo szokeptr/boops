@@ -301,8 +301,6 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                           <QuestionText
                             markdown={option.preview}
                             environmentId={props.environmentId}
-                            threadId={props.threadId}
-                            workspaceRoot={props.workspaceRoot}
                             setDirection={setDirection}
                             preserveSoftBreaks
                           />

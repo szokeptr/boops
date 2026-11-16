@@ -144,8 +144,8 @@ describe("link round trips", () => {
     const canParse = URL.canParse;
     Reflect.deleteProperty(URL, "canParse");
     try {
-      expect(promptLinkAppPath("https://app.t3.codes/new?prompt=hi")).toBe("/new?prompt=hi");
-      expect(promptLinkAppPath("https://app.t3.codes/")).toBeNull();
+      expect(promptLinkAppPath("https://app.getboops.com/new?prompt=hi")).toBe("/new?prompt=hi");
+      expect(promptLinkAppPath("https://app.getboops.com/")).toBeNull();
       expect(promptLinkAppPath("not a url")).toBeNull();
     } finally {
       URL.canParse = canParse;

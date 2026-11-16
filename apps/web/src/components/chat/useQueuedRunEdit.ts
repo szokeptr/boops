@@ -353,8 +353,7 @@ export function useQueuedRunEdit(input: {
     if (
       queued === undefined ||
       workflow.activeRun === null ||
-      !workflow.canPromoteToSteer ||
-      (queued.run.freshContext === true && !workflow.promoteSkipsCompaction)
+      !workflow.canPromoteToSteer
     ) {
       return;
     }
