@@ -22,6 +22,7 @@ import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2Pe
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import { derive } from "./IdAllocator.ts";
 import { isOrchestrationV2WorkActive } from "@t3tools/contracts";
 
 function trimmed(value: string | null | undefined): string | undefined {
@@ -176,6 +177,19 @@ export function makeSubagentConversationArtifacts(input: {
   return { message, turnItem };
 }
 
+/** Run signal of the notice that carries a provider's stop reason on a completed run. */
+export const PROVIDER_STOP_REASON_SIGNAL = "provider-stop-reason";
+
+function withStopNotice(
+  projection: Pick<OrchestrationV2ThreadProjection, "turnItems">,
+  run: OrchestrationV2Run,
+  text: string,
+): string {
+  const id = derive.runSignalTurnItem({ runId: run.id, signal: PROVIDER_STOP_REASON_SIGNAL });
+  const notice = projection.turnItems.find((item) => item.id === id);
+  return notice?.type === "system_notice" ? `${text}\n\n${notice.message}` : text;
+}
+
 export function subagentResultForRun(
   projection: Pick<OrchestrationV2ThreadProjection, "messages" | "turnItems">,
   run: OrchestrationV2Run,
@@ -216,12 +230,20 @@ export function subagentResultForRun(
           .filter((item) => item.runId === run.id && item.type === "error")
           .toSorted((left, right) => right.ordinal - left.ordinal)[0]
       : undefined;
+  const reportBeforeFailure =
+    failure !== undefined && turnItem !== null && turnItem.ordinal < failure.ordinal
+      ? (message?.text ?? turnItem.text)
+      : undefined;
   const text =
-    (failure?.type === "error" ? failure.failure.message : undefined) ??
+    (failure?.type === "error"
+      ? reportBeforeFailure === undefined
+        ? failure.failure.message
+        : `${failure.failure.message}\n\nLast assistant message before the run failed:\n\n${reportBeforeFailure}`
+      : undefined) ??
     message?.text ??
     turnItem?.text ??
     (run.status === "completed"
-      ? "Child task completed without an assistant result."
+      ? withStopNotice(projection, run, "Child task completed without an assistant result.")
       : `Child task ended with status ${run.status}.`);
   return {
     text,
