@@ -1687,7 +1687,12 @@ export const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(fun
     const result = yield* sample.devices.call(name, input, failure);
     return result.isError ? failed(result.text) : toolResult(call.id, result.text);
   }
-  if (sample.backgroundWait && isT3Name(call.name) && name === "boops_background_wait" && fromWorld) {
+  if (
+    sample.backgroundWait &&
+    isT3Name(call.name) &&
+    name === "boops_background_wait" &&
+    fromWorld
+  ) {
     const result = yield* sample.backgroundWait(input);
     return result.isError ? failed(result.text) : toolResult(call.id, result.text);
   }

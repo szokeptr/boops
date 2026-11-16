@@ -739,10 +739,10 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
         createdAt,
         runId: item.runId,
         text: sentMessage,
-          ...attemptMetadata,
-        });
-        continue;
-      }
+        ...attemptMetadata,
+      });
+      continue;
+    }
 
     const mcpApp = item.type === "dynamic_tool" ? mcpAppFromToolItem(item) : undefined;
     if (mcpApp !== undefined) {

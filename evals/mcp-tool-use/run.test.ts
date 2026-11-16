@@ -799,7 +799,8 @@ it.effect("seeds Boops' error for a prior background wait whose IDs match nothin
       assert.equal(sample.priorErrors.has(wait), isError, id);
       const blocks = buildMessages(sample).flatMap((message) => message.content);
       const waitUse = blocks.find(
-        (block) => block.type === "tool_use" && String(block.name).endsWith("boops_background_wait"),
+        (block) =>
+          block.type === "tool_use" && String(block.name).endsWith("boops_background_wait"),
       );
       const replayed = blocks.find(
         (block) => block.type === "tool_result" && block.tool_use_id === waitUse?.id,
