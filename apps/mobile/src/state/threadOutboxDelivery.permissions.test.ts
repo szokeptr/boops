@@ -7,10 +7,12 @@ import {
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
+import { uploadError } from "../lib/composerAttachmentUploadQueue";
+import * as Effect from "effect/Effect";
 import * as Cause from "effect/Cause";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { QueuedThreadMessage } from "./thread-outbox-model";
+import { threadOutboxRetryDelayMs, type QueuedThreadMessage } from "./thread-outbox-model";
 
 const state = vi.hoisted(() => ({
   draftText: "Keep this draft separate",
@@ -41,7 +43,7 @@ const state = vi.hoisted(() => ({
   },
   config: {
     shellThreadFamilies: false,
-    providers: [{ instanceId: "codex", driver: "codex" }],
+    providers: [{ instanceId: "codex", driver: "codex", models: [] }],
     environment: { capabilities: {} },
   },
 }));
@@ -107,6 +109,7 @@ vi.mock("./git", () => ({ gitEnvironment: { preparePullRequestThread: state.chec
 vi.mock("../lib/modelOptions", () => ({ isModelSelectionUnavailable: state.modelUnavailable }));
 vi.mock("../lib/uuid", () => ({ uuidv4: () => "uuid", randomHex: () => "abcd" }));
 vi.mock("../lib/attachmentUpload", () => ({ prepareTurnAttachments: state.prepare }));
+vi.mock("./composer-attachment-uploads", () => ({ uploadComposerAttachmentShared: vi.fn() }));
 vi.mock("./thread-outbox", async () => {
   const { createThreadOutboxManager } = await import("./thread-outbox-manager");
   const { appAtomRegistry } = await import("./atom-registry");
@@ -161,6 +164,8 @@ import { appAtomRegistry } from "./atom-registry";
 import { environmentSession } from "./session";
 import { dispatchingQueuedMessageIdAtom, editingQueuedMessageIdsAtom } from "./use-thread-outbox";
 import { createThreadOutboxDelivery } from "./threadOutboxDelivery";
+import { composerAttachmentUploadsAtom } from "./composer-attachment-upload-states";
+import { workspaceConnections } from "./workspace";
 
 const message = (overrides: Partial<QueuedThreadMessage> = {}): QueuedThreadMessage => ({
   environmentId: EnvironmentId.make("secondary"),
@@ -225,12 +230,14 @@ beforeEach(() => {
     command.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   }
   state.start.mockResolvedValue(AsyncResult.success({}));
-  state.prepare.mockReset().mockImplementation(async ({ attachments }) => ({
-    status: "ready",
-    attachments: [],
-    draftAttachments: attachments,
-    pendingAttachmentIds: [],
-  }));
+  state.prepare.mockReset().mockImplementation(({ attachments }) =>
+    Effect.succeed({
+      status: "ready",
+      attachments: [],
+      draftAttachments: attachments,
+      pendingAttachmentIds: [],
+    }),
+  );
 });
 
 describe("queued PR checkout", () => {
@@ -481,20 +488,191 @@ describe("queued task operation access", () => {
           : {},
       );
       await state.manager.enqueue(queued);
-      state.prepare.mockImplementationOnce(async ({ attachments }) => {
-        setOperateGrant("secondary", false);
-        if (uploadFails) throw new Error("This connection cannot upload attachments.");
-        return {
-          status: "ready",
-          attachments: [],
-          draftAttachments: attachments,
-          pendingAttachmentIds: [],
-        };
-      });
+      state.prepare.mockImplementationOnce(({ attachments }) =>
+        Effect.suspend(() => {
+          setOperateGrant("secondary", false);
+          return uploadFails
+            ? Effect.fail(uploadError(new Error("This connection cannot upload attachments.")))
+            : Effect.succeed({
+                status: "ready",
+                attachments: [],
+                draftAttachments: attachments,
+                pendingAttachmentIds: [],
+              });
+        }),
+      );
       await runDrain();
       expect(state.prepare).toHaveBeenCalledOnce();
       expect(state.start).not.toHaveBeenCalled();
       expect(remaining()).toEqual([queued]);
     },
   );
+});
+
+describe("queued task whose launch reply is lost", () => {
+  const queuedTask = (creation: Partial<NonNullable<QueuedThreadMessage["creation"]>> = {}) =>
+    message({
+      threadId: ThreadId.make("new-thread"),
+      text: "My dictated idea",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+      creation: {
+        projectId: ProjectId.make("project"),
+        projectCwd: "/repo",
+        workspaceMode: "local",
+        branch: null,
+        worktreePath: null,
+        ...creation,
+      },
+    });
+
+  /** The server creates the thread, but the launch reply is lost; the thread then shows up. */
+  async function loseLaunchReply(queued: QueuedThreadMessage, edit?: string): Promise<void> {
+    setOperateGrant("secondary", true);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    state.cleanups.push(() => vi.useRealTimers());
+    await state.manager.enqueue(queued);
+    state.start.mockImplementationOnce(async () => {
+      if (edit !== undefined) await state.manager.update({ ...queued, text: edit });
+      return AsyncResult.failure(Cause.fail(new Error("Socket is not connected")));
+    });
+    await runDrain();
+    expect(remaining()).toHaveLength(1);
+    appAtomRegistry.set(state.threadShells, [state.thread, { ...state.thread, id: "new-thread" }]);
+  }
+
+  async function fireRetry(): Promise<void> {
+    const settled = Promise.withResolvers<void>();
+    const release = appAtomRegistry.subscribe(dispatchingQueuedMessageIdAtom, (id) => {
+      if (id === null) settled.resolve();
+    });
+    vi.advanceTimersByTime(threadOutboxRetryDelayMs(1));
+    await settled.promise.finally(release);
+  }
+
+  it("resends an unedited launch instead of handing its text back", async () => {
+    await loseLaunchReply(queuedTask());
+    await fireRetry();
+
+    expect(state.draftText).toBe("Keep this draft separate");
+    // The resend reuses the launch's command and message ids, so the server replays it.
+    const [first, resent] = state.start.mock.calls.map(([call]) => call.input);
+    expect(state.start).toHaveBeenCalledTimes(2);
+    expect(resent.commandId).toBe(first.commandId);
+    expect(resent.message.messageId).toBe(first.message.messageId);
+    expect(remaining()).toEqual([]);
+  });
+
+  it("hands back a task edited while its launch was in flight", async () => {
+    await loseLaunchReply(queuedTask(), "Edited idea");
+    await fireRetry();
+
+    expect(state.draftText).toBe("Keep this draft separate\nEdited idea");
+    expect(state.start).toHaveBeenCalledOnce();
+    expect(remaining()).toEqual([]);
+  });
+
+  it("holds the resend while operation access is missing", async () => {
+    await loseLaunchReply(queuedTask());
+    setOperateGrant("secondary", false);
+    vi.advanceTimersByTime(threadOutboxRetryDelayMs(1));
+    expect(appAtomRegistry.get(dispatchingQueuedMessageIdAtom)).toBeNull();
+    expect(state.start).toHaveBeenCalledOnce();
+    expect(remaining()).toHaveLength(1);
+
+    setOperateGrant("secondary", true);
+    await runDrain();
+    expect(state.start).toHaveBeenCalledTimes(2);
+    expect(state.draftText).toBe("Keep this draft separate");
+    expect(remaining()).toEqual([]);
+  });
+
+  it("resends a pull request task in its launched worktree without checking out again", async () => {
+    state.checkout.mockResolvedValueOnce(
+      AsyncResult.success({
+        branch: "pr-123",
+        worktreePath: "/repo/.t3/worktrees/pr-123",
+        isOnPullRequestHead: true,
+      }),
+    );
+    await loseLaunchReply(
+      queuedTask({
+        workspaceMode: "worktree",
+        branch: "fork/feature",
+        pullRequestReference: "https://github.com/acme/repo/pull/123",
+      }),
+    );
+    await fireRetry();
+
+    expect(state.checkout).toHaveBeenCalledOnce();
+    const [first, resent] = state.start.mock.calls.map(([call]) => call.input);
+    expect(resent.bootstrap.createThread.worktreePath).toBe("/repo/.t3/worktrees/pr-123");
+    expect(resent.bootstrap).toEqual(first.bootstrap);
+    expect(remaining()).toEqual([]);
+  });
+});
+
+describe("queued delivery timing", () => {
+  /** Runs `change`, then resolves once the delivery it starts has settled. */
+  async function deliveryAfter(change: () => void): Promise<void> {
+    const settled = Promise.withResolvers<void>();
+    const release = appAtomRegistry.subscribe(dispatchingQueuedMessageIdAtom, (id) => {
+      if (id === null) settled.resolve();
+    });
+    change();
+    expect(appAtomRegistry.get(dispatchingQueuedMessageIdAtom)).not.toBeNull();
+    await settled.promise.finally(release);
+  }
+
+  it("waits for the composer's upload of a sent attachment instead of uploading it again", async () => {
+    setOperateGrant("secondary", true);
+    const photo = {
+      id: "photo-1",
+      type: "image" as const,
+      name: "photo.png",
+      mimeType: "image/png",
+      sizeBytes: 3,
+      previewUri: "file:///photo.png",
+      fileUri: "file:///photo.png",
+    };
+    appAtomRegistry.set(composerAttachmentUploadsAtom, {
+      "secondary:photo-1": { status: "uploading", progress: 0.5 },
+    });
+    state.cleanups.push(() => appAtomRegistry.set(composerAttachmentUploadsAtom, {}));
+    await state.manager.enqueue(message({ attachments: [photo] }));
+    startDelivery();
+    expect(appAtomRegistry.get(dispatchingQueuedMessageIdAtom)).toBeNull();
+
+    await deliveryAfter(() =>
+      appAtomRegistry.set(composerAttachmentUploadsAtom, {
+        "secondary:photo-1": { status: "ready" },
+      }),
+    );
+    expect(state.prepare).toHaveBeenCalledOnce();
+    expect(state.start).toHaveBeenCalledOnce();
+    expect(remaining()).toEqual([]);
+  });
+
+  it("sends at once when its environment reconnects instead of waiting out the backoff", async () => {
+    setOperateGrant("secondary", true);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    state.cleanups.push(() => vi.useRealTimers());
+    const environments = workspaceConnections.environmentsAtom as unknown as Atom.Writable<
+      ReadonlyArray<{ environmentId: string; connectionState: string }>
+    >;
+    const connected = [{ environmentId: "secondary", connectionState: "connected" }];
+    state.cleanups.push(() => appAtomRegistry.set(environments, connected));
+    await state.manager.enqueue(message());
+    state.start.mockResolvedValueOnce(
+      AsyncResult.failure(Cause.fail(new Error("Socket is not connected"))),
+    );
+    await runDrain();
+    expect(state.start).toHaveBeenCalledOnce();
+
+    appAtomRegistry.set(environments, [
+      { environmentId: "secondary", connectionState: "disconnected" },
+    ]);
+    await deliveryAfter(() => appAtomRegistry.set(environments, connected));
+    expect(state.start).toHaveBeenCalledTimes(2);
+    expect(remaining()).toEqual([]);
+  });
 });
