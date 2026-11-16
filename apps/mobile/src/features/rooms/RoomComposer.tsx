@@ -7,6 +7,9 @@ import {
   roomMentionSegments,
   RoomMessageId,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import { useRef, useState } from "react";
 import { Platform, Pressable, Text as NativeText, TextInput, View } from "react-native";
 
@@ -16,6 +19,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import * as Dialog from "../../components/ui/Dialog";
 import { Menu } from "../../components/ui/Menu";
 import { prepareTurnAttachments } from "../../lib/attachmentUpload";
+import { uploadComposerAttachmentShared } from "../../state/composer-attachment-uploads";
 import {
   type DraftComposerAttachment,
   pickComposerFiles,
@@ -147,14 +151,24 @@ export function RoomComposer(props: {
     const controller = new AbortController();
     upload.current = controller;
     setPhase(sent.length > 0 ? "uploading" : "posting");
-    const prepared = await prepareTurnAttachments({
-      environmentId: props.environmentId,
-      attachments: sent,
-      supportsImageUploads: true,
-      signal: controller.signal,
-    }).finally(() => {
+    // Cancelling stops waiting; the shared upload keeps going for a later send.
+    const exit = await Effect.runPromiseExit(
+      prepareTurnAttachments({
+        environmentId: props.environmentId,
+        attachments: sent,
+        supportsImageUploads: true,
+        uploadAttachment: (attachment) =>
+          uploadComposerAttachmentShared(props.environmentId, attachment),
+      }),
+      { signal: controller.signal },
+    ).finally(() => {
       upload.current = null;
     });
+    if (Exit.isFailure(exit)) {
+      if (Cause.hasInterruptsOnly(exit.cause)) return "cancelled";
+      throw Cause.squash(exit.cause);
+    }
+    const prepared = exit.value;
     if (prepared.status !== "ready") return "cancelled";
     setPhase("posting");
     // Keep the uploaded ids so a retry reuses the bytes.

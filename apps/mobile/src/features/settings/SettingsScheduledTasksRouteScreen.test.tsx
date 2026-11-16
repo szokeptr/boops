@@ -96,7 +96,12 @@ vi.mock("../../components/ui/ThemedSwitch", () => ({
 vi.mock("../../state/entities", () => ({
   useProjects: () => [
     { environmentId: "environment", id: "project", title: "Project", mainThreadId: "thread" },
-    { environmentId: "target", id: "target-project", title: "Target project", mainThreadId: "target-thread" },
+    {
+      environmentId: "target",
+      id: "target-project",
+      title: "Target project",
+      mainThreadId: "target-thread",
+    },
   ],
   useServerConfigs: () => new Map(),
   useEnvironmentServerConfig: () => null,

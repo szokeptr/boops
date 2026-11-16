@@ -72,12 +72,14 @@ export function QuestionText(props: {
   readonly environmentId: EnvironmentId;
   readonly setDirection: TextDirection | undefined;
   readonly bold?: boolean;
+  readonly preserveSoftBreaks?: boolean;
 }) {
   const styles = useMarkdownPreviewStyles();
   const markdown = useLiveThreadLinkLabels(props.markdown, props.environmentId);
   return (
     <SelectableMarkdownText
       markdown={markdown}
+      preserveSoftBreaks={props.preserveSoftBreaks}
       textStyle={
         props.bold
           ? {

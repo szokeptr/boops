@@ -66,8 +66,6 @@ const isSessionRejectionError = Schema.is(
   ]),
 );
 const isSessionResponse = Schema.is(AuthSessionState);
-const isUndeclaredStatusError = Schema.is(RemoteEnvironmentAuthUndeclaredStatusError);
-const isAuthFetchError = Schema.is(RemoteEnvironmentAuthFetchError);
 
 /**
  * True only when the host said no: its session lacks the scope, or it rejected the credential.
@@ -83,11 +81,11 @@ export function sessionDeniesScope(
 
 function isSessionRejection(cause: Cause.Cause<unknown>): boolean {
   const error = Option.getOrNull(Cause.findErrorOption(cause));
-  if (isUndeclaredStatusError(error)) {
+  if (error instanceof RemoteEnvironmentAuthUndeclaredStatusError) {
     return error.status === 401 || error.status === 403;
   }
   // A twice-rejected relay credential arrives wrapping the `authenticated: false` response.
-  if (isAuthFetchError(error)) return isSessionResponse(error.cause);
+  if (error instanceof RemoteEnvironmentAuthFetchError) return isSessionResponse(error.cause);
   return isSessionRejectionError(error);
 }
 

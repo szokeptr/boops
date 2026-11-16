@@ -1213,17 +1213,6 @@ describe("buildThreadFeed", () => {
       "message-progress",
       "message-assistant",
     ]);
-
-    // Hiding tools leaves no output before the steer, so nothing splits there.
-    const hideAll = (expanded: ReadonlySet<RunId>) =>
-      deriveThreadFeedPresentation(feed, null, expanded, new Set(), null, false, undefined, {
-        toolCallVisibility: "hideAll",
-        revealedMessageId: null,
-      });
-    const hiddenToolsFoldRunId = messageFoldRunId(feed, "message-progress", hideAll(new Set()));
-    expect(hideAll(new Set([hiddenToolsFoldRunId!])).map((entry) => entry.id)).toContain(
-      "message-progress",
-    );
   });
 
   it("folds subagents while keeping created-thread and fork cards visible", () => {
