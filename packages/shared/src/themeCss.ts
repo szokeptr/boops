@@ -38,7 +38,6 @@ export function themeCssLoadsRemoteFiles(css: string): boolean {
 export const THEME_CSS_HOOKS = [
   { selector: '[data-slot="sidebar"]', styles: "app sidebar" },
   { selector: '[data-slot="sidebar-inner"]', styles: "sidebar surface" },
-  { selector: "[data-thread-item]", styles: "sidebar thread row" },
   {
     selector: '[data-slot="project-monogram"]',
     styles: "project icon with letters; its svg holds the tile",
