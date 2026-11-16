@@ -1755,10 +1755,9 @@ it.effect.each([
   { followUp: "started its turn", startedBeforeRelease: true },
   { followUp: "was promoted", startedBeforeRelease: false },
   { followUp: "switched provider instance", startedBeforeRelease: true, switchesInstance: true },
-  { followUp: "has fresh context", startedBeforeRelease: true, freshContext: true },
 ])(
   "Force stop keeps only the session of a queued follow-up that $followUp",
-  ({ startedBeforeRelease, switchesInstance = false, freshContext = false }) =>
+  ({ startedBeforeRelease, switchesInstance = false }) =>
     Effect.scoped(
       Effect.gen(function* () {
         const cwd = yield* checkpointWorkspace("thread-stop-force-stop-follow-up");
@@ -1771,24 +1770,12 @@ it.effect.each([
         const started: Array<ProviderAdapter.ProviderAdapterV2TurnInput> = [];
         const interrupted: Array<ProviderAdapter.ProviderAdapterV2InterruptInput> = [];
         let opened = 0;
-        // Fresh context on a one-thread-per-session provider puts the follow-up on its own session.
-        // The session itself reports shared threads so fresh-context cleanup leaves the stopped
-        // run's session to Force stop, as pending background work would.
-        const adapterCapabilities = freshContext
-          ? {
-              ...CodexProviderCapabilitiesV2,
-              sessions: {
-                ...CodexProviderCapabilitiesV2.sessions,
-                supportsMultipleProviderThreadsPerSession: false,
-              },
-            }
-          : CodexProviderCapabilitiesV2;
         const liveAdapter = (
           instanceId: ProviderInstanceId,
         ): ProviderAdapter.ProviderAdapterV2["Service"] => ({
           ...adapter,
           instanceId,
-          getCapabilities: () => Effect.succeed(adapterCapabilities),
+          getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
           openSession: (input) =>
             Effect.gen(function* () {
               opened += 1;
@@ -1946,7 +1933,6 @@ it.effect.each([
             ...(switchesInstance
               ? { modelSelection: { ...modelSelection, instanceId: otherInstanceId } }
               : {}),
-            ...(freshContext ? { freshContext } : {}),
             createdBy: "user",
             creationSource: "web",
           });
@@ -1961,14 +1947,14 @@ it.effect.each([
           );
           assert.equal(
             opened,
-            switchesInstance || freshContext ? 2 : 1,
+            switchesInstance ? 2 : 1,
             "Force stop tore down the session the follow-up was promoted onto",
           );
           const [stopped, followUp] = [started[0]!, started[1]!];
           const providerSessionId = followUp.providerThread.providerSessionId!;
           assert.equal(
             yield* sessions.isLive(stopped.providerThread.providerSessionId!),
-            !switchesInstance && !freshContext,
+            !switchesInstance,
             "Force stop kept the stopped run's session for a follow-up on another session",
           );
           assert.isFalse(

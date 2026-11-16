@@ -838,7 +838,9 @@ const make = Effect.gen(function* () {
         ),
       );
 
-  const listProjectThreadEntries: ThreadManagementServiceShape["listProjectThreadEntries"] = (input) =>
+  const listProjectThreadEntries: ThreadManagementServiceShape["listProjectThreadEntries"] = (
+    input,
+  ) =>
     orchestrator.listActiveThreads(input.projectId).pipe(
       Effect.mapError(
         (cause) =>

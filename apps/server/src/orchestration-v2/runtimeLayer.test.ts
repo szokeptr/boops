@@ -3092,7 +3092,7 @@ const writeHtmlRenderRun = Effect.fn("test.writeHtmlRenderRun")(function* (input
           startedAt: now,
           completedAt: now,
           updatedAt: now,
-          toolName: "mcp__t3-code__html_render",
+          toolName: "mcp__boops__html_render",
           input: {},
           output: [
             {
@@ -6870,7 +6870,11 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           commandId: CommandId.make(`${threadId}:scheduled`),
           threadId,
           messageId: scheduledMessageId,
-          routine: { taskId: ScheduledTaskId.make(`${threadId}:task`), name: "Scheduled", trigger: "manual" },
+          routine: {
+            taskId: ScheduledTaskId.make(`${threadId}:task`),
+            name: "Scheduled",
+            trigger: "manual",
+          },
           text: "Scheduled prompt",
           attachments: [],
           dispatchMode: { type: "queue_after_active" },
@@ -6957,7 +6961,11 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           commandId: CommandId.make(`${threadId}:scheduled`),
           threadId,
           messageId: scheduledMessageId,
-          routine: { taskId: ScheduledTaskId.make(`${threadId}:task`), name: "Scheduled", trigger: "manual" },
+          routine: {
+            taskId: ScheduledTaskId.make(`${threadId}:task`),
+            name: "Scheduled",
+            trigger: "manual",
+          },
           modelSelection: pinnedSelection,
           text: "Pinned scheduled prompt",
           attachments: [],

@@ -662,7 +662,9 @@ it.effect.each([
                 : scenario === "running-resume"
                   ? { createdBy: "agent", creationSource: "server" }
                   : { createdBy: "user" }),
-              ...(scenario === "starting-scheduled" ? { routine: { taskId: "scheduled-task", name: "Nightly", trigger: "interval" } } : {}),
+              ...(scenario === "starting-scheduled"
+                ? { routine: { taskId: "scheduled-task", name: "Nightly", trigger: "interval" } }
+                : {}),
             },
           ]
         : [],

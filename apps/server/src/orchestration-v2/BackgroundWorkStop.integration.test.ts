@@ -525,7 +525,8 @@ const stopEarlierBackgroundWork = ({
           if (stalledRun === "returned-interrupt") {
             assert.deepEqual(
               [
-                after.runtimeRequests.find((candidate) => candidate.id === approvalRequestId)?.status,
+                after.runtimeRequests.find((candidate) => candidate.id === approvalRequestId)
+                  ?.status,
                 after.nodes.find((candidate) => candidate.id === approvalNodeId)?.status,
                 after.turnItems.find((candidate) => candidate.id === approvalItemId)?.status,
               ],

@@ -2250,9 +2250,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 runs: projection.runs,
                 strategy: handoffStrategy,
                 items: [
-                  ...(needsFullContext
-                    ? yield* readInheritedItems(projection.thread)
-                    : []),
+                  ...(needsFullContext ? yield* readInheritedItems(projection.thread) : []),
                   ...(needsFullContext && latestCompletedRun !== undefined
                     ? legacyImportItems
                     : []),
@@ -7914,9 +7912,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       providerSwitchCoveredRuns.length === 0
         ? []
         : [
-            ...(providerSwitchNeedsFullContext
-              ? yield* readInheritedItems(projection.thread)
-              : []),
+            ...(providerSwitchNeedsFullContext ? yield* readInheritedItems(projection.thread) : []),
             ...(latestCompletedRun !== undefined && providerSwitchNeedsFullContext
               ? legacyImportItems
               : []),

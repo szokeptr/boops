@@ -16,7 +16,7 @@ export class ThreadCommandExecutor extends Context.Service<
   }
 >()("boops/orchestration-v2/ThreadCommandExecutor") {}
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const deletion = yield* Semaphore.make(1);
   return ThreadCommandExecutor.of({
     ...(yield* KeyedLock.make<ThreadId>()),
