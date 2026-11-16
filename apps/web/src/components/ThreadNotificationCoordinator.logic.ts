@@ -1,3 +1,8 @@
+import {
+  effectiveSnoozed,
+  type ThreadSnoozeShell,
+} from "@t3tools/client-runtime/state/thread-settled";
+
 export type ThreadNotificationKind = "input" | "completion";
 
 export interface ThreadNotificationObservation {
@@ -60,6 +65,21 @@ export function observeRoomNotification(
   return { observation: { ...next, owed }, kind: null };
 }
 
+/**
+ * Whether completion notifications are suppressed by snooze. A completion that landed
+ * during the snooze stays suppressed even when its update is processed after the wake.
+ */
+export function isSnoozedForNotification(
+  thread: ThreadSnoozeShell,
+  completedAt: number | null,
+  now: number,
+): boolean {
+  if (effectiveSnoozed(thread, { now: new Date(now).toISOString() })) return true;
+  if (completedAt === null) return false;
+  if (thread.snoozedAt != null && completedAt < Date.parse(thread.snoozedAt)) return false;
+  return effectiveSnoozed(thread, { now: new Date(completedAt).toISOString() });
+}
+
 export function createThreadNotificationGate<Key>(
   notify: (key: Key, kind: ThreadNotificationKind) => void,
 ) {
@@ -73,10 +93,11 @@ export function createThreadNotificationGate<Key>(
       key: Key,
       prior: ThreadNotificationObservation | undefined,
       next: ThreadNotificationObservation,
-      options: { readonly archived: boolean; readonly quiet: boolean },
+      options: { readonly archived: boolean; readonly quiet: boolean; readonly snoozed: boolean },
     ): void {
-      // The first sighting, archived threads, and stopped or silent runs never notify completion.
-      if (!prior || options.archived || options.quiet) skip(key, next.completedAt);
+      const silenced = options.archived || options.quiet || options.snoozed;
+      // The first sighting, archived or snoozed threads, and stopped or silent runs never notify completion.
+      if (!prior || silenced) skip(key, next.completedAt);
       if (!prior || options.archived) return;
       if (next.attention && next.attention !== prior.attention) {
         notify(key, "input");
