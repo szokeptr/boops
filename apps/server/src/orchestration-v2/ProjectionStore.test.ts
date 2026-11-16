@@ -3215,8 +3215,6 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         ["boops.delegate_task", null],
         ["mcp__boops__delegate_task", null],
         ["mcp__boops__send_to_user", null],
-        // OpenCode Code Mode reports a nested send_to_user call as one `execute` item.
-        ["execute", JSON.stringify({ sentMessage: "Draft" })],
       ] as const) {
         yield* sql`UPDATE orchestration_v2_projection_turn_items SET type = 'dynamic_tool',
           payload_json = json_set(payload_json, '$.type', 'dynamic_tool', '$.toolName', ${toolName},

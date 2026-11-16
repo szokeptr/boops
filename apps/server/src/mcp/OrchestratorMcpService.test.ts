@@ -899,7 +899,6 @@ describe("OrchestratorMcpService", () => {
             getThreadShell: (threadId) => Effect.succeed(liveThreadShell(threadId)),
             listAppOwnedChildThreadIds: () => Effect.succeed([]),
             stopDelegatedTasks: () => Effect.void,
-            cancelDelegatedTask: () => Effect.void,
             dispatch: (command) =>
               command.type === "delegated_task.completion-delivery.dispose"
                 ? Effect.fail(
@@ -917,7 +916,10 @@ describe("OrchestratorMcpService", () => {
             list: () => Effect.succeed([]),
           }),
           Layer.mock(ProjectService.ProjectService)({}),
-          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.merge(
+            Layer.mock(SecretRequests.SecretRequests)({}),
+            Layer.mock(SecretVaults.SecretVaults)({}),
+          ),
           Layer.mock(RemoteDelegation.RemoteDelegation)({}),
           Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
         );
@@ -1992,7 +1994,10 @@ describe("OrchestratorMcpService provider resolution", () => {
           }),
           adapterRegistryLayer([museInstanceId]),
           Layer.mock(ProjectService.ProjectService)({}),
-          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.merge(
+            Layer.mock(SecretRequests.SecretRequests)({}),
+            Layer.mock(SecretVaults.SecretVaults)({}),
+          ),
           Layer.mock(RemoteDelegation.RemoteDelegation)({}),
           Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
         );
@@ -2116,7 +2121,10 @@ describe("OrchestratorMcpService provider resolution", () => {
         ]),
         adapterRegistryLayer([codexInstanceId]),
         Layer.mock(ProjectService.ProjectService)({}),
-        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.merge(
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(SecretVaults.SecretVaults)({}),
+        ),
         Layer.mock(RemoteDelegation.RemoteDelegation)({}),
         Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
       );
@@ -2184,7 +2192,10 @@ describe("OrchestratorMcpService provider resolution", () => {
           ]),
           adapterRegistryLayer([codexInstanceId]),
           Layer.mock(ProjectService.ProjectService)({}),
-          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.merge(
+            Layer.mock(SecretRequests.SecretRequests)({}),
+            Layer.mock(SecretVaults.SecretVaults)({}),
+          ),
           Layer.mock(RemoteDelegation.RemoteDelegation)({}),
           Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
         );
@@ -2227,7 +2238,10 @@ describe("OrchestratorMcpService provider resolution", () => {
         ]),
         adapterRegistryLayer([codexInstanceId]),
         Layer.mock(ProjectService.ProjectService)({}),
-        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.merge(
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(SecretVaults.SecretVaults)({}),
+        ),
         Layer.mock(RemoteDelegation.RemoteDelegation)({}),
         Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
       );
@@ -2763,7 +2777,10 @@ describe("OrchestratorMcpService provider resolution", () => {
                 providerSnapshot({ instanceId: codexInstanceId, driver, model: "gpt-5.4" }),
               ]),
               Layer.mock(ProjectService.ProjectService)({}),
-              Layer.mock(SecretRequests.SecretRequests)({}),
+              Layer.merge(
+                Layer.mock(SecretRequests.SecretRequests)({}),
+                Layer.mock(SecretVaults.SecretVaults)({}),
+              ),
               Layer.mock(SecretVaults.SecretVaults)({}),
               layerRemoteDelegation,
               Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
@@ -3758,7 +3775,10 @@ describe("OrchestratorMcpService provider resolution", () => {
             list: () => Effect.succeed([]),
           }),
           Layer.mock(ProjectService.ProjectService)({}),
-          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.merge(
+            Layer.mock(SecretRequests.SecretRequests)({}),
+            Layer.mock(SecretVaults.SecretVaults)({}),
+          ),
           Layer.mock(RemoteDelegation.RemoteDelegation)({}),
           Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
         );

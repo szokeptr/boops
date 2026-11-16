@@ -177,9 +177,12 @@ describe("DesktopPreReadyPlatform", () => {
     "restores the versioned AppImage path an update removed (updater relaunch: $relaunchedByUpdater)",
     ({ relaunchedByUpdater, restored }) => {
       vi.stubEnv("VITE_DEV_SERVER_URL", "");
+      vi.stubEnv("XDG_DATA_HOME", "/xdg");
+      vi.stubEnv("APPIMAGE", "/Applications/Boops-x86_64.AppImage");
+      vi.stubEnv("APPIMAGE_SILENT_INSTALL", relaunchedByUpdater);
       getSwitchValueMock.mockReturnValue("");
-      const entryPath = "/xdg/applications/com.t3tools.T3Code.desktop";
-      const files = new Map([[entryPath, "Exec=/Applications/T3-Code-0.1.8-x86_64.AppImage %U\n"]]);
+      const entryPath = "/xdg/applications/com.getboops.desktop.desktop";
+      const files = new Map([[entryPath, "Exec=/Applications/Boops-0.1.8-x86_64.AppImage %U\n"]]);
       readFileSyncMock.mockImplementation((path: string) => files.get(path) ?? "{}");
       writeFileSyncMock.mockImplementation((path: string, contents: string | Buffer) => {
         files.set(path, String(contents));
@@ -190,22 +193,15 @@ describe("DesktopPreReadyPlatform", () => {
           yield* Layer.build(
             DesktopPreReadyPlatform.layer.pipe(
               Layer.provide(Layer.succeed(HostProcess.Platform, "linux")),
-              Layer.provide(
-                DesktopConfig.layerTest({
-                  XDG_DATA_HOME: "/xdg",
-                  APPIMAGE: "/Applications/T3-Code-x86_64.AppImage",
-                  APPIMAGE_SILENT_INSTALL: relaunchedByUpdater,
-                }),
-              ),
             ),
           );
           assert.deepEqual(
             symlinkSyncMock.mock.calls,
             restored
-              ? [["T3-Code-x86_64.AppImage", "/Applications/T3-Code-0.1.8-x86_64.AppImage"]]
+              ? [["Boops-x86_64.AppImage", "/Applications/Boops-0.1.8-x86_64.AppImage"]]
               : [],
           );
-          assert.include(files.get(entryPath), "Exec=/Applications/T3-Code-x86_64.AppImage %U");
+          assert.include(files.get(entryPath), "Exec=/Applications/Boops-x86_64.AppImage %U");
         }),
       ).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())));
     },

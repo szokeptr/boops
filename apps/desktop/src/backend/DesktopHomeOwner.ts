@@ -9,7 +9,6 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-import { BACKEND_QUIT_STOP_TIMEOUT } from "./DesktopBackendManager.ts";
 
 // The fields of the server's `server-runtime.json` that identify the owner of a T3 home.
 const HomeOwnerRuntimeState = Schema.Struct({
@@ -58,8 +57,9 @@ const isHomeOwnershipLocked = Effect.fn("DesktopHomeOwner.isHomeOwnershipLocked"
   });
 });
 
-// A quitting app's backend holds the lock until it exits, which can outlast the relaunch of an update.
-const HOME_OWNERSHIP_RELEASE_GRACE = Duration.sum(BACKEND_QUIT_STOP_TIMEOUT, Duration.seconds(3));
+// A quitting app's backend holds the lock until it exits (5 s SIGTERM grace, then SIGKILL), which
+// can outlast the relaunch of an update.
+const HOME_OWNERSHIP_RELEASE_GRACE = Duration.seconds(10);
 const HOME_OWNERSHIP_RELEASE_POLL_INTERVAL = Duration.millis(250);
 
 /** Whether the ownership lock is free, or frees within the grace a shutting-down server needs. */

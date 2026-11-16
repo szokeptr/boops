@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { buildThreadTitlePrompt } from "./textGenerationPrompts.ts";
 import { normalizeCliError } from "./textGenerationUtils.ts";
 
 describe("normalizeCliError", () => {

@@ -1363,7 +1363,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const marker = path.join(yield* fs.makeTempDirectoryScoped(), "ran");
-        const fixture = yield* makePackagedAppFixture({
+        const fixture = yield* makeMacPayloadFixture({
           serverEntrySource: `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "");\n`,
         });
         yield* validateMacPackagedPayload({ stageDistDir: fixture.stageDistDir });

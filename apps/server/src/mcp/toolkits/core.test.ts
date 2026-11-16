@@ -239,7 +239,7 @@ it.effect("a pending question read keeps option previews", () => {
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const result = yield* server
-      .callTool({ name: "t3_pending_request", arguments: { action: "read", requestId } })
+      .callTool({ name: "boops_pending_request", arguments: { action: "read", requestId } })
       .pipe(
         Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
         Effect.provideService(McpSchema.McpServerClient, client),
@@ -477,13 +477,13 @@ const historyReads = (reads: Array<string>) => {
   });
 };
 
-it.effect("t3_queue list and read load only the queued runs and their messages", () => {
+it.effect("boops_queue list and read load only the queued runs and their messages", () => {
   const reads: Array<string> = [];
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const call = (args: Record<string, unknown>) =>
       server
-        .callTool({ name: "t3_queue", arguments: args })
+        .callTool({ name: "boops_queue", arguments: args })
         .pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
           Effect.provideService(McpSchema.McpServerClient, client),
@@ -509,7 +509,7 @@ it.effect("handoff analytics read only the caller's active run and its message",
     const server = yield* McpServer.McpServer;
     yield* server
       .callTool({
-        name: "t3_queue",
+        name: "boops_queue",
         arguments: { action: "edit", queuedRunId: "run:queued", text: "Edited" },
       })
       .pipe(

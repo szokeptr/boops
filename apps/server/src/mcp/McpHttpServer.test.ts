@@ -1353,7 +1353,7 @@ it.effect("gives outside clients an upload URL on the origin their request reach
                 id: 2,
                 method: "tools/call",
                 params: {
-                  name: "t3_attachment_prepare_upload",
+                  name: "boops_attachment_prepare_upload",
                   arguments: {
                     upload: {
                       type: "image",
