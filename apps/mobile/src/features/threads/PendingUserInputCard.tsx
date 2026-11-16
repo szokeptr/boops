@@ -95,7 +95,6 @@ export function QuestionText(props: {
         Platform.OS === "android" ? undefined : props.setDirection === "rtl" ? "right" : "left"
       }
       onLinkPress={(href) => void tryOpenExternalUrl(href, "markdown-link")}
-      preserveSoftBreaks={props.preserveSoftBreaks}
     />
   );
 }

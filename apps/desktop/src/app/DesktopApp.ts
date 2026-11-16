@@ -205,14 +205,15 @@ const startLocalBackend = Effect.gen(function* () {
     !(yield* DesktopHomeOwner.awaitHomeOwnershipRelease())
   ) {
     const owner = yield* DesktopHomeOwner.readLiveHomeOwner();
-    yield* logBootstrapWarning("bootstrap found another server owning the T3 home", {
+    yield* logBootstrapWarning("bootstrap found another server owning the Boops home", {
       owner: Option.getOrNull(owner),
     });
     yield* (yield* ElectronDialog.ElectronDialog).showErrorBox(
       "This Boops home is unavailable",
       DesktopHomeOwner.homeOwnedMessage(owner),
     );
-    return yield* (yield* ElectronApp.ElectronApp).quit;
+    yield* (yield* ElectronApp.ElectronApp).quit;
+    return false;
   }
 
   const backendPortSelection = yield* resolveDesktopBackendPort(environment.configuredBackendPort);
