@@ -1,5 +1,6 @@
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as NodeHttpServerRequest from "@effect/platform-node/NodeHttpServerRequest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
@@ -3739,13 +3740,28 @@ export const layerWsRpc = (
         [WS_METHODS.subscribeAuthAccess]: (_input) =>
           Stream.unwrap(
             Effect.gen(function* () {
+              const liveBuffer = yield* Queue.unbounded<
+                PairingGrantStore.BootstrapCredentialChange | SessionStore.SessionCredentialChange
+              >();
+              // Each store subscribes only when consumed, so start both before the snapshot read.
+              yield* Effect.forkScoped(
+                Stream.runForEach(bootstrapCredentials.streamChanges, (change) =>
+                  Queue.offer(liveBuffer, change),
+                ),
+                { startImmediately: true },
+              );
+              yield* Effect.forkScoped(
+                Stream.runForEach(sessions.streamChanges, (change) =>
+                  Queue.offer(liveBuffer, change),
+                ),
+                { startImmediately: true },
+              );
               const initialSnapshot = yield* loadAuthAccessSnapshot();
               const revisionRef = yield* Ref.make(1);
-              const accessChanges: Stream.Stream<
-                PairingGrantStore.BootstrapCredentialChange | SessionStore.SessionCredentialChange
-              > = Stream.merge(bootstrapCredentials.streamChanges, sessions.streamChanges);
 
-              const liveEvents: Stream.Stream<AuthAccessStreamEvent> = accessChanges.pipe(
+              const liveEvents: Stream.Stream<AuthAccessStreamEvent> = Stream.fromQueue(
+                liveBuffer,
+              ).pipe(
                 Stream.mapEffect((change) =>
                   Ref.updateAndGet(revisionRef, (revision) => revision + 1).pipe(
                     Effect.map((revision) =>
@@ -3833,6 +3849,12 @@ export const layer = Layer.unwrap(
             failEnvironmentInternal("internal_error", error),
           ),
         );
+        // Desktop bootstrap sessions connect to their own backend, including same-machine WSL.
+        if (session.subject === "desktop-bootstrap") {
+          delete NodeHttpServerRequest.toIncomingMessage(request).headers[
+            "sec-websocket-extensions"
+          ];
+        }
         const clientAnalyticsProps = readClientAnalyticsProps(request);
         yield* analytics.recordOwners(readClientOwners(request), "client");
         const reportProfiles = yield* serverBrowser.profileReporter;

@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -22,12 +23,14 @@ import * as TestClock from "effect/testing/TestClock";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { HttpClient } from "effect/http";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as RelayClient from "@t3tools/shared/relayClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import * as RelayClientLedger from "./RelayClientLedger.ts";
 
 const layerRelayClientAvailable = Layer.succeed(
   RelayClient.RelayClient,
@@ -72,6 +75,7 @@ const runtimeDependencies = (
     Layer.succeed(HttpClient.HttpClient, httpClient),
     relayClientLayer,
     secretStoreLayer,
+    RelayClientLedger.layerTest,
     ServerConfig.layerTest(process.cwd(), { prefix: "t3-managed-endpoint-" }),
   ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
@@ -433,6 +437,51 @@ describe("CloudManagedEndpointRuntime", () => {
       expect(yield* runtime.restartConnector(800, Effect.succeed(true))).toBe(false);
       expect(yield* runtime.inspectConnector).toMatchObject({ pid: 801 });
     }),
+  );
+
+  it.effect("still owns a relay client when activation is interrupted while recording it", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeTransportSpawner();
+      const recording = yield* Deferred.make<void>();
+      const recorded = yield* Deferred.make<void>();
+      const ledger = Layer.succeed(
+        RelayClientLedger.RelayClientLedger,
+        RelayClientLedger.RelayClientLedger.of({
+          track: () =>
+            Deferred.succeed(recording, undefined).pipe(
+              Effect.andThen(Deferred.await(recorded)),
+              Effect.as(Effect.void),
+            ),
+        }),
+      );
+      const context = yield* Layer.build(
+        ManagedEndpointRuntime.layer.pipe(
+          Layer.provide(Layer.merge(runtimeDependencies(fixture.spawner), ledger)),
+        ),
+      );
+      const runtime = yield* Effect.service(
+        ManagedEndpointRuntime.CloudManagedEndpointRuntime,
+      ).pipe(Effect.provide(context));
+
+      const activation = yield* Effect.forkChild(runtime.applyConfig(tunnelConfig));
+      yield* Deferred.await(recording);
+      const interrupting = yield* Effect.forkChild(Fiber.interrupt(activation), {
+        startImmediately: true,
+      });
+      yield* Deferred.succeed(recorded, undefined);
+      yield* Fiber.join(interrupting);
+
+      // The handed-over connector is supervised: its exit starts a replacement.
+      expect(yield* Queue.take(fixture.started)).toBe(0);
+      yield* Deferred.succeed(fixture.exits[0]!, ChildProcessSpawner.ExitCode(1));
+      expect(yield* Queue.take(fixture.started)).toBe(1);
+
+      yield* runtime.applyConfig(null);
+      expect(fixture.killed).toEqual([800, 801]);
+    }).pipe(
+      Effect.provideService(HostProcess.Environment, {}),
+      Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+    ),
   );
 
   it.effect("preserves an explicit transport choice despite repeated QUIC stalls", () =>

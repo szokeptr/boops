@@ -1,9 +1,4 @@
-import {
-  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
-  ProviderDriverKind,
-  type ModelSelection,
-  type ServerProvider,
-} from "@t3tools/contracts";
+import { ProviderDriverKind, type ModelSelection, type ServerProvider } from "@t3tools/contracts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
@@ -55,6 +50,7 @@ interface FakeCodexInput {
   stdinMustContain?: string;
   stdinMustNotContain?: string;
   mcpServers?: ReadonlyArray<{ name: string; enabled: boolean }> | number;
+  requireMcpServersOff?: ReadonlyArray<string>;
 }
 
 function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
@@ -68,6 +64,7 @@ function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
     stdinMustContain: input.stdinMustContain ?? null,
     stdinMustNotContain: input.stdinMustNotContain ?? null,
     mcpServers: input.mcpServers ?? [],
+    requireMcpServersOff: input.requireMcpServersOff ?? [],
     stderr: input.stderr ?? null,
     output: input.output,
     exitCode: input.exitCode ?? 0,
@@ -121,6 +118,33 @@ function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
         "function fail(message, code) {",
         '  process.stderr.write(message + "\\n");',
         "  process.exit(code);",
+        "}",
+        "// Like Codex: a later mcp_servers={...} override replaces servers earlier -c flags defined.",
+        "const servers = new Map();",
+        "const offServers = new Set();",
+        "for (let index = 0; index < args.length; index += 1) {",
+        '  if (args[index] !== "-c" && args[index] !== "--config") continue;',
+        '  const value = args[index + 1] ?? "";',
+        '  if (value.startsWith("mcp_servers={")) {',
+        '    const named = [...value.matchAll(/"([^"]+)"=\\{enabled=false\\}/g)].map((match) => match[1]);',
+        "    for (const name of named) offServers.add(name);",
+        "    for (const name of [...servers.keys()]) {",
+        "      if (named.includes(name)) servers.set(name, false);",
+        "      else servers.delete(name);",
+        "    }",
+        '  } else if (value.startsWith("mcp_servers.")) {',
+        '    const [name, key] = value.slice("mcp_servers.".length).split(/[.=]/);',
+        "    if (value === `mcp_servers.${name}.enabled=false`) offServers.add(name);",
+        "    // An enabled flag alone toggles a server another layer (config.toml) defines.",
+        '    if (key === "enabled" && !servers.has(name)) continue;',
+        '    servers.set(name, servers.get(name) === true || key === "url" || key === "command");',
+        "  }",
+        "}",
+        "for (const [name, hasTransport] of servers) {",
+        '  if (!hasTransport) fail("Error loading config.toml: invalid transport in `mcp_servers." + name + "`", 12);',
+        "}",
+        "for (const name of check.requireMcpServersOff) {",
+        '  if (!offServers.has(name)) fail("MCP server left on: " + name, 13);',
         "}",
         "if (check.requireArg !== null && !originalArgs.includes(` ${check.requireArg} `)) {",
         '  fail("missing arg: " + check.requireArg, 8);',
@@ -277,13 +301,59 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
           { name: "already-off", enabled: false },
         ],
         requireArg:
-          '--config features.plugins=false --config features.apps=false --config mcp_servers={"augmenter"={enabled=false},"my.server"={enabled=false}}',
+          'exec --config mcp_servers={"augmenter"={enabled=false},"my.server"={enabled=false}} --config features.plugins=false',
       },
       (textGeneration) =>
         Effect.gen(function* () {
           const result = yield* textGeneration.generateThreadTitle({
             cwd: process.cwd(),
             message: "Augmenter task 1. Use the Augmenter MCP: link_thread when you start.",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+          expect(result.title).toBe("Remove default shapes");
+        }),
+    ),
+  );
+
+  it.effect("turns off an MCP server that launch args define without dropping its transport", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ title: "Remove default shapes" }),
+        launchArgs: `-c 'mcp_servers.t3-code.url="http://127.0.0.1:1/mcp"' -c 'mcp_servers.t3-code.enabled=true'`,
+        mcpServers: [{ name: "t3-code", enabled: true }],
+        requireMcpServersOff: ["t3-code"],
+        requireArg:
+          "--config features.apps=false --config mcp_servers.t3-code.enabled=false --ephemeral",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Remove default shapes from characters",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+          expect(result.title).toBe("Remove default shapes");
+        }),
+    ),
+  );
+
+  it.effect("keeps MCP servers off when launch args set their own mcp_servers table", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ title: "Remove default shapes" }),
+        launchArgs: `-c 'mcp_servers={"my.server"={command="echo",enabled=true}}'`,
+        mcpServers: [
+          { name: "my.server", enabled: true },
+          { name: "my server", enabled: true },
+        ],
+        requireArg:
+          '--config features.apps=false --config mcp_servers={"my.server"={enabled=false},"my server"={enabled=false}} --config mcp_servers.my server.enabled=false --ephemeral',
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Remove default shapes from characters",
             modelSelection: DEFAULT_TEST_MODEL_SELECTION,
           });
           expect(result.title).toBe("Remove default shapes");
@@ -474,6 +544,11 @@ it.effect.each([false, true])("text generation preflight: exhausted=%s", (exhaus
       model: "chat-model",
       options: [{ id: "effort", value: "high" }],
     };
+    const threadDefault = {
+      instanceId: fallback,
+      model: "z-ai/glm-5.3-flash",
+      options: [{ id: "thinking", value: false }],
+    };
     const calls: ModelSelection[] = [];
     const instances: ProviderInstance[] = [primary, fallback].map((instanceId) => {
       const driver = ProviderDriverKind.make(instanceId === primary ? "codex" : "claudeAgent");
@@ -529,8 +604,12 @@ it.effect.each([false, true])("text generation preflight: exhausted=%s", (exhaus
           }),
           ServerSettings.layerTest({
             providerInstances: {
-              [fallback]: { driver: ProviderDriverKind.make("claudeAgent"), config: {} },
+              [fallback]: {
+                driver: ProviderDriverKind.make("claudeAgent"),
+                config: { customModels: [threadDefault.model] },
+              },
             },
+            defaultModelSelection: threadDefault,
           }),
           Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
             resolveLink: () => Effect.die("unused"),
@@ -547,14 +626,6 @@ it.effect.each([false, true])("text generation preflight: exhausted=%s", (exhaus
         modelSelection: selection,
       }),
     ).toEqual({ title: "Generated title" });
-    expect(calls).toEqual([
-      exhausted
-        ? {
-            instanceId: fallback,
-            model:
-              DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[ProviderDriverKind.make("claudeAgent")],
-          }
-        : selection,
-    ]);
+    expect(calls).toEqual([exhausted ? threadDefault : selection]);
   }),
 );

@@ -7,6 +7,7 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
+import { isNoCopyOnWrite, markNoCopyOnWrite } from "./noCopyOnWrite.ts";
 
 import type {
   PendingServiceUpdate,
@@ -21,6 +22,7 @@ import {
   decodeServiceLauncherChildMessage,
   isExactServiceVersion,
   parseServiceState,
+  serviceUnitLogPathOf,
   SERVICE_ENV_FILE,
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_LAUNCHER_PROTOCOL,
@@ -36,6 +38,9 @@ const HANDOFF_DELAY_MS = 2_000;
  */
 const PREPARED_TIMEOUT_MS = 30 * 60_000;
 const TERMINATE_GRACE_MS = 5_000;
+// Keep SQLite startup and journaling from turning a full filesystem into a restart loop.
+const MIN_SERVICE_START_FREE_BYTES = 64 * 1024 ** 2;
+const DISK_SPACE_RETRY_MS = 30_000;
 // Match contracts' SERVER_EXIT_CODE_STATE_DIR_OWNED without depending on Effect.
 const STATE_DIR_OWNED_EXIT_CODE = 78;
 
@@ -63,6 +68,48 @@ const runtimeSpawnArguments = (paths: ReturnType<typeof runtimePaths>) => ({
   command: paths.entryPath,
   args: ["serve"],
 });
+
+const SERVICE_LOG_MAX_BYTES = 10 * 1024 * 1024;
+const SERVICE_LOG_CHECK_INTERVAL_MS = 10 * 60_000;
+
+/** The unit or launch agent `boops service install` wrote, from the manager's environment. */
+function serviceUnitPath(env: NodeJS.ProcessEnv): string | undefined {
+  const unitName = env.T3_BOOT_SERVICE_UNIT?.trim();
+  const home = env.HOME?.trim();
+  if (!unitName || !home) return undefined;
+  if (unitName.endsWith(".plist")) return NodePath.join(home, "Library", "LaunchAgents", unitName);
+  const xdgConfigHome = env.XDG_CONFIG_HOME?.trim();
+  const configHome =
+    xdgConfigHome && NodePath.isAbsolute(xdgConfigHome)
+      ? xdgConfigHome
+      : NodePath.join(home, ".config");
+  return NodePath.join(configHome, "systemd", "user", unitName);
+}
+
+/**
+ * The service manager holds the log open for appending, so it is copied aside and emptied in
+ * place rather than renamed. The copy is best effort: on a full disk the truncate frees space.
+ */
+async function boundServiceLog(logPath: string): Promise<void> {
+  const size = await NodeFSP.stat(logPath).then(
+    (stats) => stats.size,
+    () => 0,
+  );
+  if (size <= SERVICE_LOG_MAX_BYTES) return;
+  const archivePath = `${logPath}.1`;
+  const pendingArchivePath = `${archivePath}.tmp`;
+  await NodeFSP.copyFile(logPath, pendingArchivePath)
+    .then(() => NodeFSP.rename(pendingArchivePath, archivePath))
+    .catch(() => NodeFSP.rm(pendingArchivePath, { force: true }).catch(() => undefined));
+  await NodeFSP.truncate(logPath, 0).catch(() => undefined);
+}
+
+async function serviceLogPath(env: NodeJS.ProcessEnv): Promise<string | undefined> {
+  const unitPath = serviceUnitPath(env);
+  if (unitPath === undefined) return undefined;
+  const contents = await NodeFSP.readFile(unitPath, "utf8").catch(() => undefined);
+  return contents === undefined ? undefined : serviceUnitLogPathOf(contents);
+}
 
 const DB_FILE_SUFFIXES = ["", "-wal", "-shm"] as const;
 const RESTORE_MARKER = ".restore-pending";
@@ -135,14 +182,18 @@ async function syncDirectory(directory: string): Promise<void> {
   }
 }
 
-function runCp(args: ReadonlyArray<string>): Promise<boolean> {
+function runCp(args: ReadonlyArray<string>, signal?: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
-    NodeChildProcess.execFile("cp", args, (error) => resolve(error === null));
+    NodeChildProcess.execFile("cp", args, { signal }, (error) => resolve(error === null));
   });
 }
 
 // macOS fs.copyFile clone flags fall back to full copies.
-async function copyDatabaseFile(source: string, destination: string): Promise<void> {
+async function copyDatabaseFile(
+  source: string,
+  destination: string,
+  signal?: AbortSignal,
+): Promise<void> {
   // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher has no Effect runtime.
   const platform = process.platform;
   // cp -c replaces files and breaks hard links; copy into hard-linked destinations instead.
@@ -155,7 +206,9 @@ async function copyDatabaseFile(source: string, destination: string): Promise<vo
       : platform === "linux"
         ? ["--reflink=auto", source, destination]
         : undefined;
-  if (args === undefined || !(await runCp(args))) await NodeFSP.copyFile(source, destination);
+  if (args !== undefined && (await runCp(args, signal))) return;
+  signal?.throwIfAborted();
+  await NodeFSP.copyFile(source, destination);
 }
 
 const GIB = 1024 ** 3;
@@ -239,6 +292,7 @@ export async function databaseBackupBlocker(
   const { readFreeBytes, canClone } = { ...filesystemBackupSpaceProbe, ...probe };
   const backupRoot = NodePath.join(baseDir, "runtime", "db-backup");
   await NodeFSP.mkdir(backupRoot, { recursive: true, mode: 0o700 });
+  if (await isNoCopyOnWrite(dbPath)) await markNoCopyOnWrite(backupRoot);
   await removeAbandonedBackupCopies(backupRoot);
   const [files, free] = await Promise.all([statDatabaseFiles(dbPath), readFreeBytes(backupRoot)]);
   const size = files.reduce((total, file) => total + file.size, 0);
@@ -255,7 +309,11 @@ export async function databaseBackupBlocker(
 }
 
 // Preserve completed backups; restarted trials may already have changed the live database.
-async function backupDatabaseOnce(baseDir: string, pending: PendingServiceUpdate): Promise<void> {
+async function backupDatabaseOnce(
+  baseDir: string,
+  pending: PendingServiceUpdate,
+  signal: AbortSignal,
+): Promise<void> {
   const backupDir = databaseBackupDir(baseDir, pending.id);
   if (await pathExists(backupDir)) return;
 
@@ -264,10 +322,11 @@ async function backupDatabaseOnce(baseDir: string, pending: PendingServiceUpdate
   await NodeFSP.mkdir(stagingDir, { recursive: true, mode: 0o700 });
   try {
     for (const suffix of DB_FILE_SUFFIXES) {
+      signal.throwIfAborted();
       const source = `${pending.dbPath}${suffix}`;
       if (suffix !== "" && !(await pathExists(source))) continue;
       const destination = databaseBackupFile(stagingDir, suffix);
-      await copyDatabaseFile(source, destination);
+      await copyDatabaseFile(source, destination, signal);
       await syncFile(destination);
     }
     await NodeFSP.rename(stagingDir, backupDir);
@@ -454,6 +513,7 @@ export class Launcher {
   #timer: NodeJS.Timeout | undefined;
   #transitions: Promise<void> = Promise.resolve();
   #stopRequested = false;
+  readonly #stopSignal = new AbortController();
   #stopping = false;
   #done = false;
   readonly #completion = Promise.withResolvers<void>();
@@ -489,6 +549,13 @@ export class Launcher {
     }
   }
 
+  // Diagnostics are best-effort: a full log filesystem must not stop the launcher waiting for space.
+  #log(line: string): void {
+    try {
+      process.stderr.write(line);
+    } catch {}
+  }
+
   #enqueue(transition: () => Promise<void>): void {
     this.#transitions = this.#transitions
       .then(transition, transition)
@@ -518,6 +585,7 @@ export class Launcher {
       return;
     }
     this.#stopRequested = true;
+    this.#stopSignal.abort();
     this.#clearTimer();
     this.#enqueue(async () => {
       // Let in-progress updates start replacements first; replacements observe the marker and own pre-activation tunnel cleanup.
@@ -534,6 +602,53 @@ export class Launcher {
   #clearTimer(): void {
     clearTimeout(this.#timer);
     this.#timer = undefined;
+  }
+
+  async #serviceStartDiskSpaceBlocker(): Promise<string | undefined> {
+    const databasePath =
+      this.#state.update?.status === "pending"
+        ? this.#state.update.dbPath
+        : NodePath.join(this.#baseDir, "userdata", "statev2.sqlite");
+    const resolvedDatabasePath = await restoreTarget(databasePath).catch(() => databasePath);
+    const freeBytes = async (directory: string): Promise<number> => {
+      try {
+        return await filesystemBackupSpaceProbe.readFreeBytes(directory);
+      } catch (cause) {
+        const parent = NodePath.dirname(directory);
+        if ((cause as NodeJS.ErrnoException).code === "ENOENT" && parent !== directory) {
+          return freeBytes(parent);
+        }
+        return Number.POSITIVE_INFINITY;
+      }
+    };
+    const available = await Promise.all([
+      freeBytes(this.#baseDir),
+      freeBytes(NodePath.dirname(resolvedDatabasePath)),
+    ]);
+    const free = Math.min(...available);
+    return free < MIN_SERVICE_START_FREE_BYTES
+      ? `Boops needs at least ${MIN_SERVICE_START_FREE_BYTES} bytes free before starting the server; ${free} bytes available.`
+      : undefined;
+  }
+
+  async #deferForDiskSpace(retry: () => Promise<void>): Promise<boolean> {
+    const reason = await this.#serviceStartDiskSpaceBlocker();
+    if (reason === undefined) return false;
+    // A stop during the probe must not arm a retry that outlives it.
+    if (this.#stopRequested) return true;
+    this.#clearTimer();
+    this.#log(`[service-launcher] ${reason} Waiting for free space before retrying.\n`);
+    this.#timer = setInterval(
+      () =>
+        this.#enqueue(async () => {
+          if (this.#child !== null || this.#stopping) return;
+          if ((await this.#serviceStartDiskSpaceBlocker()) !== undefined) return;
+          this.#clearTimer();
+          await retry();
+        }),
+      DISK_SPACE_RETRY_MS,
+    );
+    return true;
   }
 
   async #recover(): Promise<void> {
@@ -564,12 +679,16 @@ export class Launcher {
   }
 
   async #startTrial(pending: PendingServiceUpdate): Promise<void> {
+    if (await this.#deferForDiskSpace(() => this.#startTrial(pending))) return;
     try {
-      await backupDatabaseOnce(this.#baseDir, pending);
+      await backupDatabaseOnce(this.#baseDir, pending, this.#stopSignal.signal);
     } catch {
+      // A stop aborts the copy and leaves the update pending for the next start.
+      if (this.#stopRequested) return;
       await this.#returnToPrevious(pending, "failed", "db-backup-failed");
       return;
     }
+    if (this.#stopRequested) return;
     try {
       await this.#startChild(pending.targetVersion, "trial", pending);
     } catch {
@@ -579,6 +698,14 @@ export class Launcher {
 
   async #startChild(version: string, role: ChildRole, update?: ServiceUpdateRecord): Promise<void> {
     if (this.#stopping) return;
+    if (
+      await this.#deferForDiskSpace(() =>
+        role === "trial" && update?.status === "pending"
+          ? this.#startTrial(update)
+          : this.#startChild(version, role, update),
+      )
+    )
+      return;
     if (!(await runtimeExists(this.#baseDir, version))) {
       throw new Error(`Selected boops@${version} runtime is missing or incomplete.`);
     }
@@ -781,6 +908,12 @@ export class Launcher {
       await this.#startTrial(pending);
       return;
     }
+    if (
+      await this.#deferForDiskSpace(() =>
+        this.#startChild(child.version, "active", this.#state.update),
+      )
+    )
+      return;
     throw new Error(`Active child exited unexpectedly (${String(code ?? signal ?? "unknown")}).`);
   }
 
@@ -815,6 +948,8 @@ export class Launcher {
       this.#child = null;
       await terminateChild(child.process);
     }
+    if (await this.#deferForDiskSpace(() => this.#returnToPrevious(pending, status, reason)))
+      return;
     await restoreDatabaseBackup(this.#baseDir, pending);
     const outcome = terminalUpdate({ pending, status, reason });
     const next: ServiceState = {
@@ -837,5 +972,20 @@ export async function main(): Promise<void> {
   const environment = await readServiceEnvironment(baseDir);
   const statePath = NodePath.join(baseDir, "runtime", SERVICE_STATE_FILE);
   const state = await readServiceState(statePath);
-  await new Launcher(baseDir, state, { environment }).run();
+  const logPath = await serviceLogPath(process.env);
+  let logTimer: NodeJS.Timeout | undefined;
+  // A failed stderr write (ENOSPC on a redirected log) is emitted asynchronously; without a listener it is fatal.
+  process.stderr.on("error", () => undefined);
+  if (logPath !== undefined) {
+    await boundServiceLog(logPath);
+    logTimer = setInterval(
+      () => void boundServiceLog(logPath),
+      SERVICE_LOG_CHECK_INTERVAL_MS,
+    ).unref();
+  }
+  try {
+    await new Launcher(baseDir, state, { environment }).run();
+  } finally {
+    clearInterval(logTimer);
+  }
 }
