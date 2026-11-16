@@ -978,7 +978,10 @@ export async function main(): Promise<void> {
   process.stderr.on("error", () => undefined);
   if (logPath !== undefined) {
     await boundServiceLog(logPath);
-    logTimer = setInterval(() => void boundServiceLog(logPath), SERVICE_LOG_CHECK_INTERVAL_MS).unref();
+    logTimer = setInterval(
+      () => void boundServiceLog(logPath),
+      SERVICE_LOG_CHECK_INTERVAL_MS,
+    ).unref();
   }
   try {
     await new Launcher(baseDir, state, { environment }).run();

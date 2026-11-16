@@ -434,7 +434,12 @@ setInterval(() => {}, 1_000);
       vi.stubEnv("T3_BOOT_SERVICE_UNIT", "boops.plist");
       yield* Effect.addFinalizer(() => Effect.sync(() => vi.unstubAllEnvs()));
 
-      const failure = yield* Effect.promise(() => main().then(() => undefined, (cause) => cause));
+      const failure = yield* Effect.promise(() =>
+        main().then(
+          () => undefined,
+          (cause) => cause,
+        ),
+      );
       assert.include(String(failure), "exited unexpectedly");
 
       const { size } = yield* fs.stat(logPath);

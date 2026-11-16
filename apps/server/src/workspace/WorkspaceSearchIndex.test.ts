@@ -5,7 +5,6 @@ import {
   type GrepOptions,
   type GrepResult,
 } from "@ff-labs/fff-node";
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import { afterEach, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { vi } from "vite-plus/test";

@@ -409,8 +409,7 @@ it.effect("a fixed-time slot missed while the server was off shows on the task",
       Layer.mock(ThreadManagementService.ThreadManagementService)({
         getThreadShell: () =>
           Effect.succeed({ projectId: "project-missed-slot", deletedAt: null } as never),
-        sendToThread: () =>
-          Ref.update(launches, (count) => count + 1).pipe(Effect.as({} as never)),
+        sendToThread: () => Ref.update(launches, (count) => count + 1).pipe(Effect.as({} as never)),
       }),
       Layer.mock(SecretRequests.SecretRequests)({}),
     );

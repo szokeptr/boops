@@ -2,7 +2,6 @@ import type {
   UsageCategoryCost,
   UsageCostSource,
   UsageModelPriceOverride,
-  UsageTokenTotals,
 } from "@t3tools/contracts";
 
 import type { UsageRecord, UsageSpeed } from "@t3tools/provider-core/server/usage";
@@ -273,7 +272,7 @@ export function priceUsage(
   record: PricedRecord,
   overrides?: RateTable,
 ): PricedUsage {
-  const { model, totals, reportedCostUsd } = record;
+  const { model, reportedCostUsd } = record;
   const override = overrides?.get(model.trim());
   const reported =
     override === undefined && reportedCostUsd !== null && Number.isFinite(reportedCostUsd)

@@ -1,8 +1,4 @@
-import {
-  ProviderDriverKind,
-  type ModelSelection,
-  type ServerProvider,
-} from "@t3tools/contracts";
+import { ProviderDriverKind, type ModelSelection, type ServerProvider } from "@t3tools/contracts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -608,8 +604,6 @@ it.effect.each([false, true])("text generation preflight: exhausted=%s", (exhaus
         modelSelection: selection,
       }),
     ).toEqual({ title: "Generated title" });
-    expect(calls).toEqual([
-      exhausted ? threadDefault : selection,
-    ]);
+    expect(calls).toEqual([exhausted ? threadDefault : selection]);
   }),
 );
