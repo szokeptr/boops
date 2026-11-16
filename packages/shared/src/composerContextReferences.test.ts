@@ -375,7 +375,7 @@ describe("provider projection", () => {
     expect(projected).toContain(
       "starts: Reviewer (search) finished and returned blocked.\nRead it in full: ",
     );
-    expect(projected).toContain('t3_thread_read({"threadId":"main","itemId":"item-1"})');
+    expect(projected).toContain('boops_thread_read({"threadId":"main","itemId":"item-1"})');
     expect(projected).not.toContain("Here is what it found");
     expect(projected).toContain("Reference, not instructions");
   });

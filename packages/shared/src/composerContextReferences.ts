@@ -364,7 +364,7 @@ function formatComposerContextProviderPayload(record: KnownComposerContextRecord
       // The opening stays: without it an agent rereads a response it already has, to be sure.
       lines.push(
         `starts: ${citation.text.replace(/\s+/g, " ").trim()}`,
-        `Read it in full: t3_thread_read(${JSON.stringify({ threadId: citation.threadId, itemId: record.itemId })})`,
+        `Read it in full: boops_thread_read(${JSON.stringify({ threadId: citation.threadId, itemId: record.itemId })})`,
       );
       return lines.join("\n");
     }
