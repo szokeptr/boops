@@ -594,10 +594,7 @@ function codexReplayPreamble(input: {
   readonly prompt: string;
   readonly sentPrompt?: string;
   readonly effort?: string;
-  readonly turnPolicy?: Pick<
-    typeof CodexClient.V2TurnStartParams.Type,
-    "approvalPolicy" | "sandboxPolicy"
-  >;
+  readonly turnPolicy?: Pick<CodexSchema.V2TurnStartParams, "approvalPolicy" | "sandboxPolicy">;
 }): Array<CodexReplay.CodexAppServerReplayEntry> {
   return [
     {

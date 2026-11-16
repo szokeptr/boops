@@ -725,6 +725,7 @@ it.effect("offers a continuation for a later wake after a queued continuation is
                   setModel: () => Effect.void,
                   applyFlagSettings: () => Effect.void,
                   setPermissionMode: () => Effect.void,
+                  setMcpServers: () => Effect.die("unexpected MCP server change"),
                   renameSession: () => Effect.void,
                   backgroundTasks: () => Effect.succeed(false),
                   mcpServerStatus: Effect.succeed([]),

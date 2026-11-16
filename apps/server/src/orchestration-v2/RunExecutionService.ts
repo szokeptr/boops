@@ -835,7 +835,6 @@ export const layer: Layer.Layer<
                       completedAt,
                       updatedAt: completedAt,
                       type: "system_notice" as const,
-                      level: "warning" as const,
                       message: input.terminal.reason,
                     },
                   },

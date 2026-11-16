@@ -3,6 +3,7 @@ import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
 
 import { resolveProviderCatalog, type ModelManifestData } from "./ModelManifest.ts";
 import {
+  BUNDLED_CLAUDE_MODEL_CATALOG,
   formatClaudeVersionUpgradeMessage,
   normalizeClaudeCatalogEffort,
   resolveClaudeCatalogApiModelId,

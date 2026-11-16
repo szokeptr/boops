@@ -28,7 +28,6 @@ import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
-import * as TextGenerators from "../textGeneration/TextGenerators.ts";
 import * as ProviderInstallationGate from "./ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
@@ -593,7 +592,7 @@ describe("providerMaintenanceRunner", () => {
         // The registry reports no new version, so a command that exits 0 ends as "unchanged".
         assert.strictEqual(
           result.providers[0]?.updateState?.message,
-          "Update command completed, but T3 Code still detects an outdated provider version.",
+          "Update command completed, but Boops still detects an outdated provider version.",
         );
       }).pipe(
         Effect.provide(
@@ -970,7 +969,6 @@ describe("providerMaintenanceRunner", () => {
           generatePrContent: () => Effect.die("unused"),
           generateBranchName: () => Effect.die("unused"),
           generateReviewGuide: () => Effect.die("unused"),
-          generateTranscriptionPostProcessing: () => Effect.die("unused"),
           generateThreadTitle: () =>
             Effect.sync(() => {
               log.push("text generation spawned provider");
@@ -986,7 +984,6 @@ describe("providerMaintenanceRunner", () => {
               getInstance: (id) => Effect.succeed(id === CODEX_INSTANCE_ID ? instance : undefined),
             }),
             ServerSettings.layerTest(),
-            Layer.mock(TextGenerators.TextGenerators)({ runner: () => Effect.undefined }),
             Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
               resolveLink: () => Effect.die("unused"),
             }),

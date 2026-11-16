@@ -9385,10 +9385,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (isClaudeRootTurnFrame(message)) {
             yield* forgetAbsorbedWake(wakeInput.nativeThreadId);
           }
-          if (
-            isWakeTurnStart &&
-            (yield* hasRunningClaudeMonitor(wakeInput.nativeThreadId))
-          ) {
+          if (isWakeTurnStart && (yield* hasRunningClaudeMonitor(wakeInput.nativeThreadId))) {
             monitorEventWakeStarts.add(message);
           }
           yield* Ref.update(wakeBuffers, (current) => {

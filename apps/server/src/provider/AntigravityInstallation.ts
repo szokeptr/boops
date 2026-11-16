@@ -85,8 +85,6 @@ const decodeRegistryAgent = Schema.decodeUnknownEffect(
     }),
   }),
 );
-const LARGE_PAGE_KERNEL_MESSAGE =
-  "Google's linux-arm64 Antigravity runtime needs a kernel with 4 KiB memory pages, and this kernel uses larger pages (as on Asahi Linux or Raspberry Pi 5). Use a remote environment or a custom Antigravity executable.";
 
 const ReleaseId = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u));
 const ActiveRelease = Schema.Struct({ releaseId: ReleaseId });

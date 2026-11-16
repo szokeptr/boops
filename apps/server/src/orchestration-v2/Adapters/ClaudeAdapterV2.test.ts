@@ -1469,6 +1469,7 @@ describe("ClaudeAdapterV2 provider installation gate", () => {
                   setModel: () => Effect.void,
                   applyFlagSettings: () => Effect.void,
                   setPermissionMode: () => Effect.void,
+                  setMcpServers: () => Effect.die("unexpected MCP server change"),
                   renameSession: () => Effect.void,
                   backgroundTasks: () => Effect.succeed(false),
                   mcpServerStatus: Effect.succeed([]),
@@ -3823,7 +3824,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         const backgrounding = yield* Deferred.make<void>();
         const release = yield* Deferred.make<void>();
         const harness = yield* makeWakeHarnessWithOptions({
-          renameSession: () => Effect.void,
           backgroundTasks: () =>
             Deferred.succeed(backgrounding, undefined).pipe(
               Effect.andThen(Deferred.await(release)),

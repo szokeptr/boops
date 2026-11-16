@@ -628,18 +628,21 @@ it.effect.each(["limit", "runLimit", "maxCharsPerItem"])(
   },
 );
 
-it.effect("clamps a boops_thread_list limit above its maximum instead of rejecting the call", () => {
-  const calls: Array<unknown> = [];
-  return Effect.gen(function* () {
-    yield* callTool("boops_thread_list", { allProjects: true, limit: 200 });
-    yield* callTool("boops_thread_list", { allProjects: true, limit: 7 });
+it.effect(
+  "clamps a boops_thread_list limit above its maximum instead of rejecting the call",
+  () => {
+    const calls: Array<unknown> = [];
+    return Effect.gen(function* () {
+      yield* callTool("boops_thread_list", { allProjects: true, limit: 200 });
+      yield* callTool("boops_thread_list", { allProjects: true, limit: 7 });
 
-    expect(calls).toEqual([
-      { allProjects: true, limit: 100 },
-      { allProjects: true, limit: 7 },
-    ]);
-  }).pipe(Effect.provide(layerRecordingTools(calls)));
-});
+      expect(calls).toEqual([
+        { allProjects: true, limit: 100 },
+        { allProjects: true, limit: 7 },
+      ]);
+    }).pipe(Effect.provide(layerRecordingTools(calls)));
+  },
+);
 
 it("keeps cross-tool routing out of the delegate_task description", () => {
   const description = OrchestratorToolkit.tools.delegate_task.description ?? "";
