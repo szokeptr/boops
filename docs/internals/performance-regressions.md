@@ -41,7 +41,8 @@ The v2 checks pin these invariants:
   requested.
   Explicit cross-environment transcript exports preserve full tool bodies so the destination
   agent can read the context. The export rejects timeline JSON above the file attachment limit
-  before sending it; the client still applies its attachment limit to the complete file.
+  before sending it, and before decoding any row when the tool output text alone is over that
+  limit; the client still applies its attachment limit to the complete file.
 - Live command output reaches a client only through `orchestration.subscribeCommandOutput`, which
   an expanded command row opens and closes with itself. Raw output deltas are never orchestration
   events: adapters send them to the
@@ -101,9 +102,16 @@ sessions. The orchestrator still validates the current thread before applying se
 
 Read receipts use `ProjectionStore.getThread` to load only canonical thread metadata. A visit
 advances `lastVisitedAt` monotonically without changing `updatedAt` or decoding history. Shell
-queries use a covering thread/run index for item counts and a partial index for nonterminal
-background items, including idle items. Latest user-message reads use an index ordered by update
-time.
+queries read item counts from a per-thread, per-run table that turn-item triggers keep exact, and
+use a partial index for nonterminal background items, including idle items. Latest user-message
+reads use an index ordered by update time.
+
+A projection read that orders messages by their first user or assistant turn item groups those
+items by `$.messageId` through a partial index on that expression (migration 103), so it does not
+parse every message item's payload; the index's expression and `WHERE` must stay identical to the
+query's. Migration 94 scans the turn-item table once on first start; a message item whose payload
+is not valid JSON is left out of the index. Each message-item write re-parses the old and new
+payload for the index, so its cost grows with the payload.
 
 Command palette results keep live VCS and linked pull-request queries leased to the visible
 viewport, including a small overscan region. Cached badges remain available while leases are

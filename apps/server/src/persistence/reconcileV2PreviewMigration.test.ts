@@ -74,6 +74,16 @@ describe("V2 preview upgrade", () => {
         [92, "SidebarLayouts"],
         [93, "RoomListening"],
         [94, "TurnItemConversationIndex"],
+        [95, "CommandReadIndexes"],
+        [96, "LastExecutedRunIndex"],
+        [97, "TurnItemCounts"],
+        [98, "QueuedTurnInputIndex"],
+        [99, "TurnItemTypeStatusIndex"],
+        [100, "ShellThreadReadIndexes"],
+        [101, "QueuedTurnInputIndexJsonValid"],
+        [102, "ProviderTurnAttemptIndex"],
+        [103, "TurnItemMessageOrdinalIndex"],
+        [104, "TurnItemInlineWorkOutput"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -191,6 +201,16 @@ describe("V2 preview upgrade", () => {
         [92, "SidebarLayouts"],
         [93, "RoomListening"],
         [94, "TurnItemConversationIndex"],
+        [95, "CommandReadIndexes"],
+        [96, "LastExecutedRunIndex"],
+        [97, "TurnItemCounts"],
+        [98, "QueuedTurnInputIndex"],
+        [99, "TurnItemTypeStatusIndex"],
+        [100, "ShellThreadReadIndexes"],
+        [101, "QueuedTurnInputIndexJsonValid"],
+        [102, "ProviderTurnAttemptIndex"],
+        [103, "TurnItemMessageOrdinalIndex"],
+        [104, "TurnItemInlineWorkOutput"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

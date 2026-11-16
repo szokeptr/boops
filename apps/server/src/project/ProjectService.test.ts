@@ -546,11 +546,11 @@ it.layer(layerTest)("ProjectService", (it) => {
         title: "Delete retry",
         workspaceRoot: "/work/delete-retry",
       });
-      // Enrichment that finishes between the two deletes would make the retry differ.
+      // Enrichment landing between the two deletes would change the project the retry reads.
       yield* waitForProject(
         service,
         projectId,
-        (project) => project.repositoryIdentity !== null && project.faviconPath !== null,
+        (project) => project.faviconPath !== null && project.repositoryIdentity !== null,
       );
       const input = { commandId: CommandId.make("command:delete-retry:delete"), projectId };
       const deleted = yield* service.delete(input);

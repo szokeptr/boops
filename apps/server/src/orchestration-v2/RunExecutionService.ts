@@ -54,6 +54,7 @@ import {
   makeProviderFailureTurnItem,
 } from "@t3tools/provider-core/server/failure";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
+import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import { userFacingDatabaseErrorMessage } from "./UserFacingErrors.ts";
 
@@ -564,6 +565,8 @@ export interface RunExecutionServiceV2StartRootRunInput {
   readonly providerThread: OrchestrationV2ProviderThread;
   readonly attempt: OrchestrationV2RunAttempt;
   readonly attemptId: RunAttemptId;
+  /** Waits for a baseline started with `forkBaseline`; without it the run captures one itself. */
+  readonly baseline?: Effect.Effect<void>;
   readonly providerTurnOrdinal: number;
   readonly nativeThreadHasTurns?: boolean;
   readonly loadInheritedBackgroundTurnItems?: () => Effect.Effect<
@@ -581,10 +584,20 @@ export interface RunExecutionServiceV2StartRootRunInput {
   readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
 }
 
+type RunBaselineInput = Pick<
+  RunExecutionServiceV2StartRootRunInput,
+  "appThread" | "run" | "checkpointScope"
+>;
+
 export interface RunExecutionServiceV2Shape {
   readonly startRootRun: (
     input: RunExecutionServiceV2StartRootRunInput,
   ) => Effect.Effect<void, RunExecutionServiceV2Error>;
+  /**
+   * Starts the run's baseline capture on a child fiber so it overlaps provider session startup.
+   * Pass the returned effect to `startRootRun`, which awaits it before prompting the provider.
+   */
+  readonly forkBaseline: (input: RunBaselineInput) => Effect.Effect<Effect.Effect<void>>;
 }
 
 export class RunExecutionServiceV2 extends Context.Service<
@@ -603,6 +616,7 @@ export const layer: Layer.Layer<
   | McpAppModelContext.McpAppModelContext
   | PreviewAgentActivity.PreviewAgentActivity
   | TurnItemPositionStore.TurnItemPositionStoreV2
+  | ThreadCommandExecutor.ThreadCommandExecutor
 > = Layer.effect(
   RunExecutionServiceV2,
   Effect.gen(function* () {
@@ -617,6 +631,7 @@ export const layer: Layer.Layer<
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
     const finalizationObserver = yield* RunFinalizationService.RunFinalizationObserver;
     const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
+    const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
 
     const writeFinalRunEvents = Effect.fn("RunExecutionService.writeFinalRunEvents")(
       function* (input: {
@@ -883,7 +898,34 @@ export const layer: Layer.Layer<
       },
     );
 
+    const captureRunBaseline = Effect.fn("RunExecutionService.captureBaseline")(function* (
+      input: RunBaselineInput,
+    ) {
+      // Side chats share the parent's worktree; a snapshot would capture the parent's edits.
+      if (input.appThread.lineage.sideChat === true) return;
+      yield* checkpointService
+        .captureBaseline({
+          scope: input.checkpointScope,
+          ordinalWithinScope: Math.max(0, input.run.ordinal - 1),
+        })
+        .pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.interrupt
+              : Effect.logWarning(
+                  "orchestration V2 checkpoint baseline capture failed; starting provider without a baseline",
+                  { runId: input.run.id },
+                ),
+          ),
+        );
+    });
+
     return RunExecutionServiceV2.of({
+      forkBaseline: (input) =>
+        captureRunBaseline(input).pipe(
+          Effect.forkChild({ startImmediately: true }),
+          Effect.map(Fiber.join),
+        ),
       startRootRun: Effect.fn("RunExecutionService.startRootRun")(function* (input) {
         const rootTurnOrigin: ProviderUsageAnalytics.ProviderTurnOrigin = {
           createdBy: input.message.createdBy,
@@ -930,24 +972,7 @@ export const layer: Layer.Layer<
                   .responseStreamingMode,
             ),
           );
-          // Side chats share the parent's worktree; a snapshot would capture the parent's edits.
-          yield* (
-            input.appThread.lineage.sideChat === true
-              ? Effect.void
-              : checkpointService.captureBaseline({
-                  scope: input.checkpointScope,
-                  ordinalWithinScope: Math.max(0, input.run.ordinal - 1),
-                })
-          ).pipe(
-            Effect.catchCauseIf(
-              (cause) => !Cause.hasInterruptsOnly(cause),
-              (_cause) =>
-                Effect.logWarning(
-                  "orchestration V2 checkpoint baseline capture failed; starting provider without a baseline",
-                  { runId: input.run.id },
-                ),
-            ),
-          );
+          yield* input.baseline ?? captureRunBaseline(input);
           if (
             input.shouldStartProviderTurn !== undefined &&
             !(yield* input.shouldStartProviderTurn())
@@ -1073,6 +1098,10 @@ export const layer: Layer.Layer<
           ReadonlySet<OrchestrationV2TurnItem["id"]>
         >(new Set(inheritedBackgroundTurnItemsById.keys()));
         const openRunOwnedSubagents = yield* Ref.make(emptyOpenRunOwnedSubagentProjection());
+        // Owned child threads whose last snapshot reported pending work, such as a queued native
+        // continuation. These must hold the stream past owner loss.
+        const childSnapshotPendingWork = new Set<ProviderThreadId>();
+        let rootTurnOwnershipChecked = false;
         const finalizeRootRun = Effect.fn("RunExecutionService.finalizeRootRun")(function* (
           terminal: ProviderTerminalEvent,
         ) {
@@ -1295,7 +1324,7 @@ export const layer: Layer.Layer<
           // while these sets are non-empty: turn_item.updated writes are not ownership-gated, so
           // late completions still land.
           const backgroundItems = yield* Ref.get(activeBackgroundTurnItems);
-          if (backgroundItems.size > 0) {
+          if (backgroundItems.size > 0 || childSnapshotPendingWork.size > 0) {
             return false;
           }
           if (yield* Ref.get(providerThreadOwnerLost)) {
@@ -1395,6 +1424,10 @@ export const layer: Layer.Layer<
                     pendingBackgroundProviderTurns.delete(id);
                   }
                 }
+                // Routing now rejects the moved thread's snapshots, so none would clear its entry.
+                for (const id of childSnapshotPendingWork) {
+                  if (!routing.ownedProviderThreadIds.has(id)) childSnapshotPendingWork.delete(id);
+                }
                 yield* Ref.update(
                   activeBackgroundTurnItems,
                   (current) => new Set([...current].filter((id) => !detached.itemIds.has(id))),
@@ -1419,63 +1452,107 @@ export const layer: Layer.Layer<
                 DateTime.toEpochMillis(yield* DateTime.now),
               );
               if (deliveredEvent) {
-                const rootTerminalAlreadySeen = yield* Ref.get(rootTerminalSeen);
-                const isRootProviderThreadUpdate =
-                  event.type === "provider_thread.updated" &&
-                  event.providerThread.id === input.providerThread.id;
-                const nativeChildTurn =
-                  event.type === "provider_turn.updated" &&
-                  event.providerTurn.providerThreadId !== input.providerThread.id;
-                if (event.type === "provider_turn.updated" && !nativeChildTurn) {
-                  firstRootProviderTurnId ??= event.providerTurn.id;
-                }
-                const storedEvents = yield* providerEventIngestor.ingestNormalized({
-                  analyticsContext: nativeChildTurn
-                    ? {
-                        ...analyticsContext,
-                        origin: NATIVE_SUBAGENT_TURN_ORIGIN,
-                        segment: "native_child",
-                      }
-                    : {
-                        ...analyticsContext,
-                        segment:
-                          event.type === "provider_turn.updated" &&
-                          event.providerTurn.id !== firstRootProviderTurnId
-                            ? "continuation"
-                            : input.attempt.reason,
-                      },
-                  providerSessionId: input.providerSessionId,
-                  providerInstanceId: input.run.providerInstanceId,
-                  threadId: input.run.threadId,
-                  runId: input.run.id,
-                  nodeId: input.rootNode.id,
-                  event: deliveredEvent,
-                  ...(isRootProviderThreadUpdate
-                    ? rootTerminalAlreadySeen
+                const ingestDelivered = Effect.gen(function* () {
+                  const rootTerminalAlreadySeen = yield* Ref.get(rootTerminalSeen);
+                  const isRootProviderThreadUpdate =
+                    event.type === "provider_thread.updated" &&
+                    event.providerThread.id === input.providerThread.id;
+                  const nativeChildTurn =
+                    event.type === "provider_turn.updated" &&
+                    event.providerTurn.providerThreadId !== input.providerThread.id;
+                  if (event.type === "provider_turn.updated" && !nativeChildTurn) {
+                    firstRootProviderTurnId ??= event.providerTurn.id;
+                  }
+                  const storedEvents = yield* providerEventIngestor.ingestNormalized({
+                    analyticsContext: nativeChildTurn
                       ? {
-                          writeIfProviderThreadOwner: {
-                            providerThreadId: input.providerThread.id,
-                            runId: input.run.id,
-                            activeAttemptId: input.attempt.id,
-                            expectedLastRunOrdinal: input.run.ordinal,
-                          },
+                          ...analyticsContext,
+                          origin: NATIVE_SUBAGENT_TURN_ORIGIN,
+                          segment: "native_child",
                         }
                       : {
-                          writeIfRunCurrent: {
-                            runId: input.run.id,
-                            activeAttemptId: input.attempt.id,
-                            expectedStatus: "running" as const,
-                          },
-                        }
-                    : {}),
+                          ...analyticsContext,
+                          segment:
+                            event.type === "provider_turn.updated" &&
+                            event.providerTurn.id !== firstRootProviderTurnId
+                              ? "continuation"
+                              : input.attempt.reason,
+                        },
+                    providerSessionId: input.providerSessionId,
+                    providerInstanceId: input.run.providerInstanceId,
+                    threadId: input.run.threadId,
+                    runId: input.run.id,
+                    nodeId: input.rootNode.id,
+                    event: deliveredEvent,
+                    ...(isRootProviderThreadUpdate
+                      ? rootTerminalAlreadySeen
+                        ? {
+                            writeIfProviderThreadOwner: {
+                              providerThreadId: input.providerThread.id,
+                              runId: input.run.id,
+                              activeAttemptId: input.attempt.id,
+                              expectedLastRunOrdinal: input.run.ordinal,
+                            },
+                          }
+                        : {
+                            writeIfRunCurrent: {
+                              runId: input.run.id,
+                              activeAttemptId: input.attempt.id,
+                              expectedStatus: "running" as const,
+                            },
+                          }
+                      : {}),
+                  });
+                  storedEventCount = storedEvents.length;
+                  if (
+                    isRootProviderThreadUpdate &&
+                    rootTerminalAlreadySeen &&
+                    storedEventCount === 0
+                  ) {
+                    yield* Ref.set(providerThreadOwnerLost, true);
+                  }
                 });
-                storedEventCount = storedEvents.length;
-                if (
-                  isRootProviderThreadUpdate &&
-                  rootTerminalAlreadySeen &&
-                  storedEventCount === 0
-                ) {
-                  yield* Ref.set(providerThreadOwnerLost, true);
+                const startedRootTurn =
+                  event.type === "provider_turn.updated" &&
+                  event.providerTurn.runAttemptId === input.attempt.id &&
+                  event.providerTurn.providerThreadId === input.providerThread.id &&
+                  !isTerminalProviderTurnStatus(event.providerTurn.status) &&
+                  !rootTurnOwnershipChecked
+                    ? event.providerTurn
+                    : undefined;
+                const shouldStartProviderTurn = input.shouldStartProviderTurn;
+                if (startedRootTurn !== undefined && shouldStartProviderTurn) {
+                  rootTurnOwnershipChecked = true;
+                  // Stop plans under this lock from stored turns. Storing the first turn and rechecking
+                  // the attempt under it means Stop either saw the turn or already settled the run.
+                  const [, owned] = yield* threadCommands.withLock(
+                    input.run.threadId,
+                    Effect.all([
+                      ingestDelivered,
+                      shouldStartProviderTurn().pipe(Effect.orElseSucceed(() => true)),
+                    ]),
+                  );
+                  if (!owned) {
+                    yield* Ref.get(latestProviderThread).pipe(
+                      Effect.flatMap((providerThread) =>
+                        input.session.interruptTurn({
+                          providerThread,
+                          providerTurnId: startedRootTurn.id,
+                        }),
+                      ),
+                      Effect.catchCauseIf(
+                        (cause) => !Cause.hasInterruptsOnly(cause),
+                        (cause) =>
+                          Effect.logWarning(
+                            "orchestration V2 failed to interrupt a provider turn that started after Stop",
+                            { runId: input.run.id, cause },
+                          ),
+                      ),
+                      Effect.forkIn(scope),
+                    );
+                  }
+                } else {
+                  yield* ingestDelivered;
                 }
               } else if (
                 event.type === "turn_item.updated" &&
@@ -1494,6 +1571,12 @@ export const layer: Layer.Layer<
               if (event.type === "provider_thread.updated") {
                 if (event.providerThread.id === input.providerThread.id && storedEventCount > 0) {
                   yield* Ref.set(latestProviderThread, event.providerThread);
+                } else if (event.providerThread.id !== input.providerThread.id) {
+                  if (event.pendingBackgroundWork === true) {
+                    childSnapshotPendingWork.add(event.providerThread.id);
+                  } else if (event.pendingBackgroundWork === false) {
+                    childSnapshotPendingWork.delete(event.providerThread.id);
+                  }
                 }
               }
               if (
