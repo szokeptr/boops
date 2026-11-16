@@ -3211,14 +3211,13 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         workCursor = page.nextCursor;
       }
       assert.strictEqual(workIds.size, 999);
-      for (const [toolName, output] of [
-        ["boops.delegate_task", null],
-        ["mcp__boops__delegate_task", null],
-        ["mcp__boops__send_to_user", null],
-      ] as const) {
+      for (const toolName of [
+        "boops.delegate_task",
+        "mcp__boops__delegate_task",
+        "mcp__boops__send_to_user",
+      ]) {
         yield* sql`UPDATE orchestration_v2_projection_turn_items SET type = 'dynamic_tool',
-          payload_json = json_set(payload_json, '$.type', 'dynamic_tool', '$.toolName', ${toolName},
-            '$.output', ${output})
+          payload_json = json_set(payload_json, '$.type', 'dynamic_tool', '$.toolName', ${toolName})
           WHERE thread_id = ${threadId} AND ordinal = 2`;
         const window = yield* projectionStore.getThreadSnapshotWindow(threadId, {
           rowLimit: sqlPageLimit,
