@@ -6,6 +6,7 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
+  isQueuedProviderThreadPlaceholder,
   withCarriedReactions,
 } from "@t3tools/contracts";
 import {
@@ -395,7 +396,15 @@ export function applyOrchestrationV2ProjectionEvent(
         ),
       };
     case "provider-thread.updated":
-      return { ...base, providerThreads: upsertEntity(base.providerThreads, event.payload) };
+      return {
+        ...base,
+        thread:
+          event.payload.appThreadId === base.thread.id &&
+          !isQueuedProviderThreadPlaceholder(event.payload)
+            ? { ...base.thread, activeProviderThreadId: event.payload.id }
+            : base.thread,
+        providerThreads: upsertEntity(base.providerThreads, event.payload),
+      };
     case "provider-turn.updated":
       return {
         ...base,

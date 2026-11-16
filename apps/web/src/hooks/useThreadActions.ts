@@ -652,7 +652,7 @@ export function useThreadActions() {
     return deleteResult;
   };
 
-  const unsettleThread = async (target: ScopedThreadRef) => {
+  const unsettleThread = async (target: ScopedThreadRef, restoreUnsettledAt?: string | null) => {
     if (!readEnvironmentServerConfigLoaded(target.environmentId)) {
       return AsyncResult.failure(
         Cause.fail(
@@ -667,7 +667,11 @@ export function useThreadActions() {
     // reason "user" pins active until real activity, suppressing auto-settle.
     return unsettleThreadMutation({
       environmentId: target.environmentId,
-      input: { threadId: target.threadId, reason: "user" },
+      input: {
+        threadId: target.threadId,
+        reason: "user",
+        ...(restoreUnsettledAt === undefined ? {} : { restoreUnsettledAt }),
+      },
     });
   };
 
@@ -904,7 +908,7 @@ export function useThreadActions() {
       async (step) => {
         switch (step.action) {
           case "unsettle":
-            return unsettleThread(target);
+            return unsettleThread(target, step.restoreUnsettledAt);
           case "unsnooze":
             return unsnoozeThread(target);
           case "pin":
@@ -912,6 +916,8 @@ export function useThreadActions() {
               target,
               step.orderKey === undefined ? {} : { orderKey: step.orderKey },
             );
+          case "reorderActive":
+            return reorderActiveThread(target, step.orderKey);
           case "snooze":
             return snoozeThreadMutation({
               environmentId: target.environmentId,

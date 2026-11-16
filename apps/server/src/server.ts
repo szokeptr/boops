@@ -28,6 +28,7 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
+import * as KeepAwake from "./background/KeepAwake.ts";
 import * as NonBlockingSpawner from "./process/NonBlockingSpawner.ts";
 import * as ServerConfig from "./config.ts";
 import { withUntracedRequests } from "./http.ts";
@@ -69,6 +70,7 @@ import * as SourceControlBuiltInDrivers from "./sourceControl/builtInDrivers.ts"
 import * as SourceControlSignIn from "./sourceControl/SourceControlSignIn.ts";
 import { BUILT_IN_SOURCE_CONTROL_DRIVER_LIST } from "./sourceControl/sourceControlDefinitions.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
+import * as SecretCheck from "./secrets/SecretCheck.ts";
 import * as SecretResolver from "./secrets/SecretResolver.ts";
 import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceRegistryHydration.ts";
 import * as ProjectSettingsOverrideSweep from "./provider/ProjectSettingsOverrideSweep.ts";
@@ -676,6 +678,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
   DatabaseStorage.layer.pipe(Layer.provide(ProjectionMaintenance.layer)),
   layerThreadPullRequestWorker,
+  KeepAwake.layer,
   DelegatedTaskAnalytics.layer,
   Layer.effectDiscard(
     Effect.gen(function* () {
@@ -711,6 +714,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
   Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
+  Layer.provideMerge(SecretCheck.layer),
   Layer.provideMerge(SecretResolver.layer),
   // Above the settings it writes when a theme is applied.
   Layer.provideMerge(EnvironmentTheme.layer),
@@ -892,6 +896,17 @@ const layerMakeServer = Layer.unwrap(
         yield* HttpServer.HttpServer;
         const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
         yield* startup.markHttpListening;
+      }),
+    );
+    const layerDesktopReadySignal = Layer.effectDiscard(
+      Effect.gen(function* () {
+        const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
+        const receiver = yield* DesktopTelemetryReceiver.DesktopTelemetryReceiver;
+        yield* startup.awaitCommandReady.pipe(
+          Effect.andThen(receiver.announceServerReady),
+          Effect.ignore,
+          Effect.forkScoped,
+        );
       }),
     );
     const layerRuntimeState = Layer.effectDiscard(
@@ -1274,6 +1289,7 @@ const layerMakeServer = Layer.unwrap(
     const layerServerApplication = Layer.mergeAll(
       layerRoutes,
       layerHttpListening,
+      layerDesktopReadySignal,
       layerRuntimeState.pipe(Layer.provide(layerLauncher)),
       layerTailscaleServe,
       layerCloudDesiredLinkReconcile,

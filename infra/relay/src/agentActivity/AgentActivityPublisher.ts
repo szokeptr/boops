@@ -69,28 +69,19 @@ const make = Effect.gen(function* () {
     readonly messageState: RelayAgentActivityState | null;
     readonly nowMs: number;
   }) {
-    const activeStates = input.deliveryUser.liveActivitiesEnabled
-      ? yield* rows.listForUser({ userId: input.deliveryUser.userId })
-      : [];
-    const liveActivityAggregate = input.deliveryUser.liveActivitiesEnabled
-      ? makeAggregateState({
-          activeStates,
-          terminalState: input.state && isTerminalPhase(input.state) ? input.state : null,
-          nowMs: input.nowMs,
-        })
-      : null;
-    const messageState = input.deliveryUser.notificationsEnabled ? input.messageState : null;
-    const notificationOnlyAggregate =
-      input.deliveryUser.notificationsEnabled &&
-      !input.deliveryUser.liveActivitiesEnabled &&
-      input.state !== null
+    const targets = yield* liveActivities.listTargets({ userId: input.deliveryUser.userId });
+    // Only iOS targets with a running Live Activity read the aggregate, and few users have one,
+    // so skip the per-user activity query otherwise.
+    const liveActivityAggregate =
+      input.deliveryUser.liveActivitiesEnabled &&
+      targets.some((target) => target.platform !== "android" && target.activity_push_token)
         ? makeAggregateState({
-            activeStates: isTerminalPhase(input.state) ? [] : [input.state],
-            terminalState: isTerminalPhase(input.state) ? input.state : null,
+            activeStates: yield* rows.listForUser({ userId: input.deliveryUser.userId }),
+            terminalState: input.state && isTerminalPhase(input.state) ? input.state : null,
             nowMs: input.nowMs,
           })
         : null;
-    const targets = yield* liveActivities.listTargets({ userId: input.deliveryUser.userId });
+    const messageState = input.deliveryUser.notificationsEnabled ? input.messageState : null;
     const deliveriesByTarget = yield* Effect.forEach(
       targets,
       Effect.fnUntraced(function* (target) {
@@ -102,14 +93,9 @@ const make = Effect.gen(function* () {
             apnsDeliveries.sendForTarget({
               target,
               aggregate: liveActivityAggregate,
+              state: input.deliveryUser.notificationsEnabled ? input.state : null,
               nowMs: input.nowMs,
             }),
-            notificationOnlyAggregate === null
-              ? Effect.succeed(null)
-              : apnsDeliveries.sendPushNotificationForTarget({
-                  target,
-                  aggregate: notificationOnlyAggregate,
-                }),
             messageState === null
               ? Effect.succeed(null)
               : apnsDeliveries.sendMessageForTarget({
@@ -118,7 +104,7 @@ const make = Effect.gen(function* () {
                   nowMs: input.nowMs,
                 }),
           ],
-          { concurrency: 3 },
+          { concurrency: 2 },
         );
       }),
       { concurrency: 4 },

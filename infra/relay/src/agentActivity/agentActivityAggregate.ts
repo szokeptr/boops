@@ -31,7 +31,7 @@ export function statusForPhase(phase: RelayAgentActivityState["phase"]): string 
   }
 }
 
-function aggregateRowForState(state: RelayAgentActivityState) {
+export function aggregateRowForState(state: RelayAgentActivityState) {
   return {
     environmentId: state.environmentId,
     threadId: state.threadId,

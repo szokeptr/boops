@@ -296,6 +296,7 @@ const MEMBER_RPC_POLICY = {
   [WS_METHODS.previewStopLocalServer]: "deny",
   [WS_METHODS.serverRunStorageCleanup]: "deny",
   [WS_METHODS.serverCheckOtlpEndpoint]: "deny",
+  [WS_METHODS.serverCheckSecretSource]: "deny",
   [WS_METHODS.serverRefreshProviders]: "deny",
   [WS_METHODS.pullRequestsRunAction]: "deny",
   [WS_METHODS.pullRequestsUpdate]: "deny",

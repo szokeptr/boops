@@ -368,22 +368,32 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     }),
   );
 
-  const hasIncompleteInitialScan = () => initialScanTimedOut && finder.isScanning();
+  // fff's isScanning takes the picker lock too, so progress is read off the JS thread.
+  const isScanning = Effect.promise(async () => {
+    try {
+      const progress = await finder.getScanProgressAsync();
+      return !progress.ok || progress.value.isScanning;
+    } catch {
+      return true;
+    }
+  });
+  const hasIncompleteInitialScan = () => (initialScanTimedOut ? isScanning : Effect.succeed(false));
 
   const runSearch = Effect.fn("WorkspaceSearchIndex.runSearch")(function* <A>(
     query: string,
     pageSize: number,
     operation: "directorySearch" | "fileSearch" | "grep" | "mixedSearch",
-    execute: () => Result<A>,
+    execute: () => Promise<Result<A>>,
   ): Effect.fn.Return<A, WorkspaceSearchIndexSearchFailed> {
-    const result = yield* Effect.try({
+    // fff's searches wait on its picker lock, which its watcher can hold for minutes.
+    const result = yield* Effect.tryPromise({
       try: execute,
       catch: (cause) =>
         new WorkspaceSearchIndexSearchFailed({
           cwd,
           queryLength: query.length,
           pageSize,
-          reason: `FileFinder.${operation} threw unexpectedly.`,
+          reason: `FileFinder.${operation} rejected unexpectedly.`,
           cause,
         }),
     });
@@ -401,12 +411,13 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
   const refresh: WorkspaceSearchIndex["Service"]["refresh"] = Effect.fn(
     "WorkspaceSearchIndex.refresh",
   )(function* () {
-    const result = yield* Effect.try({
-      try: () => finder.scanFiles(),
+    // scanFiles waits on fff's picker lock, which its watcher can hold for seconds.
+    const result = yield* Effect.tryPromise({
+      try: () => finder.scanFilesAsync(),
       catch: (cause) =>
         new WorkspaceSearchIndexRefreshFailed({
           cwd,
-          reason: "FileFinder.scanFiles threw unexpectedly.",
+          reason: "FileFinder.scanFilesAsync rejected unexpectedly.",
           cause,
         }),
     });
@@ -432,9 +443,9 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
 
   const list: WorkspaceSearchIndex["Service"]["list"] = Effect.fn("WorkspaceSearchIndex.list")(
     function* () {
-      const incompleteBeforeQuery = hasIncompleteInitialScan();
+      const incompleteBeforeQuery = yield* hasIncompleteInitialScan();
       const result = yield* runSearch("", WORKSPACE_INDEX_PAGE_SIZE, "mixedSearch", () =>
-        finder.mixedSearch("", { pageSize: WORKSPACE_INDEX_PAGE_SIZE }),
+        finder.mixedSearchAsync("", { pageSize: WORKSPACE_INDEX_PAGE_SIZE }),
       );
       const mapped = mapMixedSearchResult(result, WORKSPACE_INDEX_MAX_ENTRIES);
       const sortedEntries = withDirectoryAncestors(mapped.entries).toSorted((left, right) =>
@@ -453,23 +464,23 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     "WorkspaceSearchIndex.search",
   )(function* (query, limit, kind, imageOnly) {
     const pageSize = imageOnly ? WORKSPACE_INDEX_PAGE_SIZE : Math.max(1, limit + 1);
-    const incompleteBeforeQuery = hasIncompleteInitialScan();
+    const incompleteBeforeQuery = yield* hasIncompleteInitialScan();
     if (kind === "file" || imageOnly) {
       const result = yield* runSearch(query, pageSize, "fileSearch", () =>
-        finder.fileSearch(query, { pageSize }),
+        finder.fileSearchAsync(query, { pageSize }),
       );
       const mapped = mapFileSearchResult(result, limit, imageOnly);
       return { ...mapped, truncated: incompleteBeforeQuery || mapped.truncated };
     }
     if (kind === "directory") {
       const result = yield* runSearch(query, pageSize, "directorySearch", () =>
-        finder.directorySearch(query, { pageSize }),
+        finder.directorySearchAsync(query, { pageSize }),
       );
       const mapped = mapDirectorySearchResult(result, limit);
       return { ...mapped, truncated: incompleteBeforeQuery || mapped.truncated };
     }
     const result = yield* runSearch(query, pageSize, "mixedSearch", () =>
-      finder.mixedSearch(query, { pageSize }),
+      finder.mixedSearchAsync(query, { pageSize }),
     );
     const mapped = mapMixedSearchResult(result, limit);
     return { ...mapped, truncated: incompleteBeforeQuery || mapped.truncated };
@@ -491,7 +502,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     do {
       const remainingTimeBudgetMs = Math.max(1, Math.ceil(deadline - performance.now()));
       const result = yield* runSearch(input.query, input.limit, "grep", () =>
-        finder.grep(searchQuery, {
+        finder.grepAsync(searchQuery, {
           mode: regexMode ? "regex" : "plain",
           smartCase: !input.caseSensitive && !regexMode,
           maxMatchesPerFile: Math.min(CONTENT_SEARCH_MAX_MATCHES_PER_FILE, rawPageSize),
