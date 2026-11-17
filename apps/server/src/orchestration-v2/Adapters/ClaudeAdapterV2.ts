@@ -12545,7 +12545,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     Effect.provideService(Path.Path, path),
                   );
             const querySession = yield* openQuery(turnInput, nativeThreadId, queryPolicy);
-                        // `claude --resume` shows the native title. A failed or timed-out rename forgets the
+            // `claude --resume` shows the native title. A failed or timed-out rename forgets the
             // applied title so the next turn, even after a restart, sends it again.
             if (appliedSessionTitles.get(nativeThreadId) !== turnInput.appThread.title) {
               const renamed = yield* querySession.query
