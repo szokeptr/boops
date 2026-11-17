@@ -2692,7 +2692,7 @@ export function buildThreadFeed(
         runId: item.runId,
         text: sentMessage,
       };
-      projectedEntriesCache.set(row, { attemptId, entry });
+      projectedEntriesCache.set(row, { attemptId, entries: [entry] });
       entries.push(entry);
       entryRows.push(index);
       continue;
