@@ -447,6 +447,7 @@ const MEMBER_CALLER_TOOLS: ReadonlyMap<string, (params: object) => boolean> = ne
     "boops_thread_send_attachments",
     "html_preview",
     "html_render",
+    "send_to_user",
   ].map((tool) => [tool, always] as const),
 ]);
 

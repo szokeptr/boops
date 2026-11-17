@@ -389,6 +389,43 @@ it.effect("returns an HTML render reference that Codex and Claude tool rows both
   ),
 );
 
+it.effect("refuses send_to_user in a group chat, whose room only sees the reply", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const send = (id: string) =>
+      server.callTool({ name: "send_to_user", arguments: { message: "Draft" } }).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          ...scope,
+          thread: { ...scope.thread!, threadId: ThreadId.make(id) },
+        }),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect((yield* send(threadId)).structuredContent).toMatchObject({ sentMessage: "Draft" });
+    expect(declaredFailure(yield* send("room:r1:project:mcp-core"))).toMatchObject({
+      code: "capability_denied",
+    });
+  }).pipe(
+    Effect.provide(
+      McpHttpServer.layerMessageToolkit.pipe(
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+        Layer.provide(
+          Layer.mock(ThreadManagement.ThreadManagementService)({
+            getThreadShell: (id) =>
+              Effect.succeed({
+                id,
+                lineage: { rootThreadId: id, parentThreadId: null, relationshipToParent: null },
+                deletedAt: null,
+                archivedAt: null,
+                activeRunId: RunId.make("mcp-core-run"),
+                providerInstanceId: ProviderInstanceId.make("codex"),
+              } as OrchestrationV2ThreadShell),
+          }),
+        ),
+      ),
+    ),
+  ),
+);
+
 it.effect("records only failed calls of tools that hand off no work", () => {
   // Recording runs detached from the tool response, so the first event is awaited.
   const recorded = Deferred.makeUnsafe<{ event: string; properties: object }>();
