@@ -154,6 +154,7 @@ import {
   type LayoutVariant,
 } from "../../lib/layout";
 import { editPendingThreadMessage } from "../../state/edit-pending-thread-message";
+import { environmentCatalog } from "../../connection/catalog";
 import { deviceEnvironment } from "../../state/device";
 import { useEnvironmentQuery } from "../../state/query";
 import { useIsMemberEnvironment } from "../../state/members";
@@ -386,6 +387,7 @@ const appActiveAtom = Atom.make((get) => {
 
 const threadVisitTracker = createThreadVisitTracker({
   threadShellAtom: (ref) => wakeAwareVisitShell(threadKey(ref)),
+  sessionGenerationAtom: environmentCatalog.sessionGenerationAtom,
   visit: threadEnvironment.visit,
   activeAtom: appActiveAtom,
 });
@@ -947,6 +949,11 @@ function ThreadDetailBody(
     return null;
   })();
   const showWorkingControl = floatingStatus !== null;
+  // A pending message holds the pill's row for its Starting/Working pill. Worktree setup reports
+  // progress in the feed instead, so holding the row there only leaves a gap that later closes.
+  const worktreeSetupInFeed =
+    props.worktreeSetup?.snapshot.phase === "running" ||
+    (props.creationState?.kind === "preparing" && props.creationState.preparingWorktree);
   const showFloatingStatus =
     showWorkingControl ||
     queuedCount > 0 ||
@@ -954,10 +961,11 @@ function ThreadDetailBody(
     devicePreviews.length > 0 ||
     browserTabs.tabs.length > 0 ||
     props.connectionStateLabel !== "connected" ||
-    props.queuedMessages.length > 0 ||
-    props.selectedThreadFeed.some(
-      (entry) => "acknowledged" in entry && entry.acknowledged === true,
-    );
+    (!worktreeSetupInFeed &&
+      (props.queuedMessages.length > 0 ||
+        props.selectedThreadFeed.some(
+          (entry) => "acknowledged" in entry && entry.acknowledged === true,
+        )));
   const selectedThreadFeed = props.selectedThreadFeed;
   // A palette message result opens the thread at that message: earlier
   // history loads until the message is in the feed, which then scrolls to it.

@@ -6,7 +6,7 @@ import {
   nextThreadAnnouncement,
   type ThreadActivitySnapshot,
   type ThreadAnnouncementMemory,
-} from "./threadActivityAnnouncement";
+} from "@t3tools/client-runtime/state/thread-activity-announcement";
 
 /** One polite live region for the open thread. */
 export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({

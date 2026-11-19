@@ -4,7 +4,9 @@ import { ProjectReadFileError, ThreadId } from "@t3tools/contracts";
 
 import {
   fileRoutePathSegments,
+  isAudioPreviewFile,
   isBinaryFileReadFailure,
+  isMarkdownPreviewFile,
   rawWorkspaceFileResource,
   needsWorkspaceFileContents,
   resolveFileLinkPath,
@@ -105,5 +107,16 @@ describe("rawWorkspaceFileResource", () => {
         absolutePath: "/workspace/a/b/part.3mf",
       }),
     ).toEqual({ _tag: "draft-workspace-file", cwd: "/workspace", path: "a/b/part.3mf" });
+  });
+});
+
+describe("workspace preview classifiers", () => {
+  it("treat # and ? as literal filename characters", () => {
+    for (const path of ["notes/clip#1.wav", "notes/clip?1.wav", "notes#old/clip.wav"]) {
+      expect(isAudioPreviewFile(path)).toBe(true);
+    }
+    for (const path of ["docs/draft#1.md", "docs/draft?1.md", "docs#old/draft.md"]) {
+      expect(isMarkdownPreviewFile(path)).toBe(true);
+    }
   });
 });

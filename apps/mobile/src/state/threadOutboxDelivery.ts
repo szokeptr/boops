@@ -23,6 +23,7 @@ import {
 } from "@t3tools/contracts";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { createDebugLogger } from "../lib/debugLog";
@@ -48,6 +49,12 @@ import {
 } from "./pending-thread-creation";
 import { environmentProjects } from "./projects";
 import { environmentServerConfigsAtom, serverEnvironment } from "./server";
+import { composerAttachmentUploadsAtom } from "./composer-attachment-upload-states";
+import { uploadComposerAttachmentShared } from "./composer-attachment-uploads";
+import {
+  queuedAttachmentsStillUploading,
+  uploadingComposerAttachmentKeys,
+} from "../lib/composerAttachmentUploadQueue";
 import { gitEnvironment } from "./git";
 import { environmentSession, readEnvironmentScope, sessionHasScope } from "./session";
 import {
@@ -210,23 +217,28 @@ export async function prepareQueuedMessageAttachments(queuedMessage: QueuedThrea
   }
   let persistedMessage = queuedMessage;
   let deliveryRevision = revision;
-  const result = await prepareTurnAttachments({
-    environmentId: queuedMessage.environmentId,
-    attachments: queuedMessage.attachments,
-    supportsImageUploads: true,
-    persistUploadedReferences: async (draftAttachments) => {
-      if (appAtomRegistry.get(editingQueuedMessageIdsAtom)[queuedMessage.messageId]) {
-        return "abandon";
-      }
-      const updatedMessage = { ...queuedMessage, attachments: draftAttachments };
-      if (!(await updateThreadOutboxMessage(updatedMessage, revision))) {
-        return "abandon";
-      }
-      persistedMessage = updatedMessage;
-      deliveryRevision = revision + 1;
-      return "persisted";
-    },
-  });
+  const result = await Effect.runPromise(
+    prepareTurnAttachments({
+      environmentId: queuedMessage.environmentId,
+      attachments: queuedMessage.attachments,
+      supportsImageUploads: true,
+      uploadAttachment: (attachment) =>
+        uploadComposerAttachmentShared(queuedMessage.environmentId, attachment),
+      persistUploadedReferences: (draftAttachments) =>
+        Effect.promise(async () => {
+          if (appAtomRegistry.get(editingQueuedMessageIdsAtom)[queuedMessage.messageId]) {
+            return "abandon" as const;
+          }
+          const updatedMessage = { ...queuedMessage, attachments: draftAttachments };
+          if (!(await updateThreadOutboxMessage(updatedMessage, revision))) {
+            return "abandon" as const;
+          }
+          persistedMessage = updatedMessage;
+          deliveryRevision = revision + 1;
+          return "persisted" as const;
+        }),
+    }),
+  );
   if (
     result.status === "abandoned" ||
     !isQueuedMessagePayloadCurrent(persistedMessage, deliveryRevision)
@@ -358,7 +370,7 @@ export async function recoverEditedCreationAfterDelivery(
     appendComposerDraftAttachments(
       draftKey,
       kept.attachments.filter((attachment) => !existingAttachmentIds.has(attachment.id)),
-      { allowOverflow: true },
+      { restore: true },
     );
     updateComposerDraftSettings(draftKey, {
       ...(kept.modelSelection !== undefined ? { modelSelection: kept.modelSelection } : {}),
@@ -574,6 +586,11 @@ async function preserveUploadedAttachmentsForEditor(
 
 // Everything a drain pass decides from. Each queued environment's session is
 // read here so a granted or revoked operate scope re-runs the drain.
+const uploadingComposerAttachmentKeysAtom = Atom.map(
+  composerAttachmentUploadsAtom,
+  uploadingComposerAttachmentKeys,
+);
+
 const deliveryInputsAtom = Atom.make((get) => {
   const connectedEnvironments = get(workspaceConnections.environmentsAtom);
   const operableEnvironments = new Set<EnvironmentId>();
@@ -597,6 +614,8 @@ const deliveryInputsAtom = Atom.make((get) => {
     serverConfigs: get(environmentServerConfigsAtom),
     connectedEnvironments,
     operableEnvironments,
+    // Wakes a message waiting on the upload worker when that upload settles.
+    uploadingAttachmentKeys: get(uploadingComposerAttachmentKeysAtom),
   };
 }).pipe(Atom.withLabel("mobile:thread-outbox:delivery-inputs"));
 
@@ -676,9 +695,16 @@ export function createThreadOutboxDelivery(): {
 } {
   let disposed = false;
   const retries = new Map<MessageId, ThreadOutboxRetry>();
+  let readyEnvironmentIds = new Set<EnvironmentId>();
   // Existing-thread turns the server accepted but whose outbox removal has
   // not landed; the next pass retries only the removal, never the send.
   const acknowledgedExistingThreadMessageIds = new Set<MessageId>();
+  // Revision and workspace each new task's launch carried. Launch replays by command id, so an
+  // unedited task whose reply was lost is resent in that workspace, not handed back.
+  const launchedCreations = new Map<
+    MessageId,
+    { readonly revision: number; readonly workspace: QueuedThreadCreation }
+  >();
   // Targets the shell may have left out hold their thread family until they leave the queue, so
   // the row stays readable through dispatch.
   const familyMounts = new Map<MessageId, () => void>();
@@ -902,6 +928,7 @@ export function createThreadOutboxDelivery(): {
         interactionMode: sendSettings.interactionMode,
         createdAt: queuedMessage.createdAt,
         dispatchMode: queuedMessage.dispatchMode ?? "start",
+        resendAfterSocketLoss: false,
       },
     });
     if (AsyncResult.isFailure(deliveryResult) && !hasAccess()) return true;
@@ -1013,7 +1040,10 @@ export function createThreadOutboxDelivery(): {
     );
     if (!hasAccess()) return true;
     let workspace = creation;
-    if (creation.pullRequestReference) {
+    const launched = launchedCreations.get(persistedMessage.messageId);
+    if (launched?.revision === deliveryRevision) {
+      workspace = launched.workspace;
+    } else if (creation.pullRequestReference) {
       const checkout = await runDeliveryCommand(gitEnvironment.preparePullRequestThread, {
         environmentId: queuedMessage.environmentId,
         input: { cwd: projectCwd, reference: creation.pullRequestReference, mode: "worktree" },
@@ -1043,6 +1073,7 @@ export function createThreadOutboxDelivery(): {
         startFromOrigin: false,
       };
     }
+    launchedCreations.set(persistedMessage.messageId, { revision: deliveryRevision, workspace });
     const deliveryResult = await runDeliveryCommand(threadEnvironment.startTurn, {
       environmentId: queuedMessage.environmentId,
       input: buildProjectThreadStartTurnInput({
@@ -1131,6 +1162,23 @@ export function createThreadOutboxDelivery(): {
       connectedEnvironments,
       operableEnvironments,
     } = appAtomRegistry.get(deliveryInputsAtom);
+    // Failures while an environment was unreachable say nothing about it now; a backoff
+    // started then would hold a message for up to its full delay after reconnecting.
+    const ready = new Set(
+      connectedEnvironments
+        .filter(
+          (environment) =>
+            environment.connectionState === "connected" &&
+            serverConfigs.has(environment.environmentId),
+        )
+        .map((environment) => environment.environmentId),
+    );
+    for (const message of Object.values(queuedMessagesByThreadKey).flat()) {
+      if (ready.has(message.environmentId) && !readyEnvironmentIds.has(message.environmentId)) {
+        clearRetry(message.messageId);
+      }
+    }
+    readyEnvironmentIds = ready;
     if (dispatchingQueuedMessageId !== null) {
       return;
     }
@@ -1143,6 +1191,11 @@ export function createThreadOutboxDelivery(): {
     for (const messageId of acknowledgedExistingThreadMessageIds) {
       if (!queuedMessageIds.has(messageId)) {
         acknowledgedExistingThreadMessageIds.delete(messageId);
+      }
+    }
+    for (const messageId of launchedCreations.keys()) {
+      if (!queuedMessageIds.has(messageId)) {
+        launchedCreations.delete(messageId);
       }
     }
     for (const [messageId, release] of familyMounts) {
@@ -1187,6 +1240,15 @@ export function createThreadOutboxDelivery(): {
         blockedRecovery.unsubscribe();
       }
       if (retryNotBefore(messageId) > Date.now()) {
+        continue;
+      }
+      if (
+        queuedAttachmentsStillUploading({
+          environmentId: nextQueuedMessage.environmentId,
+          attachments: nextQueuedMessage.attachments,
+          states: appAtomRegistry.get(composerAttachmentUploadsAtom),
+        })
+      ) {
         continue;
       }
 
@@ -1239,9 +1301,13 @@ export function createThreadOutboxDelivery(): {
           );
         }
       }
+      const resendLaunch =
+        creation !== undefined &&
+        launchedCreations.get(messageId)?.revision === threadOutboxRevision(messageId);
       const deliveryAction = resolveThreadOutboxDeliveryAction({
         isCreation: creation !== undefined,
-        threadExists: thread !== undefined,
+        // A resend goes through the same gates as the first launch.
+        threadExists: thread !== undefined && !resendLaunch,
         shellStatus,
         environmentConnected: environment?.connectionState === "connected",
         ...(familyRead === undefined ? {} : { familyRead }),
@@ -1336,7 +1402,7 @@ export function createThreadOutboxDelivery(): {
           );
           const liveDeliveryAction = resolveThreadOutboxDeliveryAction({
             isCreation: creation !== undefined,
-            threadExists: liveThread !== undefined,
+            threadExists: liveThread !== undefined && !resendLaunch,
             shellStatus,
             environmentConnected: environment?.connectionState === "connected",
           });
@@ -1346,7 +1412,7 @@ export function createThreadOutboxDelivery(): {
         }
         return deliveryAction === "remove"
           ? creation !== undefined
-            ? // After restart, always recover delivered creations; lost in-memory state cannot distinguish edits from duplicate payloads.
+            ? // Edited since launch, or launched before a restart that lost the revision: hand it back.
               recoverEditedCreationAfterDelivery(nextQueuedMessage)
             : removeQueuedMessage("[thread-outbox] failed to remove message for a missing thread")
           : creation !== undefined
