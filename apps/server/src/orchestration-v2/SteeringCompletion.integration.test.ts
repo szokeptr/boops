@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import * as TestClock from "effect/testing/TestClock";
 import {
   ChatAttachmentId,
   CommandId,
@@ -25,6 +26,7 @@ import * as Stream from "effect/Stream";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EventSink from "./EventSink.ts";
+import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
@@ -376,6 +378,13 @@ it.effect.each(
         }
         if (delivery !== null && !question) {
           const requeued = yield* orchestrator.getThreadProjection(threadId);
+          assert.isTrue(requeued.runs.some((run) => run.status === "queued"));
+          assert.isFalse(
+            requeued.visibleTurnItems.some(
+              ({ item }) => item.type === "user_message" && item.messageId === messageId,
+            ),
+            "a steer that fell back to the queue must not appear delivered",
+          );
           const item = requeued.turnItems.find(
             (item) => item.type === "user_message" && item.messageId === messageId,
           );
@@ -459,6 +468,14 @@ it.effect.each(
           ).length,
           1,
         );
+        if (!mailbox && !question) {
+          assert.equal(
+            final.visibleTurnItems.filter(
+              ({ item }) => item.type === "user_message" && item.messageId === messageId,
+            ).length,
+            1,
+          );
+        }
         yield* worker.drain();
         assert.equal(started.length, 2);
       }).pipe(
@@ -495,6 +512,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
   const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
   const started: ProviderAdapter.ProviderAdapterV2TurnInput[] = [];
   const steered: string[] = [];
+  const steeredSelections: Array<ModelSelection | undefined> = [];
   const interrupted: ProviderTurnId[] = [];
   const capabilities = {
     ...CodexProviderCapabilitiesV2,
@@ -582,6 +600,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
           steerTurn: (turn) =>
             Effect.sync(() => {
               steered.push(turn.message.text);
+              steeredSelections.push(turn.modelSelection);
             }),
           interruptTurn: ({ providerTurnId }) =>
             Effect.sync(() => {
@@ -594,7 +613,21 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
                     (turn) =>
                       ProviderTurnId.make(`provider-turn:${turn.attemptId}`) === providerTurnId,
                   ),
-                  (turn) => turnUpdated(turn, "interrupted"),
+                  (turn) =>
+                    turnUpdated(turn, "interrupted").pipe(
+                      Effect.andThen(
+                        Queue.offer(events, {
+                          type: "turn.terminal",
+                          driver,
+                          providerThreadId: turn.providerThread.id,
+                          providerTurnId,
+                          runOrdinal: turn.runOrdinal,
+                          status: "interrupted",
+                          failure: null,
+                          threadDisposition: "reusable",
+                        }),
+                      ),
+                    ),
                   { discard: true },
                 ),
               ),
@@ -651,9 +684,11 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
     });
     yield* worker.drain();
     yield* Fiber.join(running);
+    // Ingestion checks turn ownership under this lock after committing the running turn.
+    yield* (yield* ThreadCommandExecutor.ThreadCommandExecutor).withLock(threadId, Effect.void);
     return threadId;
   });
-  return { cwd, events, started, steered, interrupted, layer, startFirstTurn };
+  return { cwd, events, started, steered, steeredSelections, interrupted, layer, startFirstTurn };
 });
 
 it.effect("steers a delegated task question notice into the running parent turn", () =>
@@ -926,10 +961,8 @@ it.effect(
   () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const { started, steered, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
-          "steering-selection-change",
-          true,
-        );
+        const { started, steered, steeredSelections, layer, startFirstTurn } =
+          yield* nextTurnSelectionHarness("steering-selection-change", true);
         yield* Effect.gen(function* () {
           const orchestrator = yield* Orchestrator.OrchestratorV2;
           const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
@@ -989,6 +1022,8 @@ it.effect(
           yield* steer("steer-back", runSelection);
           const back = yield* orchestrator.getThreadProjection(threadId);
           assert.deepEqual(steered, ["steer-changed", "steer-reverted", "steer-back"]);
+          // The adapter gets each steer's selection so it can switch the live turn, and back.
+          assert.deepEqual(steeredSelections, [composerSelection, runSelection, runSelection]);
           assert.equal(back.thread.providerInstanceId, instanceId);
           assert.deepEqual(back.thread.modelSelection, runSelection);
         }).pipe(Effect.provide(layer));
@@ -1010,6 +1045,10 @@ it.effect("restarts the turn for an image when native steering takes text only",
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
         const threadId = yield* startFirstTurn;
+        const before = yield* orchestrator.getThreadProjection(threadId);
+        const originalStart = before.runs[0]!.startedAt;
+        assert.isNotNull(originalStart);
+        yield* TestClock.adjust("10 seconds");
         yield* orchestrator.dispatch({
           type: "message.dispatch",
           commandId: CommandId.make("steer-image"),
@@ -1031,6 +1070,16 @@ it.effect("restarts the turn for an image when native steering takes text only",
           creationSource: "web",
         });
         yield* worker.drain();
+        const after = yield* orchestrator.getThreadProjection(threadId);
+        assert.equal(after.runs[0]?.id, before.runs[0]?.id);
+        assert.deepEqual(after.runs[0]?.startedAt, originalStart);
+        assert.equal(after.attempts[0]?.status, "superseded");
+        const restartedAt = yield* DateTime.now;
+        assert.deepEqual(after.attempts[1]?.startedAt, restartedAt);
+        assert.deepEqual(
+          after.nodes.find((node) => node.id === after.runs[0]?.rootNodeId)?.startedAt,
+          restartedAt,
+        );
         assert.deepEqual(steered, []);
         assert.deepEqual(
           started.map((turn) => [turn.message.text, turn.message.attachments.length]),
