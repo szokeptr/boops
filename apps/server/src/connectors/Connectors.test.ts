@@ -22,7 +22,9 @@ import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
@@ -81,6 +83,13 @@ const makeWorld = () => {
     registrations: 0,
     refreshes: 0,
     refreshFails: false,
+    /** The refresh token ACME accepts now; with `rotate`, each refresh replaces it. */
+    refreshToken: "rt-1",
+    rotate: false,
+    /** ACME's token endpoint answers this late, having already acted on the request. */
+    tokenDelay: undefined as Duration.Duration | undefined,
+    tokenUnavailable: false,
+    onRefused: () => {},
     challenges: new Map<string, string>(),
     validTokens: new Set<string>(),
     issued: 0,
@@ -200,8 +209,18 @@ const makeWorld = () => {
         return json({ access_token: issue(), refresh_token: "rt-1", expires_in: 3600 });
       }
       world.refreshes += 1;
-      if (world.refreshFails || form.get("refresh_token") !== "rt-1") {
+      if (world.tokenUnavailable) return new Response("upstream down", { status: 503 });
+      if (world.refreshFails || form.get("refresh_token") !== world.refreshToken) {
+        world.onRefused();
         return json({ error: "invalid_grant" }, { status: 400 });
+      }
+      if (world.rotate) {
+        world.refreshToken = `rt-${world.refreshes + 1}`;
+        return json({
+          access_token: issue(),
+          refresh_token: world.refreshToken,
+          expires_in: 3600,
+        });
       }
       // No new refresh token: the old one stays valid.
       return json({ access_token: issue(), expires_in: 3600 });
@@ -216,7 +235,13 @@ const makeWorld = () => {
     return { code, state: url.searchParams.get("state") ?? "" };
   };
   const http = HttpClient.make((request) =>
-    Effect.sync(() => HttpClientResponse.fromWeb(request, handle(request))),
+    Effect.suspend(() => {
+      const response = handle(request);
+      const delay = request.url === "https://auth.acme.test/token" ? world.tokenDelay : undefined;
+      return (delay === undefined ? Effect.void : Effect.sleep(delay)).pipe(
+        Effect.as(HttpClientResponse.fromWeb(request, response)),
+      );
+    }),
   );
   return { world, http, approve };
 };
@@ -584,7 +609,7 @@ it.effect("refreshes a token near expiry, and a failed refresh means needs_auth"
       const { connection } = yield* connectAcme(harness);
       const upstream = harness.connectors.upstream({ threadId, serverName: connection.serverName });
       // Off for this bot: the proxy refuses it.
-      expect((yield* upstream.pipe(Effect.flip)).reason).toBe("not_connected");
+      expect((yield* upstream.pipe(Effect.flip)).reason).toBe("not_enabled");
       yield* harness.connectors.setBotConnection({
         projectId: botId,
         connectionId: connection.id,
@@ -617,7 +642,7 @@ it.effect("refreshes a token near expiry, and a failed refresh means needs_auth"
         threadId: memberThreadId,
         serverName: connection.serverName,
       });
-      expect((yield* memberUpstream.pipe(Effect.flip)).reason).toBe("not_connected");
+      expect((yield* memberUpstream.pipe(Effect.flip)).reason).toBe("not_enabled");
       // Shared with members for this bot, it reaches her conversation too.
       harness.bots.set(botId, {
         ...harness.bots.get(botId)!,
@@ -648,6 +673,143 @@ it.effect("refreshes a token near expiry, and a failed refresh means needs_auth"
       expect((yield* upstream.pipe(Effect.flip)).reason).toBe("not_connected");
       const [missing] = (yield* harness.connectors.list).connections;
       expect(missing).toMatchObject({ status: "needs_auth", statusDetail: "Sign-in missing" });
+    }),
+  ),
+);
+
+interface StoredOAuth {
+  readonly kind: "oauth";
+  readonly tokens: { accessToken: string; refreshToken?: string; expiresAt?: number };
+}
+const storedOAuth = (harness: Harness, connectionId: string) =>
+  JSON.parse(
+    new TextDecoder().decode(harness.secrets.get(`connector-${connectionId}`)),
+  ) as StoredOAuth;
+const storeOAuth = (harness: Harness, connectionId: string, credential: StoredOAuth) =>
+  harness.secrets.set(
+    `connector-${connectionId}`,
+    new TextEncoder().encode(JSON.stringify(credential)),
+  );
+/** As if the server had been asleep past the token's expiry, without the sweep running. */
+const expireToken = (harness: Harness, connectionId: string) =>
+  Effect.gen(function* () {
+    const stored = storedOAuth(harness, connectionId);
+    const now = yield* Clock.currentTimeMillis;
+    storeOAuth(harness, connectionId, {
+      ...stored,
+      tokens: { ...stored.tokens, expiresAt: now - 1000 },
+    });
+  });
+const statusOf = (harness: Harness, connectionId: string) =>
+  harness.connectors.list.pipe(
+    Effect.map(({ connections }) => connections.find((row) => row.id === connectionId)),
+  );
+
+/** Signs in to ACME and turns it on for the bot, whose thread is mid-turn. */
+const connectAcmeForBot = (harness: Harness) =>
+  Effect.gen(function* () {
+    yield* seedThread(harness);
+    const { connection } = yield* connectAcme(harness);
+    yield* harness.connectors.setBotConnection({
+      projectId: botId,
+      connectionId: connection.id,
+      enabled: true,
+    });
+    return {
+      connection,
+      upstream: harness.connectors.upstream({ threadId, serverName: connection.serverName }),
+    };
+  });
+
+it.effect("a refresh outlives a caller that gave up, so a retry gets the rotated token", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const harness = yield* makeHarness;
+      const { connection, upstream } = yield* connectAcmeForBot(harness);
+      harness.world.rotate = true;
+      harness.world.tokenDelay = Duration.seconds(5);
+      yield* expireToken(harness, connection.id);
+      // The MCP client times out while the token endpoint, having rotated, is still answering.
+      const gaveUp = yield* Effect.forkChild(upstream);
+      const waiting = yield* Effect.forkChild(upstream);
+      yield* TestClock.adjust(Duration.seconds(1));
+      yield* Fiber.interrupt(gaveUp);
+      yield* TestClock.adjust(Duration.seconds(5));
+      expect((yield* Fiber.join(waiting)).headers).toEqual({ authorization: "Bearer at-2" });
+      expect(storedOAuth(harness, connection.id).tokens.refreshToken).toBe("rt-2");
+      // The client's retry uses the saved token; the consumed refresh token is never sent again.
+      expect((yield* upstream).headers).toEqual({ authorization: "Bearer at-2" });
+      expect(harness.world.refreshes).toBe(1);
+      expect(yield* statusOf(harness, connection.id)).toMatchObject({ status: "connected" });
+    }),
+  ),
+);
+
+it.effect("token endpoint trouble, or a token another server rotated, keeps the sign-in", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const harness = yield* makeHarness;
+      const { connection, upstream } = yield* connectAcmeForBot(harness);
+      harness.world.tokenUnavailable = true;
+      yield* expireToken(harness, connection.id);
+      const failed = yield* Effect.forkChild(upstream.pipe(Effect.flip));
+      yield* TestClock.adjust(Duration.seconds(10));
+      expect((yield* Fiber.join(failed)).reason).toBe("unreachable");
+      expect(harness.world.refreshes).toBe(3);
+      expect(yield* statusOf(harness, connection.id)).toMatchObject({
+        status: "connected",
+        statusDetail: null,
+      });
+      harness.world.tokenUnavailable = false;
+      expect((yield* upstream).headers).toEqual({ authorization: "Bearer at-2" });
+
+      // Another server sharing the secret store refreshed first: ours is refused, theirs is used.
+      yield* expireToken(harness, connection.id);
+      harness.world.refreshToken = "rt-other";
+      harness.world.validTokens.add("at-other");
+      harness.world.onRefused = () =>
+        storeOAuth(harness, connection.id, {
+          ...storedOAuth(harness, connection.id),
+          tokens: { accessToken: "at-other", refreshToken: "rt-other" },
+        });
+      expect((yield* upstream).headers).toEqual({ authorization: "Bearer at-other" });
+      expect(yield* statusOf(harness, connection.id)).toMatchObject({ status: "connected" });
+    }),
+  ),
+);
+
+it.effect("refreshes sign-ins in the background before they expire", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const harness = yield* makeHarness;
+      const { connection } = yield* connectAcme(harness);
+      yield* TestClock.adjust(Duration.minutes(49));
+      expect(harness.world.refreshes).toBe(0);
+      // Within ten minutes of the hour-long token's expiry, with nobody using it.
+      yield* TestClock.adjust(Duration.minutes(2));
+      expect(harness.world.refreshes).toBe(1);
+      expect(storedOAuth(harness, connection.id).tokens.accessToken).toBe("at-2");
+    }),
+  ),
+);
+
+it.effect("a lapsed sign-in gets one reconnect card, however many runs ask", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const harness = yield* makeHarness;
+      const { connection } = yield* connectAcmeForBot(harness);
+      yield* harness.connectors.markNeedsAuth(connection.id);
+      const first = yield* harness.connectors.requestConnection(scope, {
+        url: ACME,
+        reason: "To file issues.",
+      });
+      const again = yield* harness.connectors.requestConnection(scope, {
+        url: ACME,
+        reason: "For the daily sync.",
+      });
+      expect(first.status).toBe("card_shown");
+      expect(again).toEqual(first);
+      expect(yield* cards(harness)).toHaveLength(1);
     }),
   ),
 );

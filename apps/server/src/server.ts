@@ -145,6 +145,7 @@ import * as RelayDeliveryProof from "./scheduledTasks/RelayDeliveryProof.ts";
 import * as HeldHooksWaker from "./relay/HeldHooksWaker.ts";
 import * as McpOAuth from "./auth/McpOAuth.ts";
 import * as McpOAuthHttp from "./auth/mcpOAuthHttp.ts";
+import * as ConnectorCredentials from "./connectors/ConnectorCredentials.ts";
 import * as Connectors from "./connectors/Connectors.ts";
 import * as Members from "./members/Members.ts";
 import * as Rooms from "./rooms/Rooms.ts";
@@ -570,6 +571,8 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  // Read optionally by ConnectorServers; the same instance as Connectors' by layer memoization.
+  Layer.provide(ConnectorCredentials.layer),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderUsageAnalytics.layer),
   Layer.provide(layerCheckpointStore),
