@@ -35,7 +35,7 @@ it.effect("filters image searches before applying the result limit", () =>
         ...Array.from({ length: 200 }, (_, index) => fileItem(`src/file-${index}.ts`)),
         fileItem("public/icon.svg"),
       ];
-      const fileSearch = vi.fn(() => ({
+      const fileSearch = vi.fn(async () => ({
         ok: true as const,
         value: {
           items,
@@ -47,7 +47,11 @@ it.effect("filters image searches before applying the result limit", () =>
       const finder = {
         destroy: vi.fn(),
         waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
-        fileSearch,
+        getScanProgressAsync: async () => ({
+          ok: true as const,
+          value: { isScanning: false },
+        }),
+        fileSearchAsync: fileSearch,
       } as unknown as FileFinder;
       vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
 
@@ -99,7 +103,7 @@ it.effect("continues whole-word searches after a filtered grep page", () =>
         filteredFileCount: 1,
         nextCursor: cursor,
       });
-      const grep = vi.fn((_query: string, options?: GrepOptions) =>
+      const grep = vi.fn(async (_query: string, options?: GrepOptions) =>
         options?.cursor
           ? { ok: true as const, value: grepResult("needle", [[0, 6]], null) }
           : {
@@ -110,7 +114,11 @@ it.effect("continues whole-word searches after a filtered grep page", () =>
       const finder = {
         destroy: vi.fn(),
         waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
-        grep,
+        getScanProgressAsync: async () => ({
+          ok: true as const,
+          value: { isScanning: false },
+        }),
+        grepAsync: grep,
       } as unknown as FileFinder;
       vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
 

@@ -366,6 +366,21 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                         }
                       />
                     </View>
+                    <View className="border-t border-border-subtle">
+                      <SettingsSwitchRow
+                        icon="bolt.circle"
+                        label="Keep awake while agents work"
+                        subtitle={managedSubtitle(
+                          "keepAwakeWhileAgentsWork",
+                          projectSelected
+                            ? "Environment-wide setting. Select All projects to change it."
+                            : "Stop the computer from sleeping while agents work. Closing a laptop lid still sleeps it.",
+                        )}
+                        value={uniform("keepAwakeWhileAgentsWork")}
+                        disabled={disabledFor("keepAwakeWhileAgentsWork")}
+                        onValueChange={(value) => write({ keepAwakeWhileAgentsWork: value })}
+                      />
+                    </View>
                   </SettingsSection>
                 </>
               ) : null}
