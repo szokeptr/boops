@@ -221,6 +221,7 @@ export const makeShellAudience = (
   const viewItem = (item: ShellItem): ReadonlyArray<ShellItem> => {
     switch (item.kind) {
       case "synchronized":
+      case "snapshot-required":
         return [item];
       case "snapshot": {
         const snapshot = viewSnapshot(item.snapshot);
