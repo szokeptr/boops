@@ -16,6 +16,7 @@ export default Effect.gen(function* () {
     WHERE type = 'dynamic_tool' AND (
       payload_json LIKE '%htmlRender%' OR payload_json LIKE '%t3McpApp%'
       OR payload_json LIKE '%"viewedImagePath"%'
-      OR payload_json LIKE '%"toolName":"%delegate_task"%')
+      OR payload_json LIKE '%"toolName":"%delegate_task"%'
+      OR payload_json LIKE '%"toolName":"%send_to_user"%')
   `;
 });
