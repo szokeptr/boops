@@ -1454,11 +1454,14 @@ export function ThreadWorkGroupToggle(props: {
 export function ThreadThinkingRow(props: {
   readonly rowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
   readonly iconSubtleColor: ColorValue;
+  /** Replaces "Thinking" while the provider has not started a turn. */
+  readonly providerStartingLabel?: string | undefined;
 }) {
+  const label = props.providerStartingLabel ?? "Thinking";
   return (
     <View
       accessible
-      accessibilityLabel="Thinking"
+      accessibilityLabel={label}
       className="-mx-1 min-h-8 flex-row items-center px-1.5 py-0"
       style={{ minHeight: props.rowSizing.estimatedRowHeight }}
     >
@@ -1466,7 +1469,7 @@ export function ThreadThinkingRow(props: {
         key={props.rowSizing.textSizeKey}
         icon="brain"
         iconSubtleColor={props.iconSubtleColor}
-        label="Thinking"
+        label={label}
         showIcon
       />
     </View>

@@ -203,7 +203,10 @@ it("reuses the parse of a streaming reply's finished blocks when it remounts", a
     <ChatMarkdown cwd="/tmp/project" text={"Finished block\n\nStill growing"} isStreaming />
   );
   {
-    await using _first = await render(message);
+    await using first = await render(
+      <ChatMarkdown cwd="/tmp/project" text={"Finished block\n\n"} isStreaming />,
+    );
+    await first.rerender(message);
   }
   await using screen = await render(message);
   await expect.element(screen.getByText("Still growing")).toBeVisible();
@@ -218,11 +221,43 @@ it("reuses the parse of a remounted message that has stable extra plugins", asyn
     <ChatMarkdown cwd="/tmp/project" text="Cached text" extraRemarkPlugins={countingPlugins} />
   );
   {
-    await using _first = await render(message);
+    await using first = await render(
+      <ChatMarkdown
+        cwd="/tmp/project"
+        text="Cached text"
+        extraRemarkPlugins={countingPlugins}
+        isStreaming
+      />,
+    );
+    await first.rerender(message);
   }
   await using screen = await render(message);
   await expect.element(screen.getByText("Cached text")).toBeVisible();
   expect(parsed).toHaveBeenCalledTimes(1);
+  const changed = vi.fn();
+  await screen.rerender(
+    <ChatMarkdown
+      cwd="/tmp/project"
+      text="Cached text"
+      extraRemarkPlugins={[() => () => void changed()]}
+    />,
+  );
+  expect(changed).toHaveBeenCalledTimes(1);
+});
+
+it("highlights a code block's own source when an earlier block of the same length was cached", async () => {
+  setup();
+  const highlightedText = (container: HTMLElement) =>
+    container.querySelector(".chat-markdown-shiki")?.textContent?.trim();
+  // These two lines share a 32-bit FNV-1a hash and a length.
+  const first = 'const commitSha = "f36a6d8fe0aa";';
+  const second = 'const commitSha = "cb06f8d135b3";';
+  {
+    await using screen = await renderText(`\`\`\`ts\n${first}\n\`\`\``);
+    await vi.waitFor(() => expect(highlightedText(screen.container)).toBe(first));
+  }
+  await using screen = await renderText(`\`\`\`ts\n${second}\n\`\`\``);
+  await vi.waitFor(() => expect(highlightedText(screen.container)).toBe(second));
 });
 
 describe("ChatMarkdown favicon privacy", () => {

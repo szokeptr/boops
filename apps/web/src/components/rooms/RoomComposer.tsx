@@ -12,7 +12,7 @@ import {
 } from "react";
 
 import { isCommandPaletteOpen } from "~/commandPaletteBus";
-import { composerSubmissionIntentForKey } from "~/composer-logic";
+import { composerRequiresModifier, composerSubmissionIntentForKey } from "~/composer-logic";
 import { resolveShortcutCommand } from "~/keybindings";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -221,6 +221,12 @@ export function RoomComposer(props: {
     const intent = composerSubmissionIntentForKey({
       event,
       keybindings,
+      // A room has no terminal or preview panel, so only the composer's own flags apply.
+      context: {
+        editableFocus: true,
+        composerFocus: true,
+        composerRequiresModifier: composerRequiresModifier(sendShortcut, value),
+      },
       isSoftwareKeyboardOpen,
       isDraftThread: false,
       sendShortcut,

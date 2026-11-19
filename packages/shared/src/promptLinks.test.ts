@@ -139,4 +139,16 @@ describe("link round trips", () => {
     expect(promptLinkAppPath("https://evil.test/new?prompt=hi")).toBeNull();
     expect(promptLinkAppPath("boops://app/index.html")).toBeNull();
   });
+
+  it("maps links in browsers without URL.canParse, such as Safari before 17", () => {
+    const canParse = URL.canParse;
+    Reflect.deleteProperty(URL, "canParse");
+    try {
+      expect(promptLinkAppPath("https://app.getboops.com/new?prompt=hi")).toBe("/new?prompt=hi");
+      expect(promptLinkAppPath("https://app.getboops.com/")).toBeNull();
+      expect(promptLinkAppPath("not a url")).toBeNull();
+    } finally {
+      URL.canParse = canParse;
+    }
+  });
 });

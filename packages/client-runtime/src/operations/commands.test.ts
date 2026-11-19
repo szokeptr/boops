@@ -22,9 +22,11 @@ import {
 import { describe, expect, it } from "@effect/vitest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   AVAILABLE_CONNECTION_STATE,
@@ -290,6 +292,45 @@ describe("V2 environment commands", () => {
         });
       }
       expect(projectionRequests).toEqual([]);
+    }).pipe(Effect.provide(layerTestRandom)),
+  );
+
+  it.effect("fails a message dispatch the host never answers on a live socket", () =>
+    Effect.gen(function* () {
+      const commands: OrchestrationV2Command[] = [];
+      const supervisor = yield* makeSupervisor({ commands, projects: [] });
+      const healthySession = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.session));
+      const silentClient = {
+        ...healthySession.client,
+        [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command: OrchestrationV2Command) =>
+          Effect.sync(() => commands.push(command)).pipe(Effect.andThen(Effect.never)),
+      } as unknown as WsRpcProtocolClient;
+      yield* SubscriptionRef.set(
+        supervisor.session,
+        Option.some({ ...healthySession, client: silentClient }),
+      );
+
+      const sendFiber = yield* startThreadTurn({
+        commandId: CommandId.make("command-unanswered"),
+        threadId: v2ThreadId,
+        message: {
+          messageId: MessageId.make("message-unanswered"),
+          role: "user",
+          text: "hello",
+          attachments: [],
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+      }).pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.flip,
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust("1 minute");
+
+      expect(sendFiber.pollUnsafe()).toBeDefined();
+      expect((yield* Fiber.join(sendFiber))._tag).toBe("EnvironmentRpcUnavailableError");
+      expect(commands.map((command) => command.commandId)).toEqual(["command-unanswered"]);
     }).pipe(Effect.provide(layerTestRandom)),
   );
 

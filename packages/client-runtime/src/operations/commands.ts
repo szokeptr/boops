@@ -36,7 +36,8 @@ import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 
-import { getInitialServerConfig, request } from "../rpc/client.ts";
+import * as EnvironmentSupervisor from "../connection/supervisor.ts";
+import { EnvironmentRpcUnavailableError, getInitialServerConfig, request } from "../rpc/client.ts";
 
 interface CommandMetadata {
   readonly commandId?: CommandId;
@@ -302,6 +303,28 @@ const allocateCommandId = Effect.fn("EnvironmentCommands.allocateCommandId")(fun
 
 const dispatch = (command: OrchestrationV2Command) =>
   request(ORCHESTRATION_V2_WS_METHODS.dispatchCommand, command);
+
+// A live socket can still carry a command the host never answers; the heartbeat
+// alone would leave the send pending forever.
+const MESSAGE_DISPATCH_TIMEOUT = "60 seconds";
+
+const dispatchMessage = Effect.fn("EnvironmentCommands.dispatchMessage")(function* (
+  command: Extract<OrchestrationV2Command, { type: "message.dispatch" }>,
+) {
+  const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+  return yield* dispatch(command).pipe(
+    Effect.timeoutOrElse({
+      duration: MESSAGE_DISPATCH_TIMEOUT,
+      orElse: () =>
+        Effect.fail(
+          new EnvironmentRpcUnavailableError({
+            environmentId: supervisor.target.environmentId,
+            message: `${supervisor.target.label} did not confirm the message within 60 seconds.`,
+          }),
+        ),
+    }),
+  );
+});
 
 const getProjection = (threadId: ThreadId) =>
   request(ORCHESTRATION_V2_WS_METHODS.getThreadProjection, { threadId });
@@ -806,7 +829,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
 
   const requestedMode = input.dispatchMode ?? "auto";
   if (requestedMode === "start") {
-    return yield* dispatch({
+    return yield* dispatchMessage({
       type: "message.dispatch",
       commandId,
       createdBy: "user",
@@ -834,7 +857,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
     requestedMode === "queue"
       ? ({ type: "queue_after_active" } as const)
       : ({ type: "start_immediately" } as const);
-  return yield* dispatch({
+  return yield* dispatchMessage({
     type: "message.dispatch",
     commandId,
     createdBy: "user",

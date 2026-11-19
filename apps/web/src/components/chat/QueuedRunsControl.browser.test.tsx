@@ -17,7 +17,7 @@ vi.mock(import("@t3tools/client-runtime/state/thread-workflows"), async (importO
 
 vi.mock(import("../../state/entities"), async (importOriginal) => ({
   ...(await importOriginal()),
-  useThreadProjection: (() => state.projection) as never,
+  useQuietThreadProjection: (() => state.projection) as never,
   useQuietThreadShell: ((target: unknown) =>
     target === null ? null : { title: "Release lead" }) as never,
 }));

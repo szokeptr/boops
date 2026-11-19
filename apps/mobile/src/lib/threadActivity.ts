@@ -270,6 +270,8 @@ type ThreadFeedEntryContent =
       readonly id: string;
       readonly createdAt: string;
       readonly runId: RunId | null;
+      /** Shown instead of "Thinking" while the provider has not started a turn. */
+      readonly providerStartingLabel?: string;
     }
   | ThreadFeedBotExchange
   | ThreadFeedRoutineRuns
@@ -340,6 +342,7 @@ export interface ThreadFeedLatestRun {
   readonly startedAt: string | null;
   readonly completedAt: string | null;
   readonly turnEnded?: boolean;
+  readonly providerStartingLabel?: string;
 }
 
 /** Long Android headers can ANR despite one-line display; cap labels only, preserving expanded and copied text. */
@@ -1412,7 +1415,8 @@ function latestRunsEqual(left: ThreadFeedLatestRun | null, right: ThreadFeedLate
       left.status === right.status &&
       left.startedAt === right.startedAt &&
       left.completedAt === right.completedAt &&
-      left.turnEnded === right.turnEnded)
+      left.turnEnded === right.turnEnded &&
+      left.providerStartingLabel === right.providerStartingLabel)
   );
 }
 
@@ -1652,7 +1656,7 @@ export function deriveThreadFeedPresentation(
           row.activities[0]?.projectedItem.item.status === "running"),
     )
   ) {
-    result.push(thinkingRow(activeWorkStartedAt, activeRunId));
+    result.push(thinkingRow(activeWorkStartedAt, activeRunId, latestRun?.providerStartingLabel));
   }
   const checkpointByRunId = new Map<RunId, ThreadCheckpointSummary>();
   for (const entry of sourceFeed) {
@@ -1784,7 +1788,9 @@ export function deriveDirectMessageFeed(
     entry.type === "message" && entry.message.role === "user" ? entry.message : null;
   return foldRepeatedRoutineRuns(
     withoutSilentRoutineWakes(
-      typingSince === null || replying ? folded : [...folded, thinkingRow(typingSince, null)],
+      typingSince === null || replying
+        ? folded
+        : [...folded, thinkingRow(typingSince, null, undefined)],
       userMessageOf,
     ),
     {
@@ -2104,9 +2110,23 @@ function isWorkLogFeedRow(row: ThreadFeedEntry | undefined): boolean {
 
 const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
 
-function thinkingRow(createdAt: string, runId: RunId | null) {
-  if (cachedThinkingRow?.createdAt !== createdAt || cachedThinkingRow.runId !== runId) {
-    cachedThinkingRow = { type: "thinking", id: LIVE_ACTIVITY_ROW_ID, createdAt, runId };
+function thinkingRow(
+  createdAt: string,
+  runId: RunId | null,
+  providerStartingLabel: string | undefined,
+) {
+  if (
+    cachedThinkingRow?.createdAt !== createdAt ||
+    cachedThinkingRow.runId !== runId ||
+    cachedThinkingRow.providerStartingLabel !== providerStartingLabel
+  ) {
+    cachedThinkingRow = {
+      type: "thinking",
+      id: LIVE_ACTIVITY_ROW_ID,
+      createdAt,
+      runId,
+      ...(providerStartingLabel === undefined ? {} : { providerStartingLabel }),
+    };
   }
   return cachedThinkingRow;
 }

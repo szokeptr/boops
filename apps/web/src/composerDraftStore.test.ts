@@ -33,6 +33,7 @@ import {
   type ModelSelection,
   type PreviewAnnotationPayload,
   type ProviderOptionSelection,
+  type ServerProvider,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -73,6 +74,7 @@ function selectionsByProvider(
   return result;
 }
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
+import { createMemoryStorage } from "./lib/storage";
 
 import {
   COMPOSER_DRAFT_STORAGE_KEY,
@@ -89,6 +91,7 @@ import {
   type ComposerFileAttachment,
   type ComposerImageAttachment,
   composerFileNeedsReattach,
+  hydrateImagesFromPersisted,
   partializeComposerDraftStoreState,
   useComposerDraftStore,
   DraftId,
@@ -258,29 +261,28 @@ describe("composerDraftStore addImages", () => {
     expect(revokeSpy).not.toHaveBeenCalled();
   });
 
-  it("deduplicates against existing images across calls by file signature", () => {
-    const first = makeImage({
-      id: "img-a",
-      previewUrl: "blob:a",
+  it("deduplicates byte-identical images across calls and keeps distinct bytes", () => {
+    // Hydrated copies get fresh lastModified values, like a restored stash or draft.
+    const persisted = (id: string, fill: number) => ({
+      id,
       name: "same.png",
       mimeType: "image/png",
       sizeBytes: 9,
-      lastModified: 777,
+      dataUrl: `data:image/png;base64,${btoa(String.fromCharCode(...new Uint8Array(9).fill(fill)))}`,
     });
-    const duplicateLater = makeImage({
-      id: "img-b",
-      previewUrl: "blob:b",
-      name: "same.png",
-      mimeType: "image/png",
-      sizeBytes: 9,
-      lastModified: 999,
-    });
+    const [first, repeat, different] = hydrateImagesFromPersisted([
+      persisted("img-a", 1),
+      persisted("img-b", 1),
+      persisted("img-c", 2),
+    ]);
+    const store = useComposerDraftStore.getState();
 
-    expect(useComposerDraftStore.getState().addImage(threadRef, first)).toBe(true);
-    expect(useComposerDraftStore.getState().addImage(threadRef, duplicateLater)).toBe(false);
+    expect(store.addImage(threadRef, first!)).toBe(true);
+    expect(store.addImage(threadRef, { ...repeat!, previewUrl: "blob:b" })).toBe(false);
+    expect(store.addImage(threadRef, different!)).toBe(true);
 
     const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(draft?.images.map((image) => image.id)).toEqual(["img-a"]);
+    expect(draft?.images.map((image) => image.id)).toEqual(["img-a", "img-c"]);
     expect(revokeSpy).toHaveBeenCalledWith("blob:b");
   });
 });
@@ -719,6 +721,38 @@ describe("composerDraftStore context persistence", () => {
       expect(draft?.prompt).toBe(prompt);
       expect(draft?.terminalContexts).toEqual([terminal]);
       expect(draft?.previewAnnotations).toEqual([annotation]);
+    }
+  });
+
+  // regression: #35010 typing a draft in one tab erased drafts another tab saved after it loaded
+  it("keeps a draft another tab saved after this tab loaded", async () => {
+    const sharedStorage = createMemoryStorage();
+    vi.stubGlobal("localStorage", sharedStorage);
+    vi.stubGlobal("window", new EventTarget());
+    vi.useFakeTimers();
+    vi.resetModules();
+    try {
+      const thisTab = await import("./composerDraftStore");
+      vi.resetModules();
+      const otherTab = await import("./composerDraftStore");
+      const betaRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("beta-new-thread"));
+      const alphaRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("alpha-new-thread"));
+
+      otherTab.useComposerDraftStore.getState().setPrompt(betaRef, "beta draft");
+      await vi.advanceTimersByTimeAsync(300);
+      window.dispatchEvent(
+        Object.assign(new Event("storage"), { key: COMPOSER_DRAFT_STORAGE_KEY }),
+      );
+      thisTab.useComposerDraftStore.getState().setPrompt(alphaRef, "alpha draft");
+      await vi.advanceTimersByTimeAsync(300);
+
+      const saved = JSON.parse(sharedStorage.getItem(COMPOSER_DRAFT_STORAGE_KEY) as string);
+      expect(saved.state.draftsByThreadKey[scopedThreadKey(betaRef)]?.prompt).toBe("beta draft");
+      expect(saved.state.draftsByThreadKey[scopedThreadKey(alphaRef)]?.prompt).toBe("alpha draft");
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      vi.resetModules();
     }
   });
 });
@@ -1735,6 +1769,70 @@ describe("composerDraftStore modelSelection", () => {
     ).toEqual(modelSelection(CODEX_DRIVER, "gpt-5.4", { reasoningEffort: "xhigh" }));
   });
 
+  describe("draft model pick over a thread model", () => {
+    const providers: ReadonlyArray<ServerProvider> = [
+      {
+        instanceId: CODEX_INSTANCE,
+        driver: CODEX_DRIVER,
+        enabled: true,
+        installed: true,
+        version: null,
+        status: "ready",
+        auth: { status: "authenticated" },
+        checkedAt: "2026-01-01T00:00:00.000Z",
+        models: ["gpt-5.4", "gpt-5.3-codex"].map((slug) => ({
+          slug,
+          name: slug,
+          isCustom: false,
+          capabilities: {},
+        })),
+        slashCommands: [],
+        skills: [],
+      },
+    ];
+    const threadSelection = modelSelection(CODEX_DRIVER, "gpt-5.3-codex", {
+      reasoningEffort: "low",
+    });
+    const effective = (baseSelection = threadSelection) => {
+      const state = deriveEffectiveComposerModelState({
+        draft: useComposerDraftStore.getState().getComposerDraft(threadRef),
+        providers,
+        selectedProvider: CODEX_DRIVER,
+        selectedInstanceId: CODEX_INSTANCE,
+        threadModelSelection: baseSelection,
+        projectModelSelection: null,
+        settings: DEFAULT_UNIFIED_SETTINGS,
+      });
+      return {
+        model: state.selectedModel,
+        options: state.modelOptions?.[CODEX_INSTANCE] ?? [],
+      };
+    };
+
+    it("an optionless pick of another model drops the base traits", () => {
+      useComposerDraftStore
+        .getState()
+        .setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
+          explicit: true,
+          replaceOptions: true,
+        });
+      expect(effective()).toEqual({ model: "gpt-5.4", options: [] });
+    });
+
+    it("restores saved traits when the base model uses an alias", () => {
+      useComposerDraftStore
+        .getState()
+        .setModelSelection(threadRef, modelSelection(CODEX_DRIVER, "gpt-5.4"), {
+          explicit: true,
+          replaceOptions: true,
+        });
+      expect(effective(modelSelection(CODEX_DRIVER, "5.4", { reasoningEffort: "low" }))).toEqual({
+        model: "gpt-5.4",
+        options: toSelections({ reasoningEffort: "low" }),
+      });
+    });
+  });
+
   it("stores provider option changes on a selected custom instance", () => {
     const store = useComposerDraftStore.getState();
 
@@ -2415,9 +2513,7 @@ describe("composerDraftStore attachment references", () => {
     const image = makeImage({ id: "img-1", previewUrl: "blob:img-1", name: "shot.png" });
     expect(store.addImages(threadRef, [image])).toEqual(["img-1"]);
     expect(
-      store.addImages(threadRef, [
-        makeImage({ id: "img-2", previewUrl: "blob:img-2", name: "shot.png" }),
-      ]),
+      store.addImages(threadRef, [{ ...image, id: "img-2", previewUrl: "blob:img-2" }]),
     ).toEqual([]);
   });
 
