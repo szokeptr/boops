@@ -10,6 +10,23 @@ export const SERVICE_STOP_MARKER_FILE = ".service-stopping";
 /** Marks a repointed unit whose service still runs the old version; launcher startup clears it. */
 export const SERVICE_RESTART_PENDING_FILE = ".restart-pending";
 
+export const unquoteSystemdValue = (raw: string) =>
+  (raw.startsWith('"') && raw.endsWith('"')
+    ? raw.slice(1, -1).replaceAll('\\"', '"').replaceAll("\\\\", "\\")
+    : raw
+  ).replaceAll("%%", "%");
+
+export const unescapeXmlText = (value: string) =>
+  value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+
+/** The file systemd or launchd appends the service's output to. */
+export function serviceUnitLogPathOf(contents: string): string | undefined {
+  const systemd = /^StandardOutput=append:(.*)$/m.exec(contents)?.[1];
+  if (systemd !== undefined) return unquoteSystemdValue(systemd.trim());
+  const plist = /<key>StandardOutPath<\/key>\s*<string>([^<]*)<\/string>/.exec(contents)?.[1];
+  return plist === undefined ? undefined : unescapeXmlText(plist);
+}
+
 export interface PendingServiceUpdate {
   readonly id: string;
   readonly fromVersion: string;

@@ -1,5 +1,6 @@
 import * as NodeBuffer from "node:buffer";
 
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
@@ -42,6 +43,7 @@ import {
   PATCH_RENDER_PREFIX_ARGS,
   splitNullSeparatedGitStdoutPaths,
 } from "./GitVcsDriverCore.ts";
+import * as CheckpointUntrackedBlobs from "./checkpointUntrackedBlobs.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 
@@ -896,6 +898,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         "--git-common-dir",
         "--git-path",
         "index",
+        "--show-toplevel",
         "--show-prefix",
         "--verify",
         "--quiet",
@@ -906,13 +909,15 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     const headExists = result.exitCode === 0;
     const headChecked = headExists || result.exitCode === 1;
     const lines = result.stdout.split("\n");
-    const [gitCommonDir = "", indexPath = "", prefix = ""] = lines;
-    if (headChecked && lines.length === (headExists ? 5 : 4) && lines.at(-1) === "") {
+    const [gitCommonDir = "", indexPath = "", topLevel = "", prefix = "", head = ""] = lines;
+    if (headChecked && lines.length === (headExists ? 6 : 5) && lines.at(-1) === "") {
       return {
         gitCommonDir: gitCommonDir.trim(),
         indexPath: indexPath.trim(),
+        topLevel: topLevel.trim(),
         prefix,
         headExists,
+        head: headExists ? head : undefined,
       };
     }
     // Git before 2.31 echoes --path-format, and a path containing a newline spans lines.
@@ -926,8 +931,10 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     return {
       gitCommonDir: fallbackCommonDir,
       indexPath: undefined,
+      topLevel: undefined,
       prefix: prefixResult.stdout.replace(/\n$/, ""),
       headExists: headChecked ? headExists : yield* hasHeadCommit(cwd),
+      head: undefined,
     };
   });
 
@@ -949,6 +956,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
   // core.longpaths is disabled in the user's Git configuration.
   const longPaths = hostPlatform === "win32" ? ["-c", "core.longpaths=true"] : [];
 
+  const untrackedBlobs = CheckpointUntrackedBlobs.make(execute, fileSystem);
+
   const checkpoints: VcsDriver.VcsCheckpointOps = {
     captureCheckpoint: Effect.fn("GitVcsDriver.checkpoints.captureCheckpoint")(function* (input) {
       const operation = VcsProcess.CHECKPOINT_CAPTURE_OPERATION;
@@ -963,9 +972,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         "-c",
         "splitIndex.sharedIndexExpire=never",
       ];
-      const { gitCommonDir, indexPath, prefix, headExists } = yield* resolveCaptureRepository(
-        input.cwd,
-      );
+      const { gitCommonDir, indexPath, topLevel, prefix, headExists, head } =
+        yield* resolveCaptureRepository(input.cwd);
+      const startedAt = yield* Clock.currentTimeMillis;
       const indexId = yield* random.uuidV4();
       const tempIndexPath = path.join(gitCommonDir, `t3-checkpoint-index-${indexId}`);
       const commitEnv: NodeJS.ProcessEnv = {
@@ -1220,6 +1229,16 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           }
         }
 
+        // Untracked files have no stat data in a new index, so git add would rehash every one.
+        const untracked =
+          topLevel === undefined || head === undefined || sparseCheckout || workspaceIgnored
+            ? undefined
+            : { cwd: input.cwd, topLevel, head, env: commitEnv };
+        const { reused, before } =
+          untracked === undefined
+            ? CheckpointUntrackedBlobs.NOTHING
+            : yield* untrackedBlobs.reuse({ ...untracked, indexConfig });
+
         const stageFiles = (exclusions: ReadonlyArray<string>) =>
           execute({
             operation,
@@ -1241,6 +1260,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             ],
             env: commitEnv,
           });
+        const stagingAt = yield* Clock.currentTimeMillis;
         yield* stageFiles([]).pipe(
           Effect.catchTags({
             VcsProcessExitError: (error) =>
@@ -1298,6 +1318,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           }),
         );
 
+        const stagingMs = (yield* Clock.currentTimeMillis) - stagingAt;
+
         const writeTreeResult = yield* execute({
           operation,
           cwd: input.cwd,
@@ -1346,6 +1368,16 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           cwd: input.cwd,
           args: [...durableWrite, "update-ref", input.checkpointRef, commitOid],
         });
+        if (untracked !== undefined) {
+          yield* untrackedBlobs.remember({
+            ...untracked,
+            tree: treeOid,
+            startedAt,
+            stagingMs,
+            reused,
+            before,
+          });
+        }
       }).pipe(Effect.ensuring(cleanupTempIndex));
     }),
 

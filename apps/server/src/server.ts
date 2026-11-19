@@ -28,6 +28,7 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
+import * as NonBlockingSpawner from "./process/NonBlockingSpawner.ts";
 import * as ServerConfig from "./config.ts";
 import { withUntracedRequests } from "./http.ts";
 import * as ServerHttp from "./http.ts";
@@ -169,6 +170,7 @@ import * as ConnectReachability from "./cloud/ConnectReachability.ts";
 import { pendingServiceUpdateExists } from "./cloud/updateHandoff.ts";
 import * as RelayTracing from "./cloud/relayTracing.ts";
 import * as CloudManagedEndpointRuntime from "./cloud/ManagedEndpointRuntime.ts";
+import * as RelayClientLedger from "./cloud/RelayClientLedger.ts";
 import {
   MANAGED_TUNNEL_FIRST_REGISTRATION_JITTER,
   makeManagedTunnelRecovery,
@@ -220,6 +222,7 @@ import * as RelayClient from "@t3tools/shared/relayClient";
 import {
   disableTailscaleServe,
   ensureTailscaleServe,
+  readTailscaleServeRootHolder,
   readTailscaleServeRoutesTo,
   readTailscaleStatus,
 } from "@t3tools/tailscale";
@@ -381,9 +384,14 @@ const layerHttpServer = Layer.unwrap(
       },
     );
   }),
-).pipe(Layer.provide(ManagedPolicy.layer));
+).pipe(
+  Layer.provide(ManagedPolicy.layer),
+  // NodeHttpServer.layer also outputs NodeServices, whose spawner would shadow the wrapped one.
+  (layer) => NonBlockingSpawner.layer.pipe(Layer.provideMerge(layer)),
+);
 
 const layerPlatformServices = DocumentText.layer.pipe(
+  Layer.provideMerge(NonBlockingSpawner.layer),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
@@ -544,6 +552,14 @@ const layerCloudManagedEndpointRuntime = Layer.mergeAll(
   CloudManagedEndpointRuntime.layer.pipe(
     Layer.provide(ServerSecretStore.layer),
     Layer.provide(layerRelayClient),
+    Layer.provide(
+      Layer.unwrap(
+        Effect.gen(function* () {
+          const config = yield* ServerConfig.ServerConfig;
+          return RelayClientLedger.layer({ stateDir: config.stateDir });
+        }),
+      ),
+    ),
   ),
 );
 
@@ -904,6 +920,8 @@ const layerMakeServer = Layer.unwrap(
           );
       }),
     );
+    const tailscaleServeRootHolder = (target: { readonly host: string; readonly port: number }) =>
+      readTailscaleServeRootHolder(config.tailscaleServePort, target);
     const layerTailscaleServe = config.tailscaleServeEnabled
       ? Layer.effectDiscard(
           Effect.acquireRelease(
@@ -918,16 +936,31 @@ const layerMakeServer = Layer.unwrap(
 
               const localPort = address.port;
               const localHost = loopbackUrlHostForAddress(address);
+              const route = {
+                localPort,
+                urlHost: localHost,
+                localHost: localHost.replace(/^\[|\]$/gu, ""),
+                servePort: config.tailscaleServePort,
+              };
+              const holder = yield* tailscaleServeRootHolder({
+                host: route.localHost,
+                port: localPort,
+              }).pipe(Effect.orElseSucceed(() => "unreadable" as const));
+              if (holder === "other" || holder === "unreadable") {
+                yield* Effect.logWarning(
+                  holder === "other"
+                    ? "Tailscale Serve left off; its port already serves another server or app"
+                    : "Tailscale Serve left off; its current routes could not be read",
+                  { localPort, servePort: config.tailscaleServePort },
+                );
+                return route;
+              }
               return yield* ensureTailscaleServe({
                 localPort,
                 servePort: config.tailscaleServePort,
                 localHost,
               }).pipe(
-                Effect.as({
-                  localPort,
-                  localHost: localHost.replace(/^\[|\]$/gu, ""),
-                  servePort: config.tailscaleServePort,
-                }),
+                Effect.as(route),
                 Effect.tap(() =>
                   Effect.logInfo("Tailscale Serve configured", {
                     localPort,
@@ -992,8 +1025,42 @@ const layerMakeServer = Layer.unwrap(
                     ),
                   )
                 : Effect.void,
+          ).pipe(
+            // Startup is not the only time the route can go stale, so whoever finds it on a dead
+            // port takes it back.
+            Effect.tap((configured) =>
+              configured === null
+                ? Effect.void
+                : Effect.sleep("30 seconds").pipe(
+                    Effect.andThen(
+                      tailscaleServeRootHolder({
+                        host: configured.localHost,
+                        port: configured.localPort,
+                      }),
+                    ),
+                    Effect.flatMap((holder) =>
+                      holder === "dead"
+                        ? ensureTailscaleServe({
+                            localPort: configured.localPort,
+                            servePort: configured.servePort,
+                            localHost: configured.urlHost,
+                          }).pipe(
+                            Effect.andThen(
+                              Effect.logInfo("Tailscale Serve repaired", {
+                                localPort: configured.localPort,
+                                servePort: configured.servePort,
+                              }),
+                            ),
+                          )
+                        : Effect.void,
+                    ),
+                    Effect.ignore,
+                    Effect.forever,
+                    Effect.forkScoped,
+                  ),
+            ),
           ),
-        )
+        ).pipe(Layer.provide(NetService.layer))
       : Layer.empty;
     const layerCloudDesiredLinkReconcile = Layer.effectDiscard(
       Effect.gen(function* () {
@@ -1239,4 +1306,7 @@ const layerMakeServer = Layer.unwrap(
   }),
 ).pipe(Layer.provide(ProcessRunner.layer));
 
-export const runServer = Layer.launch(layerMakeServer);
+export const runServer = Layer.launch(
+  // For the layers above whose spawner requirement is met by the caller's runtime.
+  layerMakeServer.pipe(Layer.provide(NonBlockingSpawner.layer)),
+);

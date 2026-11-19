@@ -1,11 +1,19 @@
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import { WebSocket } from "@effect/platform-node/NodeWS";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Bind an isolated WebSocket negotiation fixture.
+import * as NodeHttp from "node:http";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
+  AuthAccessReadScope,
   AuthSessionId,
+  ORCHESTRATION_PROTOCOL_VERSION,
+  ORCHESTRATION_PROTOCOL_QUERY_PARAM,
   EnvironmentId,
   EventId,
+  VcsProcessSpawnError,
   MessageId,
   EnvironmentMemberId,
   ProjectId,
@@ -14,8 +22,10 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   WS_METHODS,
+  WsRpcGroup,
   WsServerRefreshProvidersRpc,
   WsSubscribeServerConfigRpc,
+  type AuthAccessStreamEvent,
   type OrchestrationV2StoredEvent,
   type OrchestrationV2ThreadShell,
   type OrchestrationProjectShell,
@@ -23,6 +33,7 @@ import {
   type ServerConfigStreamEvent,
   type ServerProvider,
 } from "@t3tools/contracts";
+import { SOCKET_FRAME_PARTS_QUERY_PARAM } from "@t3tools/shared/socketFrameParts";
 import * as Deferred from "effect/Deferred";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -34,7 +45,11 @@ import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import { Headers } from "effect/http";
+import { Headers, HttpRouter, HttpServer } from "effect/http";
+import * as Context from "effect/Context";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as VcsProcess from "./vcs/VcsProcess.ts";
+import * as Ws from "./ws.ts";
 import { RpcGroup, RpcMessage, RpcServer } from "effect/rpc";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Statement from "effect/sql/Statement";
@@ -70,6 +85,7 @@ import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as OtlpEndpointCheck from "./observability/OtlpEndpointCheck.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
+import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -81,6 +97,7 @@ import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts
 import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import * as ProviderInstallationGate from "./provider/ProviderInstallationGate.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
@@ -915,6 +932,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ProviderAuthService.ProviderAuthService)({}),
   Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({}),
   Layer.mock(ProviderLatestVersions.ProviderLatestVersions)({}),
+  Layer.mock(ProviderInstallationGate.ProviderInstallationGate)({}),
   Layer.mock(ProviderMaintenanceRunner.ProviderMaintenanceRunner)({}),
   Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({}),
   Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
@@ -967,6 +985,100 @@ const layerConfigSources = Layer.mergeAll(
     ),
   ),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
+
+it.live.each([
+  { subject: "desktop-bootstrap", extensions: "", framed: false },
+  { subject: "desktop-bootstrap", extensions: "", framed: true },
+  { subject: "one-time-token", extensions: "permessage-deflate", framed: false },
+  { subject: "cloud-connect", extensions: "permessage-deflate", framed: false },
+])(
+  "negotiates compression for $subject sessions (framed=$framed)",
+  ({ subject, extensions, framed }) =>
+    Effect.gen(function* () {
+      const services = Layer.mergeAll(
+        layerUnusedConfigRpcServices,
+        Layer.mock(ServerBrowser.ServerBrowser)({
+          profileReporter: Effect.succeed(() => Effect.void),
+        }),
+        Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+          authenticateWebSocketUpgrade: () =>
+            Effect.succeed({
+              sessionId: AuthSessionId.make("compression-test"),
+              subject,
+              method: "bearer-access-token",
+              scopes: [],
+            }),
+        }),
+        Layer.mock(SessionStore.SessionStore)({
+          cookieName: "compression-test",
+          legacyCookieName: undefined,
+          markConnected: () => Effect.void,
+          markDisconnected: () => Effect.void,
+          awaitInvalidation: () => Effect.never,
+        }),
+        Layer.mock(AnalyticsService.AnalyticsService)({ recordOwners: () => Effect.void }),
+        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+          namedProjectsRoot: process.cwd(),
+        }),
+        Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
+        Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+        Layer.mock(UsageLimitSources.UsageLimitSources)({}),
+        Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+        Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
+        Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(ServerEnvironment.ServerEnvironment)({}),
+        Layer.mock(Bots.Bots)({}),
+        Layer.mock(BotCalls.BotCalls)({}),
+        Layer.mock(VcsProcess.VcsProcess)({
+          run: (input) =>
+            Effect.fail(
+              new VcsProcessSpawnError({
+                operation: input.operation,
+                command: input.command,
+                cwd: input.cwd,
+                cause: "No VCS commands in the compression fixture",
+              }),
+            ),
+        }),
+        FetchHttpClient.layer,
+      );
+      const context = yield* Layer.build(
+        HttpRouter.serve(Ws.layer, { disableListenLog: true }).pipe(
+          Layer.provideMerge(
+            NodeHttpServer.layer(NodeHttp.createServer, {
+              host: "127.0.0.1",
+              port: 0,
+              websocket: { perMessageDeflate: true },
+            }),
+          ),
+          Layer.provide(services),
+          Layer.provide(layerConfigSources),
+        ),
+      );
+      const server = Context.get(context, HttpServer.HttpServer);
+      const origin = HttpServer.formatAddress(server.address).replace(/^http/, "ws");
+      const socket = yield* Effect.acquireRelease(
+        Effect.sync(
+          () =>
+            new WebSocket(
+              `${origin}/ws?${ORCHESTRATION_PROTOCOL_QUERY_PARAM}=${ORCHESTRATION_PROTOCOL_VERSION}${framed ? `&${SOCKET_FRAME_PARTS_QUERY_PARAM}=1` : ""}`,
+              {
+                origin: "boops://app",
+              },
+            ),
+        ),
+        (socket) => Effect.sync(() => socket.terminate()),
+      );
+      yield* Effect.promise(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            socket.once("open", resolve);
+            socket.once("error", reject);
+          }),
+      );
+      assert.equal(socket.extensions, extensions);
+    }).pipe(Effect.scoped),
 );
 
 it.effect.each([
@@ -1226,6 +1338,120 @@ it.effect.each([
       ),
       Effect.scoped,
     ),
+);
+
+it.effect("access changes made while the snapshot loads reach the client after it", () =>
+  Effect.gen(function* () {
+    const pairingChanges = yield* PubSub.unbounded<PairingGrantStore.BootstrapCredentialChange>();
+    const sessionChanges = yield* PubSub.unbounded<SessionStore.SessionCredentialChange>();
+    const subscribed = yield* Queue.unbounded<void>();
+    const subscribe = <A>(changes: PubSub.PubSub<A>) =>
+      Stream.unwrap(
+        PubSub.subscribe(changes).pipe(
+          Effect.tap(() => Queue.offer(subscribed, undefined)),
+          Effect.map(Stream.fromSubscription),
+        ),
+      );
+    const revokedElsewhere = AuthSessionId.make("revoked-elsewhere");
+    const responses = yield* Queue.unbounded<AuthAccessStreamEvent>();
+    const server = yield* RpcServer.makeNoSerialization(WsRpcGroup, {
+      ...WS_RPC_SERVER_OPTIONS,
+      onFromServer: (response) =>
+        response._tag === "Chunk"
+          ? Effect.forEach(
+              response.values,
+              (event) => Queue.offer(responses, event as AuthAccessStreamEvent),
+              {
+                discard: true,
+              },
+            )
+          : Effect.void,
+    }).pipe(
+      Effect.provide(
+        layerWsRpc(
+          {
+            sessionId: AuthSessionId.make("current"),
+            subject: "current",
+            method: "browser-session-cookie",
+            scopes: [],
+          },
+          {},
+          yield* ServerBrowser.ServerBrowser,
+          () => Effect.void,
+          { secretReferences: true },
+        ).pipe(
+          Layer.merge(RpcAuthorization.layer([AuthAccessReadScope])),
+          Layer.provide(
+            Layer.mergeAll(
+              layerUnusedConfigRpcServices,
+              Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+              Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+              Layer.mock(UsageLimitSources.UsageLimitSources)({}),
+              Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
+              Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+              Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+                namedProjectsRoot: "/unused",
+              }),
+              Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
+              Layer.mock(ServerEnvironment.ServerEnvironment)({}),
+              Layer.mock(Bots.Bots)({}),
+              Layer.mock(BotCalls.BotCalls)({}),
+              Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+                listPairingLinks: () => Effect.succeed([]),
+                // Another client revokes a session after the snapshot read it.
+                listClientSessions: () =>
+                  PubSub.publish(sessionChanges, {
+                    type: "clientRemoved",
+                    sessionId: revokedElsewhere,
+                  }).pipe(Effect.as([])),
+              }),
+              Layer.mock(PairingGrantStore.PairingGrantStore)({
+                streamChanges: subscribe(pairingChanges),
+              }),
+              Layer.mock(SessionStore.SessionStore)({
+                cookieName: "auth-access-test",
+                legacyCookieName: undefined,
+                streamChanges: subscribe(sessionChanges),
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+    const requestId = RpcMessage.RequestId("auth-access");
+    yield* server.write(0, {
+      _tag: "Request",
+      id: requestId,
+      tag: WS_METHODS.subscribeAuthAccess,
+      payload: {},
+      headers: Headers.empty,
+    });
+    const snapshot = yield* Queue.take(responses);
+    assert.equal(snapshot.type, "snapshot");
+    yield* server.write(0, { _tag: "Ack", requestId });
+    yield* Queue.take(subscribed);
+    yield* Queue.take(subscribed);
+
+    // A later change arrives either way, so a dropped revocation fails as a mismatch.
+    yield* PubSub.publish(pairingChanges, { type: "pairingLinkRemoved", id: "later" });
+    const next = yield* Queue.take(responses);
+    assert.deepEqual(next, {
+      version: 1,
+      revision: 2,
+      type: "clientRemoved",
+      payload: { sessionId: revokedElsewhere },
+    });
+    yield* server.write(0, { _tag: "Interrupt", requestId, interruptors: [] });
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Layer.fresh(layerConfigSources),
+        Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
+        Layer.mock(ServerBrowser.ServerBrowser)({}),
+      ),
+    ),
+    Effect.scoped,
+  ),
 );
 
 it.effect("on-demand clients get provider config without workspace snapshots", () =>
