@@ -17379,7 +17379,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
 
         const routing = subagentRouting(harness.events, ["toolu-early-bash"]);
         assert.isDefined(routing.childThreadId);
-        // Agents quote this id back to t3_thread_send/t3_thread_read.
+        // Agents quote this id back to boops_thread_send/boops_thread_read.
         const childThreadId = routing.childThreadId ?? "";
         assert.notInclude(childThreadId, "%");
         assert.isAtMost(childThreadId.length, 64);

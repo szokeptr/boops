@@ -573,6 +573,7 @@ it.effect("fences an invited member's conversation to her own threads, reads inc
         }),
       }),
       Tool.make("schedule_task", probe),
+      Tool.make("send_to_user", probe),
     );
     const server = McpHttpServer.toolkitRegistration(
       MemberToolkit,
@@ -587,6 +588,7 @@ it.effect("fences an invited member's conversation to her own threads, reads inc
         ),
         delegate_task: McpToolAccess.actsAsCaller(() => ran),
         schedule_task: McpToolAccess.writes(() => ran),
+        send_to_user: McpToolAccess.actsAsCaller(() => ran),
       }),
     ).pipe(
       Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
@@ -624,6 +626,7 @@ it.effect("fences an invited member's conversation to her own threads, reads inc
         ["delegate_task", anna, {}],
         ["delegate_task", anna, { target: { environmentId: "environment-box" } }],
         ["schedule_task", anna, {}],
+        ["send_to_user", anna, {}],
         ["boops_thread_read", owner, { threadId: annaThread }],
         ["schedule_task", owner, {}],
         // A room turn Anna started is fenced as her own conversation is.
@@ -650,6 +653,7 @@ it.effect("fences an invited member's conversation to her own threads, reads inc
       "ran",
       "capability_denied",
       "capability_denied",
+      "ran",
       "ran",
       "ran",
       "ran",

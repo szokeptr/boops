@@ -176,7 +176,7 @@ const resolveThemePaths = Effect.fn(function* (explicitBaseDir: Option.Option<st
     baseDirIsExplicit: Option.isSome(configuredBaseDir),
   });
   // A dev server with an implicit home keeps its state in `dev`; follow it unless a
-  // `userdata` server is running too, the same order `t3 pair` checks.
+  // `userdata` server is running too, the same order `boops pair` checks.
   let derivedPaths = userdataPaths;
   if (
     Option.isNone(configuredBaseDir) &&

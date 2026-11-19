@@ -1043,6 +1043,7 @@ it.live.each([
               }),
             ),
         }),
+        ProviderInstallationGate.layer,
         FetchHttpClient.layer,
       );
       const context = yield* Layer.build(
