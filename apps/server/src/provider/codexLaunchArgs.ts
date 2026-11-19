@@ -9,11 +9,17 @@ export const resolveCodexLaunchArgs = (
 
 const codexLaunchArgv = (launchArgs?: string): ReadonlyArray<string> => tokenizeCliArgs(launchArgs);
 
+// T3 unsubscribes only when it unloads a thread; Codex's own unload delay would stack on that.
 export const codexAppServerArgs = (launchArgs?: string) => [
   "app-server",
+  "-c",
+  "thread_unload_delay_secs=0",
   ...codexLaunchArgv(launchArgs),
 ];
 
+const HOOK_FEATURES = new Set(["hooks", "codex_hooks"]);
+
+// Feature toggles beat config overrides, so a launch arg's hook enable would undo ours.
 export const codexExecLaunchArgs = (launchArgs?: string) => {
   const args = codexLaunchArgv(launchArgs);
   const execArgs: Array<string> = [];
@@ -27,10 +33,12 @@ export const codexExecLaunchArgs = (launchArgs?: string) => {
     } else if (arg === "--config" || arg === "-c" || arg === "--enable" || arg === "--disable") {
       const value = args[index + 1];
       if (value !== undefined && !value.startsWith("-")) {
-        execArgs.push(arg, value);
+        if (arg !== "--enable" || !HOOK_FEATURES.has(value)) execArgs.push(arg, value);
         index++;
       }
-    } else if (arg.startsWith("--enable=") || arg.startsWith("--disable=")) {
+    } else if (arg.startsWith("--enable=")) {
+      if (!HOOK_FEATURES.has(arg.slice("--enable=".length))) execArgs.push(arg);
+    } else if (arg.startsWith("--disable=")) {
       execArgs.push(arg);
     }
   }

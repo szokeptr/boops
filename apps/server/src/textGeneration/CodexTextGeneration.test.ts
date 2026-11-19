@@ -5,6 +5,7 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
+import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -330,6 +331,26 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
     ),
   );
 
+  it.effect("keeps user hooks off over launch args that turn them on", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ title: "Hookless title" }),
+        launchArgs: "--config features.hooks=true --enable hooks",
+        requireArg: "--config features.codex_hooks=false --config features.hooks=false",
+        forbidArg: "--enable",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Describe this change",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+          expect(result.title).toBe("Hookless title");
+        }),
+    ),
+  );
+
   it.effect("passes exec-safe launch args into codex exec", () =>
     withFakeCodexEnv(
       {
@@ -514,6 +535,7 @@ it.effect.each([false, true])("text generation preflight: exhausted=%s", (exhaus
           Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
             resolveLink: () => Effect.die("unused"),
           }),
+          ProviderInstallationGate.layer,
         ),
       ),
     );

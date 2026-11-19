@@ -2,10 +2,12 @@ import { CodexSettings, ProviderDriverKind } from "@t3tools/contracts";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import type * as Signature from "effect/crypto/Signature";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
@@ -159,11 +161,11 @@ export const CodexDriver: ProviderDriver<
       yield* HostProcess.Environment,
     );
     const environmentHome = processEnv.CODEX_HOME;
-    const homeLayout = yield* resolveCodexHomeLayout(
-      !config.homePath.trim() && !config.shadowHomePath.trim() && environmentHome?.trim()
+    const homeConfig =
+      !config.homePath.trim() && environmentHome?.trim()
         ? { ...config, homePath: environmentHome }
-        : config,
-    );
+        : config;
+    const homeLayout = yield* resolveCodexHomeLayout(homeConfig);
     const continuationIdentity = codexContinuationIdentity(homeLayout);
     const stampIdentity = withInstanceIdentity({
       instanceId,
@@ -210,7 +212,7 @@ export const CodexDriver: ProviderDriver<
         accentColor,
         environment,
         enabled,
-        config,
+        config: homeConfig,
       },
       {
         onUsageLimits: (update) => snapshot.applyUsageLimits(update),
@@ -370,6 +372,17 @@ export const CodexDriver: ProviderDriver<
           ),
         );
 
+    // `codex login` and `codex logout` rewrite auth.json outside T3.
+    if (effectiveConfig.enabled) {
+      yield* fileSystem.watch(accountKey).pipe(
+        Stream.filter((event) => pathService.basename(event.path) === "auth.json"),
+        Stream.debounce(Duration.millis(250)),
+        Stream.runForEach(() => snapshot.refresh.pipe(Effect.ignoreCause({ log: true }))),
+        Effect.catchReason("PlatformError", "NotFound", () => Effect.void),
+        Effect.ignoreCause({ log: true }),
+        Effect.forkScoped,
+      );
+    }
     return {
       instanceId,
       driverKind: DRIVER_KIND,

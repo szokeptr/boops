@@ -1358,7 +1358,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         driver,
         nativeItemId: call.nativeId,
       });
-      const childThreadId = idAllocator.derive.threadFromProviderThread({
+      const childThreadId = idAllocator.derive.subagentThread({
         driver,
         nativeThreadId: childId,
         providerInstanceId: instanceId,

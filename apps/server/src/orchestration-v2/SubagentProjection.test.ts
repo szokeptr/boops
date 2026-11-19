@@ -9,6 +9,7 @@ import {
   EventId,
   TurnItemId,
   type OrchestrationV2Run,
+  type OrchestrationV2TurnItem,
   type OrchestrationV2AppThread,
   ProjectId,
   ProviderInstanceId,
@@ -26,7 +27,9 @@ import {
   makeSubagentConversationArtifacts,
   endOrphanedNativeSubagent,
   endRunlessRootTurns,
+  PROVIDER_STOP_REASON_SIGNAL,
 } from "@t3tools/provider-core/server/subagentProjection";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -376,6 +379,80 @@ it("exposes the provider failure rather than a progress message from the failed 
   assert.equal(result.text, failure.message);
   assert.equal(result.turnItemId, artifacts.turnItem.id);
   assert.isNull(result.messageId);
+});
+
+it("reports a provider's stop reason for a completed run without an assistant result", () => {
+  const { projection, run } = taskFixture();
+  const notice = {
+    id: IdAllocator.derive.runSignalTurnItem({
+      runId: run.id,
+      signal: PROVIDER_STOP_REASON_SIGNAL,
+    }),
+    threadId: parentThreadId,
+    runId: run.id,
+    nodeId: NodeId.make("root"),
+    providerThreadId: null,
+    providerTurnId: null,
+    nativeItemRef: null,
+    parentItemId: null,
+    ordinal: 98,
+    status: "completed",
+    title: "Stopped by the provider",
+    startedAt: childCreatedAt,
+    completedAt: childCreatedAt,
+    updatedAt: childCreatedAt,
+    type: "system_notice",
+    message: "sessionStart hook (user): Plugin guard blocked this session.",
+  } satisfies OrchestrationV2TurnItem;
+  assert.equal(
+    subagentResultForRun({ ...projection, turnItems: [notice] }, run).text,
+    `Child task completed without an assistant result.\n\n${notice.message}`,
+  );
+});
+
+it("keeps the final report of a run that failed after its turn ended", () => {
+  const { projection, run } = taskFixture();
+  const failedRun = { ...run, status: "failed" as const };
+  const artifacts = makeSubagentConversationArtifacts({
+    messageId: MessageId.make("report"),
+    turnItemId: TurnItemId.make("report"),
+    threadId: parentThreadId,
+    rootNodeId: NodeId.make("root"),
+    providerThreadId: null,
+    providerTurnId: null,
+    nativeItemRef: null,
+    role: "assistant",
+    text: "Review complete: no blocking issues.",
+    ordinal: 1,
+    now: childCreatedAt,
+  });
+  if (artifacts.turnItem.type !== "assistant_message") throw new Error("Expected assistant item");
+  const failure = {
+    class: "unknown" as const,
+    message: "Connection failed repeatedly",
+    code: null,
+    retryable: false,
+  };
+  const result = subagentResultForRun(
+    {
+      ...projection,
+      messages: [{ ...artifacts.message, runId: run.id }],
+      turnItems: [
+        { ...artifacts.turnItem, runId: run.id },
+        {
+          ...artifacts.turnItem,
+          id: TurnItemId.make("error"),
+          ordinal: 2,
+          type: "error",
+          runId: run.id,
+          failure,
+        },
+      ],
+    },
+    failedRun,
+  );
+  assert.include(result.text, failure.message);
+  assert.include(result.text, "Review complete: no blocking issues.");
 });
 
 it("orders a task's assistant messages by turn item, not by timestamps", () => {

@@ -17,6 +17,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -57,10 +58,12 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import * as OpenCodeRuntime from "@t3tools/provider-opencode/server/OpenCodeRuntime";
 import * as OpenCodeServerLedger from "@t3tools/provider-opencode/server/OpenCodeServerLedger";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import * as ProviderInstallationGate from "./ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistryHydration from "./ProviderInstanceRegistryHydration.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettingsModule from "../serverSettings.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import {
   readProviderStatusCache,
   resolveProviderStatusCachePath,
@@ -585,6 +588,86 @@ it.layer(
         assert.strictEqual(status.installed, true);
         assert.match(status.message ?? "", /^Codex app-server provider probe failed: /);
         assert.isTrue(yield* Deferred.isDone(released));
+      }),
+    );
+
+    it.effect("shows Codex usage that answers after three seconds inside the probe budget", () =>
+      Effect.gen(function* () {
+        const usageRequested = yield* Deferred.make<void>();
+        const spawner = ChildProcessSpawner.make(() =>
+          Effect.gen(function* () {
+            const scope = yield* Effect.scope;
+            const output = yield* Queue.unbounded<Uint8Array>();
+            const send = (message: unknown) =>
+              Queue.offer(output, encoder.encode(`${JSON.stringify(message)}\n`));
+            const results: Record<string, unknown> = {
+              initialize: {
+                userAgent: "codex_cli_rs/0.167.0",
+                codexHome: "/nonexistent-codex-home",
+                platformFamily: "unix",
+                platformOs: "linux",
+              },
+              "account/read": {
+                account: { type: "chatgpt", email: "test@example.com", planType: "pro" },
+                requiresOpenaiAuth: true,
+              },
+              "config/read": { config: {}, origins: {} },
+              "skills/list": { data: [] },
+              "model/list": { data: [] },
+            };
+            const answer = (line: string) => {
+              const { id, method } = JSON.parse(line) as { id?: number; method?: string };
+              if (id === undefined || method === undefined) return Effect.void;
+              if (method !== "account/rateLimits/read") {
+                return send({ id, result: results[method] ?? {} });
+              }
+              return Deferred.succeed(usageRequested, undefined).pipe(
+                Effect.andThen(Effect.sleep("4 seconds")),
+                Effect.andThen(
+                  send({
+                    id,
+                    result: {
+                      rateLimits: {
+                        limitId: "codex",
+                        planType: "pro",
+                        primary: { usedPercent: 42, windowDurationMins: 300, resetsAt: 2e9 },
+                      },
+                      rateLimitsByLimitId: null,
+                      rateLimitResetCredits: null,
+                      accountId: null,
+                    },
+                  }),
+                ),
+                Effect.forkIn(scope),
+              );
+            };
+            const decoder = new TextDecoder();
+            let buffered = "";
+            return ChildProcessSpawner.makeHandle({
+              ...mockHandle({ stdout: "", stderr: "", code: 0 }),
+              exitCode: Effect.never,
+              isRunning: Effect.succeed(true),
+              stdin: Sink.forEach((chunk: Uint8Array) => {
+                buffered += decoder.decode(chunk, { stream: true });
+                const lines = buffered.split("\n");
+                buffered = lines.pop() ?? "";
+                return Effect.forEach(lines.filter(Boolean), answer, { discard: true });
+              }),
+              stdout: Stream.fromQueue(output),
+            });
+          }),
+        );
+        const fiber = yield* checkCodexProviderStatus(defaultCodexSettings).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.forkChild,
+        );
+        yield* Deferred.await(usageRequested);
+        yield* TestClock.adjust("25 seconds");
+        const status = yield* Fiber.join(fiber);
+
+        assert.strictEqual(status.auth.status, "authenticated");
+        assert.isUndefined(status.usageLimits?.unavailable);
+        assert.strictEqual(status.usageLimits?.windows[0]?.usedPercent, 42);
       }),
     );
 
@@ -1229,6 +1312,9 @@ it.layer(
                   }),
                 ),
               getSnapshot: Ref.get(currentProvider),
+              isAwaitingFirstCheck: Ref.get(currentProvider).pipe(
+                Effect.map((provider) => provider === pendingProvider),
+              ),
               refresh: Ref.get(nextProvider).pipe(
                 Effect.tap((provider) => Ref.set(currentProvider, provider)),
               ),
@@ -1262,6 +1348,23 @@ it.layer(
                 ? retainedModels
                 : [customModel, ...cachedProvider.models];
               assert.deepStrictEqual((yield* registry.getProviders)[0]?.models, expectedModels);
+              if (!restarted) {
+                const probeFields = ({ status, installed, auth, version }: ServerProvider) => ({
+                  status,
+                  installed,
+                  auth,
+                  version,
+                });
+                // Boot reads the probe state from the cache, not the pending snapshot, and never persists the pending one.
+                assert.deepStrictEqual(
+                  probeFields((yield* registry.getProviders)[0]!),
+                  probeFields(cachedProvider),
+                );
+                assert.deepStrictEqual(
+                  probeFields((yield* readProviderStatusCache(filePath))!),
+                  probeFields(cachedProvider),
+                );
+              }
 
               yield* registry.refreshInstance(instance.instanceId);
               assert.deepStrictEqual(
@@ -1290,6 +1393,84 @@ it.layer(
           Effect.provide(
             ServerConfig.layerTest(process.cwd(), {
               prefix: "t3-codex-retired-model-cache-",
+            }).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+          ),
+        ),
+      );
+      it.effect("keeps a check that finished before boot over the cached status", () =>
+        Effect.gen(function* () {
+          const config = yield* ServerConfig.ServerConfig;
+          const filePath = yield* resolveProviderStatusCachePath({
+            cacheDir: config.providerStatusCacheDir,
+            instanceId: cachedProvider.instanceId,
+          });
+          const instance = {
+            instanceId: cachedProvider.instanceId,
+            driverKind: cachedProvider.driver,
+            continuationIdentity: {
+              driverKind: cachedProvider.driver,
+              continuationKey: "codex:instance:codex-personal",
+            },
+            displayName: undefined,
+            enabled: true,
+            snapshot: {
+              resolveMaintenance: () =>
+                Effect.succeed(
+                  makeManualOnlyProviderMaintenanceCapabilities({
+                    provider: cachedProvider.driver,
+                    packageName: null,
+                  }),
+                ),
+              getSnapshot: Effect.succeed(failedProvider),
+              isAwaitingFirstCheck: Effect.succeed(false),
+              refresh: Effect.succeed(failedProvider),
+              streamChanges: Stream.empty,
+              applyUsageLimits: () => Effect.void,
+            },
+            orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
+            textGeneration: {} as ProviderInstance["textGeneration"],
+          } satisfies ProviderInstance;
+          const layerInstanceRegistry = Layer.succeed(
+            ProviderInstanceRegistry.ProviderInstanceRegistry,
+            {
+              getInstance: (id) =>
+                Effect.succeed(id === instance.instanceId ? instance : undefined),
+              listInstances: Effect.succeed([instance]),
+              listUnavailable: Effect.succeed([]),
+              streamChanges: Stream.empty,
+              subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), PubSub.subscribe),
+            },
+          );
+
+          // First boot has no cache file; the second has a stale ready one.
+          for (const hasCache of [false, true]) {
+            if (hasCache) {
+              yield* writeProviderStatusCache({
+                filePath,
+                provider: { ...cachedProvider, status: "ready" },
+              });
+            }
+            yield* Effect.gen(function* () {
+              const registry = yield* ProviderRegistry.ProviderRegistry;
+              assert.strictEqual((yield* registry.getProviders)[0]?.status, failedProvider.status);
+              assert.strictEqual(
+                (yield* readProviderStatusCache(filePath))?.status,
+                failedProvider.status,
+              );
+            }).pipe(
+              Effect.provide(
+                ProviderRegistry.layer.pipe(
+                  Layer.provide(layerInstanceRegistry),
+                  Layer.provide(layerUnusedMutator),
+                ),
+              ),
+              Effect.scoped,
+            );
+          }
+        }).pipe(
+          Effect.provide(
+            ServerConfig.layerTest(process.cwd(), {
+              prefix: "t3-codex-probed-before-boot-",
             }).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
           ),
         ),
@@ -2731,7 +2912,15 @@ it.layer(
         yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
         const layerProviderRegistry = ProviderRegistry.layer.pipe(
           Layer.provideMerge(
-            ProviderInstanceRegistryHydration.layer.pipe(Layer.provide(PortScanner.layerTest)),
+            ProviderInstanceRegistryHydration.layer.pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  PortScanner.layerTest,
+                  ProviderInstallationGate.layer,
+                  SqlitePersistence.layerMemory,
+                ),
+              ),
+            ),
           ),
           Layer.provideMerge(AntigravityInstallation.AntigravityInstallation.layer),
           Layer.provideMerge(
@@ -2849,7 +3038,15 @@ it.layer(
         yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
         const layerProviderRegistry = ProviderRegistry.layer.pipe(
           Layer.provideMerge(
-            ProviderInstanceRegistryHydration.layer.pipe(Layer.provide(PortScanner.layerTest)),
+            ProviderInstanceRegistryHydration.layer.pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  PortScanner.layerTest,
+                  ProviderInstallationGate.layer,
+                  SqlitePersistence.layerMemory,
+                ),
+              ),
+            ),
           ),
           Layer.provideMerge(AntigravityInstallation.AntigravityInstallation.layer),
           Layer.provideMerge(
@@ -2984,7 +3181,15 @@ it.layer(
       );
       readSeed = false;
       const services = yield* Layer.build(
-        ProviderInstanceRegistryHydration.layer.pipe(Layer.provide(PortScanner.layerTest)),
+        ProviderInstanceRegistryHydration.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              PortScanner.layerTest,
+              ProviderInstallationGate.layer,
+              SqlitePersistence.layerMemory,
+            ),
+          ),
+        ),
       ).pipe(Effect.provide(dependencies));
       failCurrentRead = input.failCurrentRead ?? false;
       yield* PubSub.publish(changes, undefined);
@@ -3315,6 +3520,7 @@ it.layer(
         );
         assert.strictEqual(status.status, "ready");
         assert.strictEqual(status.auth.status, "authenticated");
+        assert.strictEqual(status.auth.label, "Claude API Key");
       }).pipe(
         Effect.provide(
           layerMockSpawner((args) => {
