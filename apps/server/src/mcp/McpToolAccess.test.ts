@@ -603,7 +603,7 @@ it.effect("fences an invited member's conversation to her own threads, reads inc
               ? Effect.succeed(turn)
               : thread.id.startsWith("room:")
                 ? Effect.fail(new RoomsError({ reason: "not-allowed" }))
-                : Effect.succeed(undefined);
+                : Effect.undefined;
           },
         }),
       ),

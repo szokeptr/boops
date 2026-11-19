@@ -69,6 +69,8 @@ jobs:
         env:
           DISPATCH_CHANNEL: ${{ inputs.channel }}
         with:
+          # Every call here is a read; retry GitHub's transient 5xx and dropped connections.
+          retries: 3
           script: |
             const {
               assertCommitOnDefaultBranch,
@@ -298,11 +300,15 @@ jobs:
   # Web browser tests time out when they share a runner with the other package
   # suites: Chromium gets too little CPU and diff workers miss their 10s start budget.
   test_web:
-    name: Release web tests
+    name: Release web tests ${{ matrix.shard }}
     needs: [preflight]
     if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -342,10 +348,11 @@ jobs:
           fi
 
       - name: Test
-        run: vp run --filter @t3tools/web test
+        run: vp run --filter @t3tools/web test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
       # Browser tests run source modules; this boots the production chunk graph.
       - name: Boot the built web client
+        if: matrix.shard == 1
         run: |
           vp run --filter @t3tools/web build
           node apps/web/scripts/verify-built-boot.ts
@@ -565,22 +572,32 @@ jobs:
       - name: Align package versions to release version
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
 
-      - uses: ./.github/actions/setup-apt-mirrors
+      # Older release refs lack build:desktop:bundle and use the full build,
+      # which compiles the Linux browser secret helper and needs libsecret.
+      - name: Check bundle-only build support
+        id: bundle_build
+        run: |
+          script="$(node -p "require('./package.json').scripts['build:desktop:bundle'] ? 'build:desktop:bundle' : 'build:desktop'")"
+          echo "script=$script" >> "$GITHUB_OUTPUT"
 
-      # @t3tools/desktop#build compiles the Linux browser secret helper on a
-      # Linux host before packing, and that needs libsecret headers.
+      - if: steps.bundle_build.outputs.script == 'build:desktop'
+        uses: ./.github/actions/setup-apt-mirrors
+
       - name: Install browser secret helper build libraries
+        if: steps.bundle_build.outputs.script == 'build:desktop'
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
-      # Runs boops#build (which depends on @t3tools/web#build) and
-      # @t3tools/desktop#build, so apps/server/dist holds the server bundle
-      # plus the web client and apps/desktop/dist-electron the Electron main.
+      # Runs boops#build (which depends on @t3tools/web#build) and the desktop
+      # bundle, so apps/server/dist holds the server bundle plus the web client
+      # and apps/desktop/dist-electron the Electron main. build:desktop:bundle
+      # skips the Linux browser secret helper, which this artifact does not
+      # carry; each Linux package job compiles its own per arch.
       # The release channel is already stable, nightly, or preview. Builds in
       # other repositories report "dev" telemetry.
       - name: Build JS bundle
         env:
           T3CODE_TELEMETRY_CHANNEL: ${{ github.repository == 'szokeptr/boops' && needs.preflight.outputs.release_channel || 'dev' }}
-        run: vp run build:desktop
+        run: vp run ${{ steps.bundle_build.outputs.script }}
 
       # Two paths under apps/ so the artifact root is apps/; consumers download
       # into `apps` to restore both at their original locations.
@@ -1020,4 +1037,15 @@ jobs:
 
           git add apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json pnpm-lock.yaml
           git commit --no-verify -m "chore(release): prepare $RELEASE_TAG"
-          git push origin HEAD:main
+
+          # main moves while this job runs, so a rejected push rebases and retries.
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt). Rebasing onto latest main."
+            git pull --rebase origin main
+          done
+
+          echo "Could not push the version bump after 5 attempts." >&2
+          exit 1

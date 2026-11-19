@@ -1,4 +1,5 @@
 import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
+import * as Schema from "effect/Schema";
 import { botMessagePreview } from "@t3tools/client-runtime/state/bot-list";
 import {
   EnvironmentMemberId,
@@ -116,10 +117,11 @@ export function roomFeedEntry(
 }
 
 const CONNECTION_FAILURE = "Check the connection and try again.";
+const isRoomsError = Schema.is(RoomsError);
 
 /** Why a post did not land: the room's own refusal, or the connection for transport failures. */
 export function roomPostFailure(error: unknown): string {
-  if (error instanceof RoomsError) return error.message;
+  if (isRoomsError(error)) return error.message;
   if (
     !(error instanceof Error) ||
     ("_tag" in error && error._tag === "RpcClientError") ||
