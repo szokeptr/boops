@@ -797,6 +797,19 @@ describe("MessagesTimeline reactions", () => {
       .toBeInTheDocument();
   });
 
+  it("leaves right-click on a bot's bubble to the browser's own menu", async () => {
+    setup();
+    await using screen = await renderTimeline(
+      [message("Morning! Coffee first?", { role: "assistant" })],
+      { directMessage: true, canOperateThread: true, onReactToMessage: vi.fn(async () => true) },
+    );
+    const text = screen.getByText("Morning! Coffee first?").element();
+    const contextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    text.dispatchEvent(contextMenu);
+    expect(contextMenu.defaultPrevented).toBe(false);
+    expect(document.querySelector("[data-slot=popover-popup]")).toBeNull();
+  });
+
   it("shows reactions without a bar where you cannot react", async () => {
     setup();
     await using screen = await renderTimeline(
