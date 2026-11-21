@@ -2011,6 +2011,9 @@ interface MessageReactionController {
   readonly surfaceColor: string;
   /** Null when reactions are read-only. */
   readonly open: ((target: MessageReactionTarget) => void) | null;
+  /** The bubble whose text is selectable after "Select"; long-press there selects text instead. */
+  readonly selecting: MessageId | null;
+  readonly select: (messageId: MessageId) => void;
   readonly choose: (
     messageId: MessageId,
     serverReactions: ReadonlyArray<OrchestrationV2MessageReaction> | undefined,
@@ -2047,6 +2050,7 @@ function ReactableBubble(props: {
       : props.reactions;
   const current = myMessageReaction(reactions);
   const open = staticRow || !props.reactable ? null : (controller?.open ?? null);
+  const selecting = controller?.selecting === messageId;
   const openReactions = () =>
     open?.({
       messageId,
@@ -2055,6 +2059,12 @@ function ReactableBubble(props: {
       actions: [
         ...props.actions,
         { id: "copy", title: "Copy", icon: "doc.on.doc", onPress: props.onCopy },
+        {
+          id: "select",
+          title: "Select",
+          icon: "text.cursor",
+          onPress: () => controller?.select(messageId),
+        },
       ],
     });
   // The bubble sinks a little while held, then eases back as the drawer opens.
@@ -2066,7 +2076,7 @@ function ReactableBubble(props: {
   const longPress = useLongPressGesture({
     minDuration: 350,
     runOnJS: true,
-    enabled: open !== null,
+    enabled: open !== null && !selecting,
     // A short delay keeps a scroll's touch-down from twitching the bubble.
     onBegin: () => {
       pressScale.set(withDelay(80, withTiming(0.96, { duration: 270 })));
@@ -2088,8 +2098,8 @@ function ReactableBubble(props: {
           if (nativeEvent.actionName === "react") openReactions();
         }}
       >
-        {/* Native selection would claim the long-press that opens reactions. */}
-        <MarkdownSelectableContext value={open === null}>
+        {/* Native selection would claim the long-press that opens reactions, until "Select". */}
+        <MarkdownSelectableContext value={open === null || selecting}>
           {props.children}
         </MarkdownSelectableContext>
         {controller ? (
@@ -4008,6 +4018,7 @@ export const ThreadFeed = memo(function ThreadFeed({
     ReadonlyMap<MessageId, PendingMessageReaction>
   >(() => new Map());
   const [reactionTarget, setReactionTarget] = useState<MessageReactionTarget | null>(null);
+  const [selectingMessageId, setSelectingMessageId] = useState<MessageId | null>(null);
   const onSetMessageReaction = props.onSetMessageReaction ?? null;
   const reactionAccent = ownBubbleColors ?? {
     background: theme["--color-primary"],
@@ -4051,8 +4062,11 @@ export const ThreadFeed = memo(function ThreadFeed({
             ? null
             : (target) => {
                 void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setSelectingMessageId(null);
                 setReactionTarget(target);
               },
+        selecting: selectingMessageId,
+        select: setSelectingMessageId,
         choose: chooseReaction,
       }
     : null;

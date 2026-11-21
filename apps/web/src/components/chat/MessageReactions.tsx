@@ -14,7 +14,7 @@ import {
   toggledMessageReaction,
 } from "@t3tools/client-runtime/message-reactions";
 import { CopyIcon, PencilIcon, SmilePlusIcon } from "lucide-react";
-import { type CSSProperties, type MouseEvent, use, useState } from "react";
+import { type CSSProperties, use, useState } from "react";
 import type { PopoverRootChangeEventDetails } from "@base-ui/react/popover";
 import { cn } from "~/lib/utils";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -67,7 +67,6 @@ export interface MessageReactionController {
   readonly setTrigger: (element: HTMLButtonElement | null) => void;
   readonly setOpen: (open: boolean) => void;
   readonly choose: (emoji: string) => void;
-  readonly onContextMenu: (event: MouseEvent<HTMLElement>) => void;
 }
 
 /** A bubble's reactions, with your choice shown before the server confirms it. */
@@ -102,20 +101,6 @@ export function useMessageReactions(input: {
     if (next) makeRoomAbove(anchor, BAR_ROOM_PX);
     setOpen(next);
   };
-  const onContextMenu = (event: MouseEvent<HTMLElement>) => {
-    if (!interactive || event.defaultPrevented) return;
-    // Selected text keeps the browser's menu, so Copy and Look Up still work on it.
-    const selection = window.getSelection();
-    if (
-      selection !== null &&
-      !selection.isCollapsed &&
-      event.currentTarget.contains(selection.anchorNode)
-    ) {
-      return;
-    }
-    event.preventDefault();
-    openBar(true);
-  };
   return {
     groups: groupMessageReactions(reactions),
     mine,
@@ -127,7 +112,6 @@ export function useMessageReactions(input: {
     setTrigger,
     setOpen: openBar,
     choose,
-    onContextMenu,
   };
 }
 

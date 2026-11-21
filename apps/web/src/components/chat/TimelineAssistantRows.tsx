@@ -134,7 +134,6 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
         <div className="flex min-w-0 max-w-full items-end gap-1">
           <div
             ref={setReactionAnchor}
-            onContextMenu={reaction.onContextMenu}
             className={cn(
               "relative min-w-0 rounded-2xl bg-message px-3.5 py-2.5 text-message-foreground",
               reaction.groups.length > 0 && MESSAGE_REACTION_BUBBLE_CLEARANCE,

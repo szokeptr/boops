@@ -64,6 +64,12 @@ const audio = vi.hoisted(() => ({
   navigate: vi.fn(),
   query: vi.fn(),
 }));
+const reactions = vi.hoisted(() => ({
+  target: null as {
+    readonly actions: ReadonlyArray<{ readonly id: string; readonly onPress: () => void }>;
+  } | null,
+  longPress: null as { readonly enabled: boolean; readonly onActivate: () => void } | null,
+}));
 vi.mock("expo-audio", () => ({
   AudioModule: { setAudioSessionOwner: audio.setSessionOwner },
   useAudioPlayer: () => audio.player,
@@ -191,21 +197,25 @@ vi.mock("../state/use-thread-selection", () => ({
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
 vi.mock("../state/use-atom-command", () => ({}));
 vi.mock("../state/v2-item-support", () => ({}));
-vi.mock("../native/SelectableMarkdownText", () => ({
-  SelectableMarkdownText: (props: {
-    markdown: string;
-    onLinkPress(href: string): void;
-    renderImage?: MarkdownImageRenderer;
-  }) => {
-    const embed = props.markdown.match(/!\[([^\]]*)\]\(([^)]+)\)/);
-    return createElement(
-      "div",
-      null,
-      createElement("button", { onClick: () => props.onLinkPress("target.ts") }, props.markdown),
-      embed && props.renderImage?.({ href: embed[2]!, alt: embed[1]!, title: null }),
-    );
-  },
-}));
+vi.mock("../native/SelectableMarkdownText", async () => {
+  const { useContext } = await import("react");
+  const { MarkdownSelectableContext } = await import("../native/MarkdownSelectableContext");
+  return {
+    SelectableMarkdownText: (props: {
+      markdown: string;
+      onLinkPress(href: string): void;
+      renderImage?: MarkdownImageRenderer;
+    }) => {
+      const embed = props.markdown.match(/!\[([^\]]*)\]\(([^)]+)\)/);
+      return createElement(
+        "div",
+        { "data-selectable": String(useContext(MarkdownSelectableContext)) },
+        createElement("button", { onClick: () => props.onLinkPress("target.ts") }, props.markdown),
+        embed && props.renderImage?.({ href: embed[2]!, alt: embed[1]!, title: null }),
+      );
+    },
+  };
+});
 vi.mock("@legendapp/list/keyboard", () => ({
   KeyboardAwareLegendList: (props: {
     data: ThreadFeedEntry[];
@@ -234,6 +244,9 @@ vi.mock("react-native-reanimated", () => {
     FadeInDown: transition,
     FadeInUp: transition,
     useAnimatedStyle: () => ({}),
+    useSharedValue: (value: unknown) => ({ get: () => value, set: () => {} }),
+    withDelay: (_delay: number, value: unknown) => value,
+    withTiming: (value: unknown) => value,
   };
 });
 vi.mock("../features/threads/MessageSwipeReply", () => ({
@@ -244,11 +257,17 @@ vi.mock("../features/threads/MessageSwipeReply", () => ({
 vi.mock("../features/threads/MessageReactions", () => ({
   MESSAGE_REACTION_BADGE_CLEARANCE: 18,
   MessageReactionBadges: () => null,
-  MessageReactionSheet: () => null,
+  MessageReactionSheet: (props: { target: typeof reactions.target }) => {
+    reactions.target = props.target;
+    return null;
+  },
 }));
 vi.mock("react-native-gesture-handler", () => ({
   GestureDetector: ({ children }: { children?: ReactNode }) => children,
-  useLongPressGesture: () => ({}),
+  useLongPressGesture: (config: NonNullable<typeof reactions.longPress>) => {
+    reactions.longPress = config;
+    return {};
+  },
 }));
 vi.mock("react-native-keyboard-controller", () => ({
   KeyboardController: { isVisible: () => false },
@@ -259,12 +278,12 @@ vi.mock("expo-sqlite/kv-store", () => ({
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
 }));
-vi.mock("expo-haptics", () => ({ selectionAsync: async () => {} }));
-vi.mock("react-native-screens", () => ({ FormSheet: () => null }));
-vi.mock("react-native-gesture-handler", () => ({
-  GestureDetector: ({ children }: { children?: ReactNode }) => children,
-  useLongPressGesture: () => ({}),
+vi.mock("expo-haptics", () => ({
+  selectionAsync: async () => {},
+  impactAsync: async () => {},
+  ImpactFeedbackStyle: { Medium: "medium" },
 }));
+vi.mock("react-native-screens", () => ({ FormSheet: () => null }));
 vi.mock("expo-image", () => ({}));
 vi.mock("expo-clipboard", () => ({}));
 vi.mock("react-native-svg", () => ({
@@ -1522,6 +1541,86 @@ describe("ThreadFeed previews", () => {
       await act(async () => root.render(element(ThreadId.make("thread-2"), { kind: "loading" })));
       await act(async () => root.render(element(ThreadId.make("thread-2"))));
       expect(container.querySelector("[data-file-preview]")).toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});
+
+describe("ThreadFeed reactions", () => {
+  it("a bot's bubble opens reactions on long-press and becomes selectable after Select", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const threadId = ThreadId.make("thread-1");
+    const messageId = MessageId.make("message-1");
+    const timestamp = "2026-10-20T00:00:00.000Z";
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "message",
+        id: messageId,
+        createdAt: timestamp,
+        message: {
+          id: messageId,
+          role: "assistant",
+          text: "Morning! Coffee first?",
+          attachments: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          runId: null,
+          streaming: false,
+          visibility: "local",
+          sourceThreadId: threadId,
+        },
+      },
+    ];
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const selectable = () =>
+      container.querySelector("[data-selectable]")?.getAttribute("data-selectable");
+    try {
+      await act(async () =>
+        root.render(
+          createElement(ThreadFeed, {
+            environmentId: EnvironmentId.make("environment-1"),
+            threadId,
+            detailRef: null,
+            threadTitle: "Pip",
+            workspaceRoot: "/repo",
+            feed,
+            queuedMessages: [],
+            dispatchingMessageId: null,
+            onEditPendingMessage: null,
+            contentPresentation: { kind: "ready" },
+            latestRun: null,
+            activeWorkStartedAt: null,
+            listRef: { current: null },
+            freeze: { value: false } as Parameters<typeof ThreadFeed>[0]["freeze"],
+            contentInsetEndAdjustment: { value: 0 } as Parameters<
+              typeof ThreadFeed
+            >[0]["contentInsetEndAdjustment"],
+            anchorMessageId: null,
+            keyboardOffset: 0,
+            directMessage: {
+              typingSince: null,
+              ownBubble: null,
+              bot: { name: "Pip", avatar: null },
+              parentProjectId: null,
+            },
+            onSetMessageReaction: async () => true,
+          }),
+        ),
+      );
+      // Long-press opens reactions, so native selection stays off until Select.
+      expect(selectable()).toBe("false");
+      expect(reactions.longPress?.enabled).toBe(true);
+      await act(async () => reactions.longPress!.onActivate());
+      const actions = reactions.target!.actions.map((action) => action.id);
+      expect(actions).toEqual(expect.arrayContaining(["copy", "select"]));
+
+      await act(async () =>
+        reactions.target!.actions.find((action) => action.id === "select")!.onPress(),
+      );
+      expect(selectable()).toBe("true");
+      expect(reactions.longPress?.enabled).toBe(false);
     } finally {
       await act(async () => root.unmount());
     }
