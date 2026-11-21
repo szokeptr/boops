@@ -55,6 +55,14 @@ import * as Stream from "effect/Stream";
 import * as HttpClient from "effect/http/HttpClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import {
+  type ConnectionRow,
+  ConnectorCredentials,
+  credentialHeaders,
+  layer as layerCredentials,
+  storage,
+  type StoredCredential,
+} from "./ConnectorCredentials.ts";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { connectionsForConversation } from "./ConnectorServers.ts";
@@ -65,44 +73,12 @@ import * as ConnectorOAuth from "./connectorOAuth.ts";
 
 // Long enough to sign in and approve; a flow is single-use either way.
 const OAUTH_FLOW_TTL_MS = 15 * 60 * 1000;
-// Refresh this long before expiry so a token never lapses mid-request.
-const REFRESH_LEEWAY_MS = 60 * 1000;
-
-/** What the secret store holds for one connection. */
-const StoredCredential = Schema.Union([
-  Schema.Struct({
-    kind: Schema.Literal("oauth"),
-    client: ConnectorOAuth.OAuthClient,
-    /** Absent after a disconnect that kept the user's own client. */
-    tokens: Schema.optionalKey(ConnectorOAuth.OAuthTokens),
-  }),
-  Schema.Struct({ kind: Schema.Literal("api-key"), apiKey: Schema.String }),
-]);
-type StoredCredential = typeof StoredCredential.Type;
-const decodeCredential = Schema.decodeUnknownOption(Schema.fromJsonString(StoredCredential));
 const decodeClient = Schema.decodeUnknownOption(Schema.fromJsonString(ConnectorOAuth.OAuthClient));
 const decodeServerInfo = Schema.decodeUnknownOption(
   Schema.fromJsonString(ConnectorOAuth.OAuthServerInfo),
 );
-const encodeCredential = Schema.encodeEffect(Schema.fromJsonString(StoredCredential));
 const encodeClient = Schema.encodeEffect(Schema.fromJsonString(ConnectorOAuth.OAuthClient));
 const encodeServerInfo = Schema.encodeEffect(Schema.fromJsonString(ConnectorOAuth.OAuthServerInfo));
-
-interface ConnectionRow {
-  readonly connection_id: string;
-  readonly catalog_id: string | null;
-  readonly display_name: string;
-  readonly url: string;
-  readonly auth_kind: string;
-  readonly header_name: string | null;
-  readonly server_name: string;
-  readonly status: string;
-  readonly status_detail: string | null;
-  readonly tool_count: number | null;
-  readonly oauth_json: string | null;
-  readonly created_at: string;
-  readonly updated_at: string;
-}
 
 const toConnection = (row: ConnectionRow): ConnectorConnection => ({
   id: ConnectorConnectionId.make(row.connection_id),
@@ -133,22 +109,6 @@ interface OAuthFlow {
   readonly forRequest?: ConnectorRequestRef;
   readonly expiresAt: number;
 }
-
-/** The headers a request to the connection's server carries. */
-const credentialHeaders = (
-  row: Pick<ConnectionRow, "header_name">,
-  credential: StoredCredential | undefined,
-): Record<string, string> => {
-  if (credential === undefined) return {};
-  if (credential.kind === "oauth") {
-    return credential.tokens === undefined
-      ? {}
-      : { authorization: `Bearer ${credential.tokens.accessToken}` };
-  }
-  const header = row.header_name ?? "Authorization";
-  const bare = header.toLowerCase() === "authorization" && !/^\S+\s+\S/.test(credential.apiKey);
-  return { [header]: bare ? `Bearer ${credential.apiKey}` : credential.apiKey };
-};
 
 /** `linear_3f9a1c`: readable, stable across renames, safe as any provider's config key. */
 const connectorServerName = (input: {
@@ -182,6 +142,16 @@ const sameServer = (left: string, right: string) => {
     a.pathname.replace(/\/$/, "") === b.pathname.replace(/\/$/, "")
   );
 };
+
+const decodeCardTarget = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({
+      id: TurnItemId,
+      catalogId: Schema.optional(Schema.NullOr(Schema.String)),
+      url: Schema.optional(Schema.NullOr(Schema.String)),
+    }),
+  ),
+);
 
 type ConnectionRequestItem = Extract<
   OrchestrationV2TurnItem,
@@ -227,8 +197,6 @@ const CLIENT_SETUP_NOTE =
 
 const mcpFailure = (code: OrchestratorMcpFailure["code"], message: string) =>
   new OrchestratorMcpFailure({ code, message });
-
-const storage = (cause: unknown) => new ConnectorError({ reason: "storage", cause });
 
 export class Connectors extends Context.Service<
   Connectors,
@@ -278,13 +246,14 @@ export class Connectors extends Context.Service<
     ) => Effect.Effect<OrchestratorMcpRequestConnectionResult, OrchestratorMcpFailure>;
     /**
      * Where the proxy sends a thread's request for `serverName`, with fresh credentials. Fails
-     * with `not_connected` unless the connection is connected and on for the thread's bot.
-     * `forceRefresh` follows an upstream 401.
+     * with `not_enabled` when it is off for the thread's bot and `not_connected` when it needs
+     * sign-in.
+     * `rejected` are the headers the server just answered 401 to, to refresh them.
      */
     readonly upstream: (input: {
       readonly threadId: ThreadId;
       readonly serverName: string;
-      readonly forceRefresh?: boolean;
+      readonly rejected?: Readonly<Record<string, string>>;
     }) => Effect.Effect<
       {
         readonly connectionId: ConnectorConnectionId;
@@ -307,10 +276,9 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const threadManagement = yield* ThreadManagementService.ThreadManagementService;
 
-  const changes = yield* PubSub.unbounded<void>();
-  const published = PubSub.publish(changes, undefined).pipe(Effect.asVoid);
+  const credentials = yield* ConnectorCredentials;
+  const published = credentials.publish;
   const flows = yield* Ref.make(new Map<string, OAuthFlow>());
-  const credentialLocks = yield* KeyedLock.make<string>();
   const projectLocks = yield* KeyedLock.make<string>();
   const cardLocks = yield* KeyedLock.make<string>();
   const withHttp = Effect.provideService(HttpClient.HttpClient, httpClient);
@@ -342,47 +310,10 @@ const make = Effect.gen(function* () {
     Effect.withSpan("Connectors.list"),
   );
 
-  const secretName = (connectionId: string) => `connector-${connectionId}`;
-  const readCredential = (connectionId: string) =>
-    secrets.get(secretName(connectionId)).pipe(
-      Effect.mapError(storage),
-      Effect.map((bytes) =>
-        Option.isNone(bytes)
-          ? undefined
-          : Option.getOrUndefined(decodeCredential(new TextDecoder().decode(bytes.value))),
-      ),
-    );
+  const readCredential = credentials.read;
   const writeCredential = (connectionId: string, credential: StoredCredential) =>
-    encodeCredential(credential).pipe(
-      Effect.flatMap((json) =>
-        secrets.set(secretName(connectionId), new TextEncoder().encode(json)),
-      ),
-      Effect.mapError(storage),
-    );
-
-  const setStatus = Effect.fn("Connectors.setStatus")(function* (
-    connectionId: string,
-    status: ConnectorConnection["status"],
-    detail: string | null,
-    toolCount?: number,
-  ) {
-    const now = yield* nowIso;
-    yield* (
-      toolCount === undefined
-        ? sql`
-              UPDATE connector_connections
-              SET status = ${status}, status_detail = ${detail}, updated_at = ${now}
-              WHERE connection_id = ${connectionId}
-            `
-        : sql`
-              UPDATE connector_connections
-              SET status = ${status}, status_detail = ${detail}, tool_count = ${toolCount},
-                updated_at = ${now}
-              WHERE connection_id = ${connectionId}
-            `
-    ).pipe(Effect.mapError(storage));
-    yield* published;
-  });
+    credentials.update(connectionId, () => credential);
+  const setStatus = credentials.setStatus;
 
   const insertRow = Effect.fn("Connectors.insertRow")(function* (
     row: Omit<ConnectionRow, "created_at" | "updated_at">,
@@ -402,56 +333,9 @@ const make = Effect.gen(function* () {
     return yield* requireRow(row.connection_id);
   });
 
-  /** Headers for the connection's server, refreshing an OAuth token near (or past) expiry. */
-  const headersFor = (row: ConnectionRow, forceRefresh = false) =>
-    credentialLocks.withLock(
-      row.connection_id,
-      Effect.gen(function* () {
-        const credential = yield* readCredential(row.connection_id);
-        if (row.auth_kind === "none") return {};
-        if (
-          credential === undefined ||
-          (credential.kind === "oauth" && credential.tokens === undefined)
-        ) {
-          yield* setStatus(row.connection_id, "needs_auth", "Sign-in missing");
-          return yield* new ConnectorError({ reason: "not_connected" });
-        }
-        if (credential.kind !== "oauth") return credentialHeaders(row, credential);
-        const now = yield* Clock.currentTimeMillis;
-        const expiring =
-          credential.tokens?.expiresAt !== undefined &&
-          credential.tokens.expiresAt - now < REFRESH_LEEWAY_MS;
-        if (!forceRefresh && !expiring) return credentialHeaders(row, credential);
-        const info = row.oauth_json === null ? Option.none() : decodeServerInfo(row.oauth_json);
-        const refreshToken = credential.tokens?.refreshToken;
-        if (Option.isNone(info) || refreshToken === undefined) {
-          yield* setStatus(row.connection_id, "needs_auth", "Sign-in expired");
-          return yield* new ConnectorError({ reason: "not_connected" });
-        }
-        const tokens = yield* ConnectorOAuth.refresh(
-          info.value,
-          credential.client,
-          refreshToken,
-        ).pipe(
-          withHttp,
-          Effect.catchTags({
-            ConnectorError: (error) =>
-              error.reason === "oauth_failed"
-                ? setStatus(row.connection_id, "needs_auth", "Sign-in expired").pipe(
-                    Effect.andThen(Effect.fail(new ConnectorError({ reason: "not_connected" }))),
-                  )
-                : Effect.fail(error),
-          }),
-        );
-        const refreshed: StoredCredential = { ...credential, tokens };
-        yield* writeCredential(row.connection_id, refreshed);
-        return credentialHeaders(row, refreshed);
-      }),
-    );
-
   /** Lists the server's tools with its credentials and records the outcome on the connection. */
   const check = Effect.fn("Connectors.check")(function* (row: ConnectionRow) {
-    const headers = yield* headersFor(row);
+    const headers = yield* credentials.headersFor(row);
     return yield* ConnectorMcp.countTools(row.url, headers).pipe(
       withHttp,
       Effect.tap((count) => setStatus(row.connection_id, "connected", null, count)),
@@ -792,19 +676,11 @@ const make = Effect.gen(function* () {
   const disconnect: Connectors["Service"]["disconnect"] = Effect.fn("Connectors.disconnect")(
     function* (connectionId) {
       const row = yield* requireRow(connectionId);
-      yield* credentialLocks.withLock(
-        connectionId,
-        Effect.gen(function* () {
-          const credential = yield* readCredential(connectionId);
-          // The user's own client is kept so signing in again doesn't ask for it.
-          if (credential?.kind === "oauth" && credential.client.userProvided === true) {
-            return yield* writeCredential(connectionId, {
-              kind: "oauth",
-              client: credential.client,
-            });
-          }
-          yield* secrets.remove(secretName(connectionId)).pipe(Effect.mapError(storage));
-        }),
+      // The user's own client is kept so signing in again doesn't ask for it.
+      yield* credentials.update(connectionId, (credential) =>
+        credential?.kind === "oauth" && credential.client.userProvided === true
+          ? { kind: "oauth", client: credential.client }
+          : undefined,
       );
       yield* setStatus(
         connectionId,
@@ -879,10 +755,7 @@ const make = Effect.gen(function* () {
       yield* sql`DELETE FROM connector_connections WHERE connection_id = ${connectionId}`.pipe(
         Effect.mapError(storage),
       );
-      yield* credentialLocks.withLock(
-        connectionId,
-        secrets.remove(secretName(connectionId)).pipe(Effect.mapError(storage)),
-      );
+      yield* credentials.update(connectionId, () => undefined);
       yield* published;
     },
   );
@@ -923,6 +796,19 @@ const make = Effect.gen(function* () {
             : undefined;
         }),
       );
+
+  const waitingCardsSince = (since: string) =>
+    sql<{ readonly payload_json: string }>`
+      SELECT payload_json FROM orchestration_v2_projection_turn_items
+      WHERE type = 'connection_request' AND status = 'waiting' AND updated_at >= ${since}
+    `.pipe(
+      Effect.map((rows) =>
+        rows.flatMap((row) => {
+          const card = decodeCardTarget(row.payload_json);
+          return Option.isSome(card) ? [card.value] : [];
+        }),
+      ),
+    );
 
   const recordCard = (
     card: Pick<
@@ -1092,12 +978,12 @@ const make = Effect.gen(function* () {
     const rows = yield* readRows.pipe(
       Effect.mapError((error) => mcpFailure("orchestration_error", error.message)),
     );
-    const usable = rows.find(
+    const forTarget = rows.filter(
       (row) =>
         enabled.has(row.connection_id) &&
-        row.status === "connected" &&
         (entry === undefined ? sameServer(row.url, url) : row.catalog_id === entry.id),
     );
+    const usable = forTarget.find((row) => row.status === "connected");
     if (usable !== undefined) {
       return { status: "already_connected", serverName: usable.server_name } as const;
     }
@@ -1106,6 +992,17 @@ const make = Effect.gen(function* () {
         "orchestration_error",
         `Could not record the connection request: ${error instanceof Error ? error.message : "unknown error"}`,
       );
+    // One reconnect card per sign-in that lapsed, not one per routine run that notices.
+    const lapsed = forTarget.find((row) => row.status === "needs_auth");
+    if (lapsed !== undefined) {
+      const waiting = yield* waitingCardsSince(lapsed.updated_at).pipe(Effect.mapError(unreadable));
+      const open = waiting.find((card) =>
+        entry === undefined
+          ? typeof card.url === "string" && sameServer(card.url, url)
+          : card.catalogId === entry.id,
+      );
+      if (open !== undefined) return { status: "card_shown", turnItemId: open.id } as const;
+    }
     const key = input.clientRequestId ?? (yield* random.uuidV4());
     const turnItemId = cardId(threadId, scope.requestNamespace, key);
     if (input.clientRequestId !== undefined) {
@@ -1155,10 +1052,14 @@ const make = Effect.gen(function* () {
         Effect.mapError((cause) => new ConnectorError({ reason: "not_connected", cause })),
       );
       const enabled = bot.connectionIds.includes(row.connection_id as ConnectorConnectionId);
-      if (!enabled || row.status === "needs_auth") {
+      if (!enabled) return yield* new ConnectorError({ reason: "not_enabled" });
+      if (row.status === "needs_auth") {
         return yield* new ConnectorError({ reason: "not_connected" });
       }
-      const headers = yield* headersFor(row, input.forceRefresh === true);
+      const headers = yield* credentials.headersFor(
+        row,
+        input.rejected === undefined ? undefined : { rejected: input.rejected },
+      );
       return {
         connectionId: ConnectorConnectionId.make(row.connection_id),
         url: row.url,
@@ -1176,7 +1077,7 @@ const make = Effect.gen(function* () {
   const subscribe: Connectors["Service"]["subscribe"] = Stream.unwrap(
     Effect.gen(function* () {
       // Subscribe before the first read so no change between them is missed.
-      const signals = yield* PubSub.subscribe(changes);
+      const signals = yield* PubSub.subscribe(credentials.changes);
       return Stream.concat(
         Stream.fromEffect(list),
         Stream.fromSubscription(signals).pipe(Stream.mapEffect(() => list)),
@@ -1206,4 +1107,4 @@ const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(Connectors, make);
+export const layer = Layer.effect(Connectors, make).pipe(Layer.provide(layerCredentials));

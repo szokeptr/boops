@@ -7,6 +7,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ConnectorCredentials from "./ConnectorCredentials.ts";
 
 /** The T3 server's proxy path for one connection; see ConnectorProxyHttp.ts. */
 export const CONNECTOR_PROXY_PATH = "/mcp-connectors";
@@ -34,7 +35,10 @@ export const connectionsForConversation = (
 export class ConnectorServers extends Context.Service<
   ConnectorServers,
   {
-    /** Server names of the connected connections turned on for the thread's bot. */
+    /**
+     * Server names of the connected connections turned on for the thread's bot. Tokens near
+     * expiry are refreshed first, so the provider's MCP connect never waits on a token endpoint.
+     */
     readonly forThread: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<string>>;
   }
 >()("boops/connectors/ConnectorServers") {}
@@ -43,6 +47,8 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
   const projects = yield* ProjectStore.ProjectStoreV2;
+  // Optional so the orchestration runtime builds without HTTP or secrets, as tests do.
+  const credentials = yield* Effect.serviceOption(ConnectorCredentials.ConnectorCredentials);
 
   // A room's bots answer everyone in it, so a room with any member gets the member set.
   const roomHasMembers = (threadId: ThreadId) =>
@@ -66,6 +72,7 @@ const make = Effect.gen(function* () {
         thread.linkOrigin?.memberId !== undefined || (yield* roomHasMembers(threadId)),
       );
       if (ids.length === 0) return [];
+      if (Option.isSome(credentials)) yield* credentials.value.refreshDue(ids);
       const rows = yield* sql<{ readonly server_name: string }>`
         SELECT server_name FROM connector_connections
         WHERE status = 'connected' AND connection_id IN ${sql.in(ids)}

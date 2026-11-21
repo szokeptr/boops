@@ -14,8 +14,15 @@ connection is on for the calling thread's bot, adds the stored credential, and s
 back. So:
 
 - Tokens stay out of provider argv, config files, env and logs, and an agent cannot read them.
-- Refresh is transparent: the proxy refreshes an OAuth token within a minute of expiry, and once
-  after an upstream 401. A refused refresh marks the connection `needs_auth`.
+- Refresh is transparent. A background sweep refreshes OAuth tokens ten minutes (or a quarter of
+  their lifetime) before expiry, turn start refreshes the bot's due tokens, and the proxy refreshes
+  an expired token and once after an upstream 401. Only a refused refresh (`invalid_grant` and
+  other 4xx) whose refresh token is still the stored one marks the connection `needs_auth`;
+  timeouts and 5xx keep it connected for a retry.
+- Refresh runs once per connection at a time, in
+  [`ConnectorCredentials`](../../apps/server/src/connectors/ConnectorCredentials.ts)' scope, never
+  the caller's. Providers' MCP clients give up after a few seconds, and a refresh cancelled after
+  the server rotated the refresh token loses it, which signs the connection out on the next try.
 - Turning a connection off, disconnecting or removing it cuts access at once, even for a session
   that still lists the server.
 - The proxy strips `WWW-Authenticate`, or provider CLIs would start their own OAuth.

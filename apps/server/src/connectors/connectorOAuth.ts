@@ -43,6 +43,8 @@ export const OAuthTokens = Schema.Struct({
   refreshToken: Schema.optionalKey(Schema.String),
   /** Epoch milliseconds; absent when the server gave no lifetime. */
   expiresAt: Schema.optionalKey(Schema.Number),
+  /** When `expiresAt` was set, so a refresh can start a fixed share of the lifetime early. */
+  issuedAt: Schema.optionalKey(Schema.Number),
 });
 export type OAuthTokens = typeof OAuthTokens.Type;
 
@@ -201,11 +203,19 @@ export const discover = Effect.fn("ConnectorOAuth.discover")(function* (
   return info;
 });
 
+/**
+ * The server refused (`oauth_failed`, a 4xx), or it is having trouble (`unreachable`: a 5xx, a
+ * 408 or a 429, which a later retry may get past).
+ */
 const oauthFailure = (response: HttpClientResponse.HttpClientResponse, text: string) => {
+  const status = response.status;
+  if (status >= 500 || status === 408 || status === 429) {
+    return new ConnectorError({ reason: "unreachable", detail: `HTTP ${status}` });
+  }
   const parsed = decodeJson(OAuthErrorResponse)(text);
   return new ConnectorError({
     reason: "oauth_failed",
-    detail: Option.isSome(parsed) ? parsed.value.error : `HTTP ${response.status}`,
+    detail: Option.isSome(parsed) ? parsed.value.error : `HTTP ${status}`,
   });
 };
 
@@ -323,7 +333,7 @@ const requestTokens = Effect.fnUntraced(function* (
     ...(refreshToken === undefined ? {} : { refreshToken }),
     ...(tokens.value.expires_in === undefined
       ? {}
-      : { expiresAt: now + tokens.value.expires_in * 1000 }),
+      : { issuedAt: now, expiresAt: now + tokens.value.expires_in * 1000 }),
   };
   return result;
 });
