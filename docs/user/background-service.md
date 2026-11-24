@@ -64,7 +64,7 @@ directory, normally `~/.boops/service.env`. This file survives service installat
 and updates. For example:
 
 ```dotenv
-T3CODE_PORT=3773
+T3CODE_PORT=4773
 T3CODE_HOST=127.0.0.1
 ```
 

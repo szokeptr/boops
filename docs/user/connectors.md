@@ -42,7 +42,7 @@ plan limits how many tool calls you can make.
    the scopes the connect form lists.
 3. Create an OAuth client of type **Web application**, tick **Use this client for an AI-powered
    agent**, and add the redirect URI from the connect form. It is the server's address followed by
-   `/oauth/connectors/callback`, for example `http://localhost:3773/oauth/connectors/callback`.
+   `/oauth/connectors/callback`, for example `http://localhost:4773/oauth/connectors/callback`.
    Add one for each address you sign in from.
 4. Choose **Connect** on a Google service and paste the client ID and secret. The secret stays on
    the server.
