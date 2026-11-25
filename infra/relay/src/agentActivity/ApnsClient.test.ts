@@ -135,6 +135,7 @@ describe("ApnsClient", () => {
           },
           sound: "default",
           "thread-id": "env/thread",
+          "content-available": 1,
         },
         body: {
           environmentId: "env",
@@ -167,6 +168,7 @@ describe("ApnsClient", () => {
           alert: { title: "Ada", body: "Sent you a message" },
           sound: "default",
           "thread-id": "env/thread",
+          "content-available": 1,
           "mutable-content": 1,
           "interruption-level": "active",
         },

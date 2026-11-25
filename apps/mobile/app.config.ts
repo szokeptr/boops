@@ -296,7 +296,8 @@ const config: ExpoConfig = {
       NSPhotoLibraryAddUsageDescription: "Allow Boops to save images to your photo library.",
       // System picture in picture needs background audio to start and survive outside the app.
       // CallKit keeps a bot call going with the app in the background or the phone locked.
-      UIBackgroundModes: ["audio", "voip"],
+      // A message push wakes the app to load the reply before the notification is tapped.
+      UIBackgroundModes: ["audio", "voip", "remote-notification"],
       ITSAppUsesNonExemptEncryption: false,
       // Communication Notifications donate a message intent so a bot reply shows its face.
       ...(isIosPersonalTeamBuild ? {} : { NSUserActivityTypes: ["INSendMessageIntent"] }),

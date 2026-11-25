@@ -120,3 +120,41 @@ export function routeAgentNotificationResponseOnce(input: {
     input.handledResponseIds.add(responseId);
   }
 }
+
+export interface AgentNotificationThread {
+  readonly environmentId: string;
+  readonly threadId: string;
+}
+
+function threadFromDeepLink(value: unknown): AgentNotificationThread | null {
+  if (typeof value !== "string") return null;
+  const deepLink = normalizeAgentDeepLink(value);
+  const parts = deepLink?.split("/");
+  if (parts?.[1] !== "threads") return null;
+  return {
+    environmentId: decodeURIComponent(parts[2] ?? ""),
+    threadId: decodeURIComponent(parts[3] ?? ""),
+  };
+}
+
+/**
+ * The thread a background notification task was woken for. APNs hands the task the push's
+ * `body` as `dataString`; Android forwards its agent alert data, which routes by `alert_path`.
+ */
+export function extractAgentNotificationTaskThread(
+  payload: unknown,
+): AgentNotificationThread | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const data = (payload as { readonly data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return null;
+  const { dataString, alert_path: alertPath } = data as Record<string, unknown>;
+  if (typeof dataString === "string") {
+    try {
+      const body: unknown = JSON.parse(dataString);
+      if (typeof body === "object" && body !== null) {
+        return threadFromDeepLink((body as { readonly deepLink?: unknown }).deepLink);
+      }
+    } catch {}
+  }
+  return threadFromDeepLink(alertPath);
+}

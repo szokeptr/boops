@@ -15,6 +15,7 @@ import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
+import { wakeConnectionsForPush } from "../connection/push-wakeups";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { appAtomRegistry } from "./atom-registry";
@@ -90,6 +91,49 @@ export function startOpeningEnvironmentThread(environmentId: EnvironmentId, thre
   if (detailRef === null) return;
   const release = appAtomRegistry.mount(environmentThreads.stateAtom(environmentId, threadId));
   setTimeout(release, OPENING_THREAD_HOLD_MS);
+}
+
+// iOS ends a background push wake after about 30 seconds.
+const PUSH_REFRESH_LIMIT_MS = 20_000;
+
+/**
+ * Holds a thread live after its push woke the app, until it has caught up, so tapping the
+ * notification opens the thread with the reply already loaded. Releasing the thread keeps that
+ * copy in memory and in the stored cache. Resolves whether it caught up.
+ */
+export function refreshEnvironmentThreadForPush(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    let startSequence: number | null = null;
+    let sawSync = false;
+    let settled = false;
+    let release = () => {};
+    const finish = (caughtUp: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      release();
+      resolve(caughtUp);
+    };
+    const timeout = setTimeout(() => finish(false), PUSH_REFRESH_LIMIT_MS);
+    release = appAtomRegistry.subscribe(
+      environmentThreads.stateAtom(environmentId, threadId),
+      (result) => {
+        if (!AsyncResult.isSuccess(result)) return;
+        const state = result.value as EnvironmentThreadState;
+        startSequence ??= state.sequence;
+        if (state.status === "deleted") return finish(true);
+        if (state.status !== "live") sawSync = true;
+        // A thread already live in memory may predate the push until a newer event arrives.
+        else if (sawSync || state.sequence !== startSequence) finish(true);
+      },
+      { immediate: true },
+    );
+    if (settled) release();
+    else wakeConnectionsForPush();
+  });
 }
 
 const EMPTY_THREAD_STATE_ATOM = Atom.make(AsyncResult.success(EMPTY_ENVIRONMENT_THREAD_STATE)).pipe(

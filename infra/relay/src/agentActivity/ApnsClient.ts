@@ -230,6 +230,8 @@ function buildPushNotificationRequest(input: {
         },
         sound: "default",
         "thread-id": notificationThreadId(input.notification),
+        // Wakes the app to load the thread so it is current when the notification is tapped.
+        ...(input.notification.threadId.length > 0 ? { "content-available": 1 } : {}),
         // The Notification Service Extension decrypts the preview and makes it a communication notification.
         ...(message === undefined ? {} : { "mutable-content": 1, "interruption-level": "active" }),
       },
