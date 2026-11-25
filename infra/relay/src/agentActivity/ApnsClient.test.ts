@@ -146,6 +146,26 @@ describe("ApnsClient", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect("wakes the app only for pushes that open a thread", () =>
+    Effect.gen(function* () {
+      const apns = yield* ApnsClient.ApnsClient;
+      const request = apns.makePushNotificationRequest({
+        token: "push-token",
+        notification: {
+          title: "Room",
+          body: "Sent you a message",
+          environmentId: "env",
+          threadId: "relay-room-thread",
+          deepLink: "/rooms/env/room",
+        },
+      });
+
+      expect(request.payload).toMatchObject({
+        aps: expect.not.objectContaining({ "content-available": 1 }),
+      });
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("marks a bot message push mutable and hands the extension its ciphertext", () =>
     Effect.gen(function* () {
       const apns = yield* ApnsClient.ApnsClient;

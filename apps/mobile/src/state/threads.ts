@@ -19,6 +19,7 @@ import { wakeConnectionsForPush } from "../connection/push-wakeups";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { appAtomRegistry } from "./atom-registry";
+import { advancePushThreadRefresh, PUSH_THREAD_REFRESH_START } from "./push-thread-refresh";
 import {
   pendingThreadCreationOutcomesAtom,
   selectThreadCreationDetail,
@@ -106,8 +107,7 @@ export function refreshEnvironmentThreadForPush(
   threadId: ThreadId,
 ): Promise<boolean> {
   return new Promise((resolve) => {
-    let startSequence: number | null = null;
-    let sawSync = false;
+    let progress = PUSH_THREAD_REFRESH_START;
     let settled = false;
     let release = () => {};
     const finish = (caughtUp: boolean) => {
@@ -122,12 +122,8 @@ export function refreshEnvironmentThreadForPush(
       environmentThreads.stateAtom(environmentId, threadId),
       (result) => {
         if (!AsyncResult.isSuccess(result)) return;
-        const state = result.value as EnvironmentThreadState;
-        startSequence ??= state.sequence;
-        if (state.status === "deleted") return finish(true);
-        if (state.status !== "live") sawSync = true;
-        // A thread already live in memory may predate the push until a newer event arrives.
-        else if (sawSync || state.sequence !== startSequence) finish(true);
+        progress = advancePushThreadRefresh(progress, result.value as EnvironmentThreadState);
+        if (progress.phase === "done") finish(true);
       },
       { immediate: true },
     );
