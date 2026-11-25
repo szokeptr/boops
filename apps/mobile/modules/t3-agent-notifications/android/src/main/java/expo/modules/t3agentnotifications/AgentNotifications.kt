@@ -17,12 +17,21 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.google.firebase.messaging.RemoteMessage
+import expo.modules.notifications.notifications.RemoteMessageSerializer
 import expo.modules.notifications.service.ExpoFirebaseMessagingService
+import expo.modules.notifications.service.delegates.FirebaseMessagingDelegate
 
 class AgentMessagingService : ExpoFirebaseMessagingService() {
   override fun onMessageReceived(remoteMessage: RemoteMessage) {
     if (remoteMessage.data["t3_kind"] == "agent_activity") {
-      AgentNotifications.receive(this, remoteMessage.data)
+      val delivered = AgentNotifications.receive(this, remoteMessage.data)
+      // Lets the JS notification task load the thread before the alert is tapped.
+      if (delivered && remoteMessage.data["alert_path"]?.startsWith("/threads/") == true) {
+        FirebaseMessagingDelegate.runTaskManagerTasks(
+          applicationContext,
+          RemoteMessageSerializer.toBundle(remoteMessage)
+        )
+      }
     } else {
       super.onMessageReceived(remoteMessage)
     }
@@ -133,10 +142,11 @@ object AgentNotifications {
     if (expiresAt > 0 && expiresAt <= now) cancelActivity(context)
   }
 
+  /** Returns whether the push was for this device and fresh enough to present. */
   @Synchronized
-  fun receive(context: Context, data: Map<String, String>) {
+  fun receive(context: Context, data: Map<String, String>): Boolean {
     val prefs = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
-    val updatedAt = data["updated_at"]?.toLongOrNull() ?: return
+    val updatedAt = data["updated_at"]?.toLongOrNull() ?: return false
     val registered = prefs.getBoolean("enabled", false) &&
       data["device_id"] == prefs.getString("deviceId", null) &&
       data["user_id"] == prefs.getString("userId", null)
@@ -146,7 +156,9 @@ object AgentNotifications {
       val scheme = prefs.getString("scheme", "boops") ?: "boops"
       showAlert(context, prefs, scheme, data)
       updateActivity(context, prefs, scheme, data, updatedAt)
+      return true
     }
+    return false
   }
 
   private fun showAlert(

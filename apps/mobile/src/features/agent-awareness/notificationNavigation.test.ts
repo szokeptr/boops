@@ -5,6 +5,7 @@ import { consumeLastAgentNotificationResponse } from "./notificationResponseCons
 
 import {
   extractAgentNotificationDeepLink,
+  extractAgentNotificationTaskThread,
   routeAgentNotificationResponseOnce,
   threadDeepLinkOnScreen,
 } from "./notificationPayload";
@@ -199,5 +200,33 @@ describe("routeAgentNotificationResponseOnce", () => {
     });
 
     expect(navigations).toEqual(["/threads/env/thread"]);
+  });
+});
+
+describe("extractAgentNotificationTaskThread", () => {
+  it.each([
+    {
+      name: "APNs body",
+      payload: {
+        data: {
+          dataString: JSON.stringify({ deepLink: "/threads/env%201/thread", threadId: "ignored" }),
+        },
+        aps: { "content-available": 1 },
+      },
+      expected: { environmentId: "env 1", threadId: "thread" },
+    },
+    {
+      name: "Android alert path",
+      payload: {
+        data: { t3_kind: "agent_activity", dataString: null, alert_path: "/threads/env/t" },
+      },
+      expected: { environmentId: "env", threadId: "t" },
+    },
+    { name: "a room", payload: { data: { alert_path: "/rooms/env/room" } }, expected: null },
+    { name: "an overview alert", payload: { data: { alert_path: "/" } }, expected: null },
+    { name: "a malformed body", payload: { data: { dataString: "{" } }, expected: null },
+    { name: "a tapped response", payload: { actionIdentifier: "default" }, expected: null },
+  ])("reads $name", ({ payload, expected }) => {
+    expect(extractAgentNotificationTaskThread(payload)).toEqual(expected);
   });
 });
